@@ -1,60 +1,106 @@
 /**
- * The compare flow: produce an output, have the independent Checker review it,
- * and release it only if every check passes.
+ * The compare flow: produce each output, have the independent Checker review
+ * it, and release it only if every one of its checks passes.
  *
  * This is the one place where an output can reach the user, and it has no path
- * that does so without a passing report.
+ * that does so without a passing report for that output.
  */
-import { CHECK_TITLES, type CheckId, type CheckReport } from '../checker';
+import { CHECK_TITLES, CHECKS_FOR, type CheckReport, type OutputKind } from '../checker';
+
+export interface ChangeCounts {
+  insertions: number;
+  deletions: number;
+  moves: number;
+  formattingChanges: number;
+}
+
+export interface ComparisonDetails {
+  /** File names as shown to the user. */
+  originalName: string;
+  modifiedName: string;
+  /** Date and time of the comparison, formatted for display. */
+  comparedAt: string;
+}
+
+type Files = { original: Uint8Array; modified: Uint8Array; output: Uint8Array };
 
 export interface FlowDependencies {
   /** The Producer: make the tracked-changes file. */
   produce: (original: Uint8Array, modified: Uint8Array) => Promise<{ trackedChanges: Uint8Array; engineMs: number }>;
-  /** The Checker: review that file against the two uploads. */
-  check: (input: { original: Uint8Array; modified: Uint8Array; output: Uint8Array }) => Promise<CheckReport>;
+  /** The Producer: make the static redline from the tracked-changes file. */
+  makeStatic: (trackedChanges: Uint8Array, original: Uint8Array, details: ComparisonDetails) => Promise<{ staticRedline: Uint8Array; counts: ChangeCounts }>;
+  /** The Checker: review each output against the two uploads. */
+  checkTracked: (input: Files) => Promise<CheckReport>;
+  checkStatic: (input: Files & ComparisonDetails) => Promise<CheckReport>;
+}
+
+export interface Reviewed {
+  report: CheckReport;
+  /** The output file. Present only when every check passed. */
+  file?: Uint8Array;
 }
 
 export interface FlowResult {
-  report: CheckReport;
-  /** The tracked-changes Word file. Present only when every check passed. */
-  trackedChanges?: Uint8Array;
+  tracked: Reviewed;
+  staticRedline: Reviewed;
+  /** The Producer's change counts. Present only when the static redline was released (the Checker has then confirmed them). */
+  counts?: ChangeCounts;
   engineMs: number;
 }
 
-/** Thrown when the Producer itself fails; there is then nothing to check. */
+/** Thrown when the Producer cannot compare the documents at all; there is then nothing to check. */
 export class ProducerError extends Error {}
 
-/** A report saying the Checker could not run. The output is withheld, exactly as for a failed check. */
-function checkerUnavailable(message: string): CheckReport {
-  const ids: CheckId[] = ['accept-all', 'reject-all', 'completeness', 'structure'];
+/** A report saying an output could not be produced or checked. The output is withheld, exactly as for a failed check. */
+export function checkerUnavailable(kind: OutputKind, message: string): CheckReport {
   return {
-    output: 'tracked-changes',
+    output: kind,
     passed: false,
-    checks: ids.map((id) => ({
-      id,
-      title: CHECK_TITLES[id],
-      passed: false,
-      failure: { message: `The check could not be run, so the output was withheld. (${message})` },
-    })),
+    checks: CHECKS_FOR[kind].map((id) => ({ id, title: CHECK_TITLES[id], passed: false, failure: { message } })),
   };
 }
 
-export async function runComparison(original: Uint8Array, modified: Uint8Array, deps: FlowDependencies): Promise<FlowResult> {
+const reason = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+/** Release a file only on an explicit, complete pass of every check its kind requires. */
+function review(kind: OutputKind, file: Uint8Array, report: CheckReport): Reviewed {
+  const required = CHECKS_FOR[kind];
+  const complete = report.output === kind && required.every((id) => report.checks.some((c) => c.id === id && c.passed === true));
+  const released = report.passed === true && complete && report.checks.every((c) => c.passed === true);
+  return released ? { report, file } : { report: { ...report, passed: false } };
+}
+
+export async function runComparison(original: Uint8Array, modified: Uint8Array, details: ComparisonDetails, deps: FlowDependencies): Promise<FlowResult> {
   let produced: { trackedChanges: Uint8Array; engineMs: number };
   try {
     produced = await deps.produce(original, modified);
   } catch (error) {
-    throw new ProducerError(error instanceof Error ? error.message : String(error));
+    throw new ProducerError(reason(error));
   }
 
-  let report: CheckReport;
+  let trackedReport: CheckReport;
   try {
-    report = await deps.check({ original, modified, output: produced.trackedChanges });
+    trackedReport = await deps.checkTracked({ original, modified, output: produced.trackedChanges });
   } catch (error) {
-    report = checkerUnavailable(error instanceof Error ? error.message : String(error));
+    trackedReport = checkerUnavailable('tracked-changes', `The check could not be run, so the output was withheld. (${reason(error)})`);
+  }
+  const tracked = review('tracked-changes', produced.trackedChanges, trackedReport);
+
+  let staticRedline: Reviewed;
+  let counts: ChangeCounts | undefined;
+  try {
+    const made = await deps.makeStatic(produced.trackedChanges, original, details);
+    let report: CheckReport;
+    try {
+      report = await deps.checkStatic({ original, modified, output: made.staticRedline, ...details });
+    } catch (error) {
+      report = checkerUnavailable('static-redline', `The check could not be run, so the output was withheld. (${reason(error)})`);
+    }
+    staticRedline = review('static-redline', made.staticRedline, report);
+    if (staticRedline.file) counts = made.counts;
+  } catch (error) {
+    staticRedline = { report: checkerUnavailable('static-redline', `The static redline could not be made. (${reason(error)})`) };
   }
 
-  // Release only on an explicit, complete pass.
-  const released = report.passed === true && report.checks.length > 0 && report.checks.every((c) => c.passed === true);
-  return { report: released ? report : { ...report, passed: false }, trackedChanges: released ? produced.trackedChanges : undefined, engineMs: produced.engineMs };
+  return { tracked, staticRedline, counts, engineMs: produced.engineMs };
 }

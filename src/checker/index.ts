@@ -9,13 +9,15 @@
  */
 import { compareStories } from './compare-text';
 import { completenessFailure, coverageNote, unreadText } from './completeness';
+import { countStaticChanges, coverPageFailure, formatMarksFailure, formattingFailure, leftoverTrackedChanges, numberingFailure, oldNumberFailure } from './detail-checks';
 import { DocxPackage, PackageError } from './package';
-import { CHECK_TITLES, type CheckFailure, type CheckId, type CheckReport, type CheckResult } from './report';
+import { CHECK_TITLES, CHECKS_FOR, type CheckFailure, type CheckId, type CheckReport, type CheckResult, type OutputKind } from './report';
 import { readStories, type StoryReading } from './stories';
 import { structureProblems } from './structure';
 
-export type { CheckFailure, CheckId, CheckReport, CheckResult } from './report';
-export { CHECK_TITLES, reportAsText } from './report';
+export type { CheckFailure, CheckId, CheckReport, CheckResult, OutputKind } from './report';
+export type { StaticCounts } from './detail-checks';
+export { CHECK_TITLES, CHECKS_FOR, OUTPUT_NAME, reportAsText } from './report';
 
 export interface CheckInput {
   /** The original upload, exactly as the user provided it. */
@@ -57,25 +59,39 @@ function compareLinks(expected: string[], found: string[], expectedName: string)
   return undefined;
 }
 
-/** Check a tracked-changes Word file (checks 1, 2, 6 and 7 of PLAN.md). */
-export async function checkTrackedChanges(input: CheckInput): Promise<CheckReport> {
-  const ids: CheckId[] = ['accept-all', 'reject-all', 'completeness', 'structure'];
+interface Opened {
+  original: DocxPackage;
+  modified: DocxPackage;
+  output: DocxPackage;
+}
+
+/** Open the three files, or produce the report that says they could not be opened. */
+async function open(input: CheckInput, kind: OutputKind): Promise<Opened | CheckReport> {
+  const failAll = (message: string): CheckReport => ({ output: kind, passed: false, checks: CHECKS_FOR[kind].map((id) => fail(id, { message })) });
   let original: DocxPackage;
   let modified: DocxPackage;
-  let output: DocxPackage;
   try {
     original = await DocxPackage.open(input.original);
     modified = await DocxPackage.open(input.modified);
   } catch (error) {
-    const failure = { message: `An uploaded file could not be read, so nothing could be checked. ${describe(error)}` };
-    return { output: 'tracked-changes', passed: false, checks: ids.map((id) => fail(id, failure)) };
+    return failAll(`An uploaded file could not be read, so nothing could be checked. ${describe(error)}`);
   }
   try {
-    output = await DocxPackage.open(input.output);
+    return { original, modified, output: await DocxPackage.open(input.output) };
   } catch (error) {
-    const failure = { message: describe(error) };
-    return { output: 'tracked-changes', passed: false, checks: ids.map((id) => fail(id, failure)) };
+    return failAll(describe(error));
   }
+}
+
+const finish = (kind: OutputKind, checks: CheckResult[]): CheckReport => ({ output: kind, passed: checks.length === CHECKS_FOR[kind].length && checks.every((c) => c.passed), checks });
+const verdict = (id: CheckId, failure: CheckFailure | undefined, note?: string): CheckResult => (failure ? fail(id, failure) : pass(id, note));
+const firstOf = (problems: string[]): CheckFailure | undefined => (problems.length > 0 ? { message: problems[0]! + (problems.length > 1 ? ` (and ${problems.length - 1} more)` : '') } : undefined);
+
+/** Check a tracked-changes Word file (checks 1, 2, 6, 7 and 8 of PLAN.md, and clause numbers). */
+export async function checkTrackedChanges(input: CheckInput): Promise<CheckReport> {
+  const opened = await open(input, 'tracked-changes');
+  if ('checks' in opened) return opened;
+  const { original, modified, output } = opened;
 
   // Each reading is taken lazily and at most once; a reading that throws fails every check that needs it.
   const cache = new Map<string, StoryReading>();
@@ -99,6 +115,8 @@ export async function checkTrackedChanges(input: CheckInput): Promise<CheckRepor
       const failure = compareStories(originalText().stories, rejected().stories, 'original document') ?? compareLinks(originalText().links, rejected().links, 'original document');
       return failure ? fail('reject-all', failure) : pass('reject-all');
     }),
+    guarded('formatting', () => verdict('formatting', formattingFailure(modifiedText().stories, accepted().stories, false))),
+    guarded('numbering', () => verdict('numbering', numberingFailure(modifiedText().stories, accepted().stories))),
     guarded('completeness', () => {
       const problems = [
         ...unreadText(original, [originalText()], 'original document'),
@@ -108,13 +126,63 @@ export async function checkTrackedChanges(input: CheckInput): Promise<CheckRepor
       const failure = completenessFailure(problems);
       return failure ? fail('completeness', failure) : pass('completeness', coverageNote(accepted().stories));
     }),
-    guarded('structure', () => {
-      const problems = structureProblems(output);
-      return problems.length > 0
-        ? fail('structure', { message: problems[0]! + (problems.length > 1 ? ` (and ${problems.length - 1} more)` : '') })
-        : pass('structure');
-    }),
+    guarded('structure', () => verdict('structure', firstOf(structureProblems(output)))),
   ];
 
-  return { output: 'tracked-changes', passed: checks.every((c) => c.passed), checks };
+  return finish('tracked-changes', checks);
+}
+
+export interface StaticCheckInput extends CheckInput {
+  /** The file names and comparison time the cover page must show, as given to the user. They come from the page, not from the Producer. */
+  originalName: string;
+  modifiedName: string;
+  comparedAt: string;
+}
+
+/**
+ * Check a static redline Word file (checks 3, 4, 5, 6, 7 and 8 of PLAN.md,
+ * the marking of formatting changes, and clause numbers). Changes are
+ * recognised by their formatting alone, exactly as a reader would see them.
+ */
+export async function checkStaticRedline(input: StaticCheckInput): Promise<CheckReport> {
+  const opened = await open(input, 'static-redline');
+  if ('checks' in opened) return opened;
+  const { original, modified, output } = opened;
+
+  const cache = new Map<string, StoryReading>();
+  const reading = (name: string, make: () => StoryReading): StoryReading => {
+    let value = cache.get(name);
+    if (!value) cache.set(name, (value = make()));
+    return value;
+  };
+  const originalText = (): StoryReading => reading('original', () => readStories(original, 'accepted'));
+  const modifiedText = (): StoryReading => reading('modified', () => readStories(modified, 'accepted'));
+  const newSide = (): StoryReading => reading('new', () => readStories(output, 'accepted', 'static'));
+  const oldSide = (): StoryReading => reading('old', () => readStories(output, 'rejected', 'static'));
+
+  const checks: CheckResult[] = [
+    guarded('static-new', () => verdict('static-new', compareStories(modifiedText().stories, newSide().stories, 'modified document') ?? compareLinks(modifiedText().links, newSide().links, 'modified document'))),
+    guarded('static-old', () => verdict('static-old', compareStories(originalText().stories, oldSide().stories, 'original document') ?? compareLinks(originalText().links, oldSide().links, 'original document'))),
+    guarded('no-tracked-changes', () => verdict('no-tracked-changes', firstOf(leftoverTrackedChanges(output)))),
+    guarded('cover-page', () => {
+      const counts = countStaticChanges(output);
+      const note = `Counted independently: ${counts.insertions} insertions, ${counts.deletions} deletions, ${counts.moves} moves, ${counts.formattingChanges} formatting changes.`;
+      return verdict('cover-page', coverPageFailure(newSide().cover, newSide().coverLooks, input, counts), note);
+    }),
+    guarded('formatting', () => verdict('formatting', formattingFailure(modifiedText().stories, newSide().stories, true))),
+    guarded('format-marks', () => verdict('format-marks', formatMarksFailure(originalText().stories, oldSide().stories, newSide().stories))),
+    guarded('numbering', () => verdict('numbering', numberingFailure(modifiedText().stories, newSide().stories) ?? oldNumberFailure(originalText().stories, oldSide().stories))),
+    guarded('completeness', () => {
+      const problems = [
+        ...unreadText(original, [originalText()], 'original document'),
+        ...unreadText(modified, [modifiedText()], 'modified document'),
+        ...unreadText(output, [newSide(), oldSide()], 'output'),
+      ];
+      const failure = completenessFailure(problems);
+      return failure ? fail('completeness', failure) : pass('completeness', coverageNote(newSide().stories));
+    }),
+    guarded('structure', () => verdict('structure', firstOf(structureProblems(output)))),
+  ];
+
+  return finish('static-redline', checks);
 }

@@ -35,11 +35,13 @@ test('a 100-page contract compares in the browser', async ({ page }) => {
   await page.getByRole('button', { name: 'Compare' }).click();
   await expect(page.locator('#status')).toHaveAttribute('data-state', 'done', { timeout: 60_000 });
   // 'done' means the independent Checker also read all 100 pages and passed the output.
-  await expect(page.locator('#report li[data-passed="true"]')).toHaveCount(4);
+  await expect(page.locator('#report-tracked li[data-passed="true"]')).toHaveCount(6);
+  await expect(page.locator('#report-static li[data-passed="true"]')).toHaveCount(9);
+  await expect(page.frameLocator('#viewer').getByText('Comparison of documents')).toBeVisible({ timeout: 30_000 });
   const wallMs = Date.now() - started;
   const engineMs = Number(await page.locator('#status').getAttribute('data-engine-ms'));
   const longestGapMs = await page.evaluate(() => (window as unknown as { longestGapMs: number }).longestGapMs);
-  console.log(`100-page contract: engine ${engineMs} ms, click-to-done (compare + check) ${wallMs} ms, longest main-thread pause ${Math.round(longestGapMs)} ms`);
+  console.log(`100-page contract: engine ${engineMs} ms, click-to-done (both Word files made, checked and shown) ${wallMs} ms, longest main-thread pause ${Math.round(longestGapMs)} ms`);
 
   // Generous ceilings: this guards against a collapse in speed, not small drifts.
   expect(engineMs).toBeLessThan(30_000);
@@ -47,7 +49,7 @@ test('a 100-page contract compares in the browser', async ({ page }) => {
   expect(longestGapMs).toBeLessThan(1_000);
 
   const downloadPromise = page.waitForEvent('download');
-  await page.getByRole('link', { name: /Download Word file/ }).click();
+  await page.locator('#download-tracked').click();
   const redline = new Uint8Array(await readFile(await (await downloadPromise).path()));
   const found = await readTrackedChanges(redline);
   // Every edit made to the modified version shows up as some tracked change.

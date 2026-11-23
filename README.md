@@ -20,10 +20,11 @@ npm install
 npm run dev
 ```
 
-Then open the address it prints (normally http://localhost:5173). At this
-stage it is a bare development page: choose an original and a modified `.docx`,
-press Compare, read the check report, and download the result as a Word file
-with tracked changes (offered only if every check passed).
+Then open the address it prints (normally http://localhost:5173). Drop in an
+original and a modified `.docx` and press Compare. The page shows the redline,
+a summary of the changes and a check report, and offers two Word downloads: one
+with tracked changes, one with the static (Litera-style) redline. Each is
+offered only if every check on it passed.
 
 The comparison engine is [docxodus](https://www.npmjs.com/package/docxodus), a
 .NET engine compiled to WebAssembly. `npm run dev` and `npm run build` copy its

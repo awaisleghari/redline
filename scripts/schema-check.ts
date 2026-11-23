@@ -36,7 +36,7 @@ try {
     writeFileSync(join(folder, `${pair.id}.upload-modified.docx`), pair.modified);
     const tracked = await compareDocuments(pair.original, pair.modified, { authorName: REVISION_AUTHOR });
     writeFileSync(join(folder, `${pair.id}.output-tracked.docx`), tracked);
-    const staticRedline = await makeStaticRedline(tracked, { originalName: 'original.docx', modifiedName: 'modified.docx', comparedAt: '23 November 2026 at 14:05 (UTC+00:00)' });
+    const staticRedline = await makeStaticRedline(tracked, pair.original, { originalName: 'original.docx', modifiedName: 'modified.docx', comparedAt: '23 November 2026 at 14:05 (UTC+00:00)' });
     writeFileSync(join(folder, `${pair.id}.output-static.docx`), staticRedline.docx);
   }
 

@@ -14,7 +14,7 @@ const convert = (inner: string, options = DEFAULT_STYLE_OPTIONS): { xml: string;
   const result = convertPart(doc(inner), options);
   return { xml: body(result.xml), counts: result.counts };
 };
-const asWritten = { deletionBeforeInsertion: false, unnumberRemovedParagraphs: false };
+const asWritten = { ...DEFAULT_STYLE_OPTIONS, deletionBeforeInsertion: false, unnumberRemovedParagraphs: false };
 
 const INS = '<w:rPr><w:color w:val="0000FF"/><w:u w:val="double"/></w:rPr>';
 const DEL = '<w:rPr><w:strike/><w:color w:val="FF0000"/></w:rPr>';
@@ -155,7 +155,7 @@ describe('counting changes', () => {
 
 describe('cover page', () => {
   it('states both file names, the time, a legend of each style, and the counts', () => {
-    const lines = coverLines({ originalName: 'v1.docx', modifiedName: 'v2.docx', comparedAt: '23 November 2026 at 14:05', insertions: 3, deletions: 2, moves: 1 }).map((l) => l.text);
+    const lines = coverLines({ originalName: 'v1.docx', modifiedName: 'v2.docx', comparedAt: '23 November 2026 at 14:05', insertions: 3, deletions: 2, moves: 1, formattingChanges: 4 }).map((l) => l.text);
     expect(lines).toEqual([
       'Comparison of documents',
       'Original: v1.docx',
@@ -166,10 +166,12 @@ describe('cover page', () => {
       'Deleted text',
       'Text moved from here',
       'Text moved to here',
+      'Text whose formatting changed',
       'Changes',
       'Insertions: 3',
       'Deletions: 2',
       'Moves: 1',
+      'Formatting changes: 4',
     ]);
   });
 });

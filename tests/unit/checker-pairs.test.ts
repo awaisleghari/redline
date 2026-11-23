@@ -18,6 +18,6 @@ describe('Checker on real engine output', () => {
     const report = await checkTrackedChanges({ original: pair.original, modified: pair.modified, output });
     expect(report.checks.filter((c) => !c.passed)).toEqual([]);
     expect(report.passed).toBe(true);
-    expect(report.checks.map((c) => c.id)).toEqual(['accept-all', 'reject-all', 'completeness', 'structure']);
+    expect(report.checks.map((c) => c.id)).toEqual(['accept-all', 'reject-all', 'formatting', 'numbering', 'completeness', 'structure']);
   });
 });

@@ -1,5 +1,5 @@
 /** Page-side handle on the Checker's Web Worker. */
-import type { CheckInput, CheckReport } from './index';
+import type { CheckInput, CheckReport, StaticCheckInput } from './index';
 import type { CheckRequest, CheckResponse } from './protocol';
 
 interface Pending {
@@ -33,14 +33,24 @@ export class CheckerClient {
   }
 
   checkTrackedChanges(input: CheckInput): Promise<CheckReport> {
-    const id = this.nextId++;
-    const request: CheckRequest = {
-      type: 'check-tracked-changes',
-      id,
+    return this.send({ type: 'check-tracked-changes', id: this.nextId++, original: copy(input.original), modified: copy(input.modified), output: copy(input.output) });
+  }
+
+  checkStaticRedline(input: StaticCheckInput): Promise<CheckReport> {
+    return this.send({
+      type: 'check-static-redline',
+      id: this.nextId++,
       original: copy(input.original),
       modified: copy(input.modified),
       output: copy(input.output),
-    };
+      originalName: input.originalName,
+      modifiedName: input.modifiedName,
+      comparedAt: input.comparedAt,
+    });
+  }
+
+  private send(request: CheckRequest): Promise<CheckReport> {
+    const id = request.id;
     return new Promise<CheckReport>((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
       this.worker.postMessage(request, [request.original, request.modified, request.output]);

@@ -22,6 +22,8 @@ export interface BrokenCase {
   damage: (files: ZipEntries) => void | Uint8Array;
   /** Exactly the checks that must fail. */
   caughtBy: CheckId[];
+  /** Set when the damage leaves every character in place (only a link's destination differs), so position-by-position checks still run. */
+  textIntact?: boolean;
 }
 
 const decoder = new TextDecoder();
@@ -476,6 +478,7 @@ export const BROKEN_CASES: BrokenCase[] = [
     pairId: 'one-word-change',
     damage: (f) => edit(f, DOC, (x) => swap(x, PARA(PAYMENT), `<w:p><w:hyperlink w:anchor="_Elsewhere"><w:r><w:t xml:space="preserve">${PAYMENT}</w:t></w:r></w:hyperlink></w:p>`)),
     caughtBy: TEXT,
+    textIntact: true,
   },
   {
     id: 'hyperlink-address-altered',
@@ -483,6 +486,7 @@ export const BROKEN_CASES: BrokenCase[] = [
     pairId: 'hyperlink-address-change',
     damage: (f) => edit(f, 'word/_rels/document.xml.rels', (x) => x.replaceAll('https://example.com/terms-2026', 'https://example.net/other')),
     caughtBy: ['accept-all'],
+    textIntact: true,
   },
   {
     id: 'watermark-text-changed',
@@ -550,6 +554,21 @@ export const BROKEN_CASES: BrokenCase[] = [
     caughtBy: ['reject-all'],
   },
 ];
+
+/**
+ * Every check expected to fail for a case. Formatting and clause numbers are
+ * compared against the modified document position by position, which is only
+ * possible when the text matches; so whenever "accept all" fails, those two are
+ * reported as not checkable (failed) as well.
+ */
+export function expectedFailures(brokenCase: BrokenCase): CheckId[] {
+  const failing = new Set<CheckId>(brokenCase.caughtBy);
+  if (failing.has('accept-all') && !brokenCase.textIntact) {
+    failing.add('formatting');
+    failing.add('numbering');
+  }
+  return [...failing].sort();
+}
 
 /** Apply a case's damage to a genuine output and return the broken file. */
 export async function breakOutput(genuine: Uint8Array, brokenCase: BrokenCase): Promise<Uint8Array> {
