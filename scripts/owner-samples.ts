@@ -5,14 +5,15 @@
  * the product would release them.
  *
  * Usage: npx tsx scripts/owner-samples.ts <output folder> [pair id ...]
+ * With PDF_CONVERTER_URL set (e.g. http://127.0.0.1:8791, the converter container), the PDF is written too.
  * The folder is for looking at, not for committing (owner-checks/ is git-ignored).
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { initialize } from 'docxodus/core';
-import { runComparison } from '../src/app/flow';
+import { runComparison, runPdf } from '../src/app/flow';
 import { formatComparedAt } from '../src/app/format';
-import { checkStaticRedline, checkTrackedChanges } from '../src/checker';
+import { checkPdf, checkStaticRedline, checkTrackedChanges } from '../src/checker';
 import { makeStaticRedline } from '../src/producer/make-static-redline';
 import { produceTrackedChanges } from '../src/producer/produce';
 import { ALL_PAIR_SPECS, buildPair, pairById } from '../tests/fixtures/pairs';
@@ -47,6 +48,24 @@ for (const spec of specs) {
       console.log(`${spec.id}: ${name} written (every check passed)`);
     } else {
       console.log(`${spec.id}: ${name} WITHHELD: ${reviewed.report.checks.find((c) => !c.passed)?.failure?.message}`);
+      process.exitCode = 1;
+    }
+  }
+  const converter = process.env.PDF_CONVERTER_URL;
+  if (converter && result.staticRedline.file) {
+    const pdf = await runPdf(result.staticRedline.file, {
+      convert: async (docx) => {
+        const response = await fetch(`${converter}/convert`, { method: 'POST', headers: { 'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }, body: new Blob([docx.slice().buffer]) });
+        if (!response.ok) throw new Error(await response.text());
+        return new Uint8Array(await response.arrayBuffer());
+      },
+      check: checkPdf,
+    });
+    if (pdf.file) {
+      writeFileSync(join(folder, `${spec.id} - redline.pdf`), pdf.file);
+      console.log(`${spec.id}: PDF written (both checks passed)`);
+    } else {
+      console.log(`${spec.id}: PDF WITHHELD: ${pdf.report.checks.find((c) => !c.passed)?.failure?.message}`);
       process.exitCode = 1;
     }
   }
