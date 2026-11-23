@@ -42,16 +42,33 @@ export function stopContainer(): void {
 }
 
 /** Everything the container has written to its log so far. */
-export const containerLog = (): string => {
-  const run = spawnSync('docker', ['logs', CONTAINER_NAME], { encoding: 'utf8' });
+export const containerLog = (name = CONTAINER_NAME): string => {
+  const run = spawnSync('docker', ['logs', name], { encoding: 'utf8' });
   return run.stdout + run.stderr;
 };
 
 /** Every file and folder the container currently holds in its scratch space. */
-export const containerScratchFiles = (): string[] =>
-  execFileSync('docker', ['exec', CONTAINER_NAME, 'sh', '-c', 'find /tmp /home/converter -mindepth 1 2>/dev/null || true'], { encoding: 'utf8' })
+export const containerScratchFiles = (name = CONTAINER_NAME): string[] =>
+  // As root, so that nothing is hidden from the search by permissions.
+  execFileSync('docker', ['exec', '-u', '0', name, 'sh', '-c', 'find /tmp /home/converter /var/tmp -mindepth 1'], { encoding: 'utf8' })
     .split('\n')
     .filter(Boolean);
+
+/** Processes of LibreOffice still running in the container. */
+export const containerOfficeProcesses = (name = CONTAINER_NAME): string[] =>
+  execFileSync('docker', ['exec', '-u', '0', name, 'sh', '-c', 'for p in /proc/[0-9]*; do tr "\\0" " " < $p/cmdline 2>/dev/null; echo; done | grep "[s]office" || true'], { encoding: 'utf8' })
+    .split('\n')
+    .filter(Boolean);
+
+/** Run a short Python program inside the container (to reach the server directly, without Docker's port forwarding in between). */
+export const runInContainer = (python: string, name = CONTAINER_NAME): string => execFileSync('docker', ['exec', name, 'python3', '-c', python], { encoding: 'utf8' });
+
+/** Start a second converter with its own settings (for example a very short time limit). */
+export function startExtraContainer(name: string, port: number, env: Record<string, string>): void {
+  docker(['rm', '-f', name], true);
+  docker(['run', '-d', '--name', name, '--read-only', '--tmpfs', '/tmp', '--tmpfs', '/home/converter', ...Object.entries(env).flatMap(([k, v]) => ['-e', `${k}=${v}`]), '-p', `127.0.0.1:${port}:8080`, 'redline-pdf']);
+}
+export const removeContainer = (name: string): void => void docker(['rm', '-f', name], true);
 
 export async function convertToPdf(docx: Uint8Array): Promise<Uint8Array> {
   const response = await fetch(CONVERT_URL, { method: 'POST', headers: { 'Content-Type': DOCX_TYPE }, body: new Blob([docx.slice().buffer]) });

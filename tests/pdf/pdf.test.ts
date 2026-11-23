@@ -11,7 +11,7 @@ import { produceTrackedChanges } from '../../src/producer/produce';
 import { BROKEN_PDF_CASES } from '../fixtures/broken-pdf';
 import { buildLargeContract } from '../fixtures/large';
 import { ALL_PAIR_SPECS, CHECK_ONLY_PAIRS, buildDocx, buildPair, pairById } from '../fixtures/pairs';
-import { containerLog, containerScratchFiles, convertToPdf, CONVERT_URL, DOCX_TYPE } from './container';
+import { containerLog, containerOfficeProcesses, containerScratchFiles, convertToPdf, CONVERT_URL, DOCX_TYPE, removeContainer, runInContainer, startExtraContainer } from './container';
 
 const COVER = { originalName: 'original.docx', modifiedName: 'modified.docx', comparedAt: '23 November 2026 at 14:05 (UTC+00:00)' };
 
@@ -107,8 +107,63 @@ describe('the converter keeps nothing and says nothing', () => {
     expect(new TextDecoder().decode(new Uint8Array(await response.arrayBuffer()).slice(0, 5))).toBe('%PDF-');
   });
 
-  it('after every conversion above, successful or not: no file is left behind and nothing was logged', () => {
+  it('a caller that hangs up part-way through sending, or before the reply, leaves no trace', async () => {
+    // Done from inside the container, straight to the server: Docker's port forwarding would hide a dropped connection.
+    const hangUp = `
+import socket
+for body in (b"PK" + b"x" * 1000, b""):
+    s = socket.create_connection(("127.0.0.1", 8080))
+    s.sendall(b"POST /convert HTTP/1.1\\r\\nHost: x\\r\\nContent-Type: ${DOCX_TYPE}\\r\\nContent-Length: 500000\\r\\n\\r\\n" + body)
+    s.close()
+s = socket.create_connection(("127.0.0.1", 8080))
+s.sendall(b"GET /health HTTP/1.1\\r\\nHost: x\\r\\n\\r\\n")
+s.close()
+print("done")`;
+    expect(runInContainer(hangUp).trim()).toBe('done');
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(containerLog()).toBe('');
+    // And the server is still answering.
+    expect((await fetch(CONVERT_URL.replace('/convert', '/health'))).status).toBe(200);
+  });
+
+  it('three conversions at once all succeed and leave nothing', async () => {
+    const pair = await buildPair(pairById('several-changes'));
+    const redline = await staticRedline(pair.original, pair.modified);
+    const pdfs = await Promise.all([convertToPdf(redline), convertToPdf(redline), convertToPdf(redline)]);
+    for (const pdf of pdfs) expect((await checkPdf({ staticRedline: redline, pdf })).passed).toBe(true);
+  });
+
+  it('a conversion that runs out of time is stopped completely: no process, no file, no log', async () => {
+    const name = 'redline-pdf-timeout-test';
+    startExtraContainer(name, 8792, { CONVERT_TIMEOUT_SECONDS: '0.3' });
+    try {
+      const url = 'http://127.0.0.1:8792';
+      for (let attempt = 0; attempt < 60; attempt++) {
+        try {
+          if ((await fetch(`${url}/health`)).ok) break;
+        } catch {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+      }
+      const pair = await buildPair(pairById('several-changes'));
+      const redline = await staticRedline(pair.original, pair.modified);
+      for (let i = 0; i < 3; i++) {
+        const response = await fetch(`${url}/convert`, { method: 'POST', headers: { 'Content-Type': DOCX_TYPE }, body: new Blob([redline.slice().buffer]) });
+        expect(response.status).toBe(422);
+        expect(await response.text()).toBe('The document could not be converted to PDF.');
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      expect(containerOfficeProcesses(name)).toEqual([]);
+      expect(containerScratchFiles(name)).toEqual([]);
+      expect(containerLog(name)).toBe('');
+    } finally {
+      removeContainer(name);
+    }
+  });
+
+  it('after every conversion above, successful or not: no file is left behind, nothing is still running, and nothing was logged', () => {
     expect(containerScratchFiles()).toEqual([]);
+    expect(containerOfficeProcesses()).toEqual([]);
     expect(containerLog()).toBe('');
   });
 });

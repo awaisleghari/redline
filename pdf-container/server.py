@@ -9,13 +9,31 @@ Privacy rules (PLAN.md, "PDF step and privacy"):
 """
 import os
 import shutil
+import signal
+import socket
 import subprocess
 import tempfile
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 MAX_BYTES = 30 * 1024 * 1024      # a little above the page's 25 MB upload limit
-TIMEOUT_SECONDS = 120
+TIMEOUT_SECONDS = float(os.environ.get("CONVERT_TIMEOUT_SECONDS", "120"))
+
+# LibreOffice settings written into each request's throwaway profile: never
+# update links, and never load a linked picture or file from anywhere (a
+# document must not be able to pull a file from this machine, or from the
+# internet, into its PDF).
+PROFILE_SETTINGS = """<?xml version="1.0" encoding="UTF-8"?>
+<oor:items xmlns:oor="http://openoffice.org/2001/registry" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<item oor:path="/org.openoffice.Office.Common/Security/Scripting"><prop oor:name="BlockUntrustedRefererLinks" oor:op="fuse"><value>true</value></prop></item>
+<item oor:path="/org.openoffice.Office.Common/Security/Scripting"><prop oor:name="MacroSecurityLevel" oor:op="fuse"><value>3</value></prop></item>
+<item oor:path="/org.openoffice.Office.Common/Security/Scripting"><prop oor:name="DisableMacrosExecution" oor:op="fuse"><value>true</value></prop></item>
+<item oor:path="/org.openoffice.Office.Writer/Content/Update"><prop oor:name="Link" oor:op="fuse"><value>0</value></prop></item>
+<item oor:path="/org.openoffice.Office.Writer/Content/Update"><prop oor:name="Field" oor:op="fuse"><value>false</value></prop></item>
+<item oor:path="/org.openoffice.Office.Writer/Content/Update"><prop oor:name="Chart" oor:op="fuse"><value>false</value></prop></item>
+</oor:items>
+"""
 DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 # LibreOffice is heavy; convert at most two documents at a time.
 SLOTS = threading.BoundedSemaphore(2)
@@ -24,11 +42,15 @@ SLOTS = threading.BoundedSemaphore(2)
 def convert(docx: bytes) -> bytes:
     """Convert in a private temporary folder and delete it afterwards, always."""
     folder = tempfile.mkdtemp(prefix="c-")
+    process = None
     try:
         source = os.path.join(folder, "in.docx")
         with open(source, "wb") as handle:
             handle.write(docx)
-        subprocess.run(
+        os.makedirs(os.path.join(folder, "profile", "user"))
+        with open(os.path.join(folder, "profile", "user", "registrymodifications.xcu"), "w", encoding="utf-8") as handle:
+            handle.write(PROFILE_SETTINGS)
+        process = subprocess.Popen(
             [
                 "soffice",
                 "--headless", "--norestore", "--nolockcheck", "--nodefault", "--nofirststartwizard",
@@ -41,16 +63,69 @@ def convert(docx: bytes) -> bytes:
                 source,
             ],
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            timeout=TIMEOUT_SECONDS, check=True, cwd=folder,
-            env={"HOME": folder, "PATH": os.environ.get("PATH", "/usr/bin:/bin"), "LANG": "C.UTF-8"},
+            cwd=folder,
+            # Everything LibreOffice writes, including its own scratch files, goes inside the folder.
+            env={"HOME": folder, "TMPDIR": folder, "TMP": folder, "TEMP": folder, "XDG_RUNTIME_DIR": folder,
+                 "PATH": os.environ.get("PATH", "/usr/bin:/bin"), "LANG": "C.UTF-8"},
+            # Its own process group, so that every process it starts can be stopped with it.
+            start_new_session=True,
         )
+        if process.wait(timeout=TIMEOUT_SECONDS) != 0:
+            raise RuntimeError("conversion failed")
         with open(os.path.join(folder, "in.pdf"), "rb") as handle:
             pdf = handle.read()
         if not pdf.startswith(b"%PDF-"):
             raise RuntimeError("no PDF produced")
         return pdf
     finally:
+        # Stop LibreOffice and everything it started before deleting, so nothing can write the folder back.
+        if process is not None:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+            try:
+                process.wait(timeout=10)
+            except Exception:
+                pass
+            # Wait until every process of that group has really gone (they hold files and a socket open until then).
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline:
+                try:
+                    os.killpg(process.pid, 0)
+                except (ProcessLookupError, PermissionError):
+                    break
+                time.sleep(0.05)
         shutil.rmtree(folder, ignore_errors=True)
+        remove_dead_sockets()
+
+
+def remove_dead_sockets() -> None:
+    """
+    LibreOffice keeps a small socket file in /tmp while it runs and removes it
+    when it finishes normally. One that was stopped leaves its socket behind.
+    Delete every such socket that nothing is listening on any more (a socket
+    still in use belongs to a conversion that is running, and is left alone).
+    """
+    try:
+        names = [name for name in os.listdir(tempfile.gettempdir()) if name.startswith("OSL_PIPE_")]
+    except OSError:
+        return
+    for name in names:
+        path = os.path.join(tempfile.gettempdir(), name)
+        probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        probe.settimeout(1)
+        try:
+            probe.connect(path)
+        except (ConnectionRefusedError, FileNotFoundError):
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+        except OSError:
+            pass
+        finally:
+            probe.close()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -67,8 +142,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.end_headers()
+            self.wfile.write(body)
+        except OSError:  # the caller went away; there is nobody to tell
+            self.close_connection = True
 
     def refuse(self, status: int, message: str) -> None:
         self.close_connection = True
@@ -102,7 +180,11 @@ class Handler(BaseHTTPRequestHandler):
             return self.refuse(413, "The file is too large to convert.")
         if self.headers.get("Content-Type", "").split(";")[0].strip() != DOCX:
             return self.refuse(415, "Only Word documents (.docx) can be converted.")
-        docx = self.rfile.read(length)
+        try:
+            docx = self.rfile.read(length)
+        except OSError:
+            self.close_connection = True
+            return
         if len(docx) != length or not docx.startswith(b"PK"):
             return self.refuse(400, "The file is not a Word document.")
         if not SLOTS.acquire(timeout=60):
@@ -116,5 +198,14 @@ class Handler(BaseHTTPRequestHandler):
         self.reply(200, pdf, "application/pdf")
 
 
+class QuietServer(ThreadingHTTPServer):
+    daemon_threads = True
+
+    def handle_error(self, request, client_address):  # noqa: ARG002
+        # The default prints a traceback (with the caller's address) when a connection
+        # drops. Nothing is logged here, ever.
+        pass
+
+
 if __name__ == "__main__":
-    ThreadingHTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8080"))), Handler).serve_forever()
+    QuietServer(("0.0.0.0", int(os.environ.get("PORT", "8080"))), Handler).serve_forever()

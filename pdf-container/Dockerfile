@@ -15,7 +15,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       libreoffice-writer-nogui \
-      python3 \
+      python3 tini \
       fonts-liberation fonts-liberation2 fonts-crosextra-carlito fonts-crosextra-caladea fonts-dejavu-core \
  && rm -rf /var/lib/apt/lists/* \
  && fc-cache -f
@@ -27,4 +27,6 @@ USER converter
 WORKDIR /home/converter
 ENV HOME=/home/converter PORT=8080
 EXPOSE 8080
+# tini is a minimal init: it collects the remains of any LibreOffice process that had to be stopped.
+ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["python3", "-u", "/opt/converter/server.py"]

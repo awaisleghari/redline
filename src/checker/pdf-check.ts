@@ -9,147 +9,211 @@
  * character is compared exactly.
  *
  * How the two are matched:
- *   1. The main text must appear in the PDF, complete and in order.
- *   2. What is left in the PDF must then account, in turn, for every text box,
- *      footnote and endnote (complete and in order), and for the headers and
- *      footers (which repeat on each page; their page numbers are not compared).
- *   3. Whatever is still left can only be what a page shows without the
- *      document spelling it out, and only in the place where a page shows it:
- *        - a clause number or bullet, immediately before a list item;
- *        - a footnote number, where the text has a footnote mark;
- *        - page numbers and note numbers, at the edge of a page (never letters).
- *      Anything else, anywhere else, is text the redline does not contain: one
- *      extra digit in the middle of a sentence fails the check.
+ *   1. The main text must appear in the PDF, complete and in order. So must
+ *      every text box, footnote, endnote, header and footer.
+ *   2. A page prints a few things the document does not spell out. Each is
+ *      required or allowed in exactly one place, and must be exactly right:
+ *        - a clause number: required immediately before the paragraph it
+ *          belongs to, and it must be the number the Checker works out itself;
+ *        - a bullet: one or two symbols before a bulleted paragraph;
+ *        - a note's number: required where the text has the note's mark, and
+ *          again in front of the note itself;
+ *        - a page number: digits where a header or footer has a page-number field;
+ *        - the dots or line of a tab leader, where the text has a tab;
+ *        - a table's heading row, repeated where the table runs onto a new page.
+ *   3. Nothing else may be there. One stray character anywhere fails the check.
  */
 import { FORMAT, type StaticKind } from './formatting';
 import { isBlank, type PdfChar, type PdfReading } from './pdf';
 import type { CheckFailure } from './report';
-import { CHAR, isStructureMark, kindOfCode, type Story, type StoryReading } from './stories';
+import { CHAR, isStructureMark, kindOfCode, MARK, type Story, type StoryReading } from './stories';
 
 /** The colour each kind of change must be printed in (the style spec in PLAN.md). */
 const COLOUR: Record<StaticKind, string> = { inserted: '0000FF', deleted: 'FF0000', movedFrom: '008000', movedTo: '008000' };
 const KIND_NAME: Record<StaticKind, string> = { inserted: 'inserted', deleted: 'deleted', movedFrom: 'moved-from', movedTo: 'moved-to' };
 
+/** Something a page prints at a point in the text without the document spelling it out. */
+type Token = { t: 'note'; kind: 'footnote' | 'endnote'; n: number } | { t: 'symbol' } | { t: 'tab' } | { t: 'page-number' } | { t: 'label'; text: string } | { t: 'bullet' };
+
 /** One character the PDF is expected to show. */
 interface Expected {
   c: string;
+  /** Compare without regard to case (text formatted as capitals is printed in capitals). */
+  fold: boolean;
   kind: StaticKind | undefined;
   /** Characters left in this paragraph after this one (0 for its last). */
   toParagraphEnd: number;
   /** Paragraph number within its story, for reports. */
   paragraph: number;
-  /** True when a mark that prints something of its own (a footnote number, a symbol, a field) follows this character. */
-  markAfter: boolean;
-  /** For the first character of a paragraph: the clause number printed before it ('' if none), and whether it is a list item. */
-  label?: { text: string; listed: boolean };
+  /** What a page prints immediately before this character. */
+  before: Token[];
+  /** What a page prints immediately after this character (used for the last character of a story). */
+  after: Token[];
 }
 
-/** The characters a story prints, without white space, as the PDF would show them. */
-function expectedChars(story: Story, withoutDigits = false): Expected[] {
+/** Characters as compared: compatibility forms spelled out, and every kind of hyphen as a plain one. */
+const canon = (c: string): string => (c === '‐' || c === '‑' ? '-' : c);
+const same = (found: string, expected: Expected): boolean => (expected.fold ? found.toLowerCase() === expected.c : found === expected.c);
+
+const ROMAN: [number, string][] = [[1000, 'm'], [900, 'cm'], [500, 'd'], [400, 'cd'], [100, 'c'], [90, 'xc'], [50, 'l'], [40, 'xl'], [10, 'x'], [9, 'ix'], [5, 'v'], [4, 'iv'], [1, 'i']];
+function roman(n: number): string {
+  let out = '';
+  for (const [size, symbol] of ROMAN) for (; n >= size; n -= size) out += symbol;
+  return out;
+}
+const escape = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** The text a token may print, as a regular-expression fragment. */
+function pattern(token: Token): string {
+  switch (token.t) {
+    case 'note':
+      // A note is numbered in order: as a number, or (Word's default for endnotes) a roman numeral, or symbols.
+      return `(?:${token.n}|${roman(token.n)}|${roman(token.n).toUpperCase()}|[^\\p{L}\\d]{1,3})`;
+    case 'symbol':
+      return '.';
+    case 'tab':
+      return '[._\\-–—·…]*';
+    case 'page-number':
+      return '(?:\\d{1,6}|[ivxlcdm]{1,8}|[IVXLCDM]{1,8})';
+    case 'label':
+      return escape(token.text);
+    case 'bullet':
+      return '[^\\p{L}\\d]{0,2}';
+  }
+}
+
+interface NoteCounters {
+  footnote: number;
+  endnote: number;
+}
+
+/** The characters a story prints, without white space, with what a page adds around them. */
+function expectedChars(story: Story, counters: NoteCounters): { stream: Expected[]; trailing: Token[] } {
   const out: Expected[] = [];
+  let pending: Token[] = []; // tokens waiting for the next character
   let paragraphNumber = 0;
   for (const paragraph of story.details) {
     if (isStructureMark(paragraph.text)) continue;
     paragraphNumber++;
+    // The clause number or bullet printed in front of the paragraph.
+    const label = [...paragraph.number.normalize('NFKC')].filter((c) => !isBlank(c)).map(canon).join('');
+    if (label !== '') pending.push({ t: 'label', text: label });
+    else if (paragraph.listed) pending.push({ t: 'bullet' });
+
     const start = out.length;
-    let markPending = false;
-    for (let i = 0; i < paragraph.text.length; i++) {
+    const text = paragraph.text;
+    let field: { code: string; pageNumber: boolean; inResult: boolean } | undefined;
+    for (let i = 0; i < text.length; ) {
       const code = paragraph.meta.charCodeAt(i);
-      if (code & FORMAT.hidden) continue; // hidden text is not printed
       if (!(code & CHAR.isText)) {
-        // A marker is not a character, but it may print something (a footnote number, a symbol).
-        if (!isBlank(paragraph.text[i]!)) {
-          if (out.length > start) out[out.length - 1]!.markAfter = true;
-          else markPending = true;
+        // A marker: not a character of the text, but it may stand for something a page prints.
+        const at = (mark: string): boolean => text.startsWith(mark, i);
+        if (at(MARK.footnote)) {
+          pending.push({ t: 'note', kind: 'footnote', n: ++counters.footnote });
+          i += MARK.footnote.length;
+        } else if (at(MARK.endnote)) {
+          pending.push({ t: 'note', kind: 'endnote', n: ++counters.endnote });
+          i += MARK.endnote.length;
+        } else if (at('⟦symbol ')) {
+          pending.push({ t: 'symbol' });
+          i = text.indexOf('⟧', i) + 1 || text.length;
+        } else if (at(MARK.fieldBegin)) {
+          field = { code: '', pageNumber: false, inResult: false };
+          i += MARK.fieldBegin.length;
+        } else if (at(MARK.fieldResult)) {
+          if (field) {
+            field.inResult = true;
+            // A page-number field prints the number of the page it lands on, whatever the document had stored.
+            field.pageNumber = /^\s*(PAGE|NUMPAGES|SECTIONPAGES)\b/i.test(field.code);
+            if (field.pageNumber) pending.push({ t: 'page-number' });
+          }
+          i += MARK.fieldResult.length;
+        } else if (at(MARK.fieldEnd)) {
+          field = undefined;
+          i += MARK.fieldEnd.length;
+        } else {
+          if (field && !field.inResult) field.code += text[i];
+          else if (text[i] === '\t') pending.push({ t: 'tab' });
+          else if (text[i] === '‑' && !(code & FORMAT.hidden)) out.push({ c: '-', fold: false, kind: kindOfCode(code), toParagraphEnd: 0, paragraph: paragraphNumber, before: pending.splice(0), after: [] });
+          i++;
         }
         continue;
       }
-      let text = paragraph.text[i]!.normalize('NFKC');
-      if (code & (FORMAT.caps | FORMAT.smallCaps)) text = text.toUpperCase(); // capitals formatting prints capitals
-      for (const c of text) {
-        if (isBlank(c) || (withoutDigits && /\d/.test(c))) continue;
-        out.push({ c, kind: kindOfCode(code), toParagraphEnd: 0, paragraph: paragraphNumber, markAfter: false });
+      i++;
+      if (code & FORMAT.hidden) continue; // hidden text is not printed
+      if (field?.pageNumber && field.inResult) continue; // the stored page number is not what the page prints
+      const fold = (code & (FORMAT.caps | FORMAT.smallCaps)) !== 0;
+      for (const raw of text[i - 1]!.normalize('NFKC')) {
+        if (isBlank(raw)) continue;
+        const c = canon(raw);
+        out.push({ c: fold ? c.toLowerCase() : c, fold, kind: kindOfCode(code), toParagraphEnd: 0, paragraph: paragraphNumber, before: pending.splice(0), after: [] });
       }
     }
     for (let k = start; k < out.length; k++) out[k]!.toParagraphEnd = out.length - 1 - k;
-    if (out.length > start) {
-      const label = [...paragraph.number.normalize('NFKC')].filter((c) => !isBlank(c)).join('');
-      out[start]!.label = { text: label, listed: paragraph.listed || markPending };
-    }
   }
-  return out;
+  // Tokens after the last character of the story.
+  const trailing = pending;
+  pending = [];
+  if (out.length > 0) out[out.length - 1]!.after = trailing;
+  return { stream: out, trailing };
 }
+
+/** Who has accounted for a character of the PDF. */
+type Owner = undefined | 'body' | 'other' | 'accepted';
 
 interface Source {
   chars: PdfChar[];
-  used: boolean[];
-  /** For characters matched to the main text: which character of the main text. */
-  bodyIndex: (number | undefined)[];
+  owner: Owner[];
 }
 
-interface MatchResult {
-  /** How many expected characters were found, in order. Equal to the stream's length on success. */
-  matched: number;
-  /** The first expected character that was found in the wrong colour. */
-  wrongColour?: { expected: Expected; index: number; found: string };
-  /** Position in the source just after the last match. */
-  sourceAt: number;
+interface Match {
+  /** For each character of the stream, the position in the PDF it was found at. Shorter than the stream on failure. */
+  at: number[];
+  wrongColour?: { expected: Expected; found: string };
 }
 
 /** How many characters in a row must agree before a match is believed after a gap. */
 const RUN = 6;
 
 /**
- * Find `stream` in the unused characters of `source`, complete and in order.
- * After any gap, a match is accepted only where several characters in a row
- * agree, so that a stray character elsewhere on the page (a header, a clause
- * number) is not mistaken for the next character of the text.
+ * Find `stream` among the characters of the PDF that nothing has accounted
+ * for yet, complete and in order. After any gap, a match is accepted only
+ * where several characters in a row agree, so that a stray character elsewhere
+ * on the page is not mistaken for the next character of the text.
  */
-function consume(stream: Expected[], source: Source, skipDigits = false, isBody = false): MatchResult {
-  const { chars, used } = source;
-  const taken: number[] = [];
-  let wrongColour: MatchResult['wrongColour'];
-  let i = 0;
+function find(stream: Expected[], source: Source, as: 'body' | 'other'): Match {
+  const { chars, owner } = source;
+  const at: number[] = [];
+  let wrongColour: Match['wrongColour'];
   let inRun = false;
-  let lastSource = 0;
-  const agreesAhead = (from: number, at: number): boolean => {
+  const agreesAhead = (from: number, position: number): boolean => {
     const need = Math.min(RUN, stream[from]!.toParagraphEnd + 1, stream.length - from);
-    let j = at;
+    let j = position;
     for (let t = 0; t < need; t++) {
-      while (j < chars.length && (used[j] || (skipDigits && /\d/.test(chars[j]!.c)))) j++;
-      if (j >= chars.length || chars[j]!.c !== stream[from + t]!.c) return false;
+      while (j < chars.length && owner[j]) j++;
+      if (j >= chars.length || !same(chars[j]!.c, stream[from + t]!)) return false;
       j++;
     }
     return true;
   };
-  for (let j = 0; j < chars.length && i < stream.length; j++) {
-    if (used[j]) continue;
-    if (skipDigits && /\d/.test(chars[j]!.c)) continue;
-    if (chars[j]!.c === stream[i]!.c && (inRun || agreesAhead(i, j))) {
-      const expected = stream[i]!;
-      if (expected.kind && chars[j]!.color !== COLOUR[expected.kind] && !wrongColour) wrongColour = { expected, index: i, found: chars[j]!.color };
-      taken.push(j);
-      lastSource = j + 1;
-      i++;
+  for (let j = 0; j < chars.length && at.length < stream.length; j++) {
+    if (owner[j]) continue;
+    const expected = stream[at.length]!;
+    if (same(chars[j]!.c, expected) && (inRun || agreesAhead(at.length, j))) {
+      if (expected.kind && chars[j]!.color !== COLOUR[expected.kind] && !wrongColour) wrongColour = { expected, found: chars[j]!.color };
+      at.push(j);
       inRun = true;
     } else {
       inRun = false;
     }
   }
-  if (i === stream.length) {
-    taken.forEach((j, index) => {
-      used[j] = true;
-      if (isBody) source.bodyIndex[j] = index;
-    });
-    // Page numbers inside a header or footer belong to it.
-    if (skipDigits && taken.length > 0) for (let j = taken[0]!; j <= taken[taken.length - 1]!; j++) if (/\d/.test(chars[j]!.c)) used[j] = true;
-  }
-  return { matched: i, wrongColour, sourceAt: lastSource };
+  if (at.length === stream.length) for (const j of at) owner[j] = as;
+  return { at, wrongColour };
 }
 
 const excerpt = (chars: { c: string }[], from: number, length = 50): string =>
   chars
-    .slice(Math.max(0, from), from + length)
+    .slice(Math.max(0, from), Math.max(0, from) + length)
     .map((x) => x.c)
     .join('');
 
@@ -164,12 +228,14 @@ export interface PdfCheckResult {
  * static redline read with `readStories(pkg, 'all', 'static')`.
  */
 export function comparePdf(printed: StoryReading, pdf: PdfReading): PdfCheckResult {
-  const source: Source = { chars: pdf.chars, used: new Array<boolean>(pdf.chars.length).fill(false), bodyIndex: new Array<number | undefined>(pdf.chars.length).fill(undefined) };
-  let bodyStream: Expected[] = [];
+  const chars = pdf.chars.map((x) => ({ ...x, c: canon(x.c) }));
+  const source: Source = { chars, owner: new Array<Owner>(chars.length).fill(undefined) };
+  const { owner } = source;
   let colours: CheckFailure | undefined;
-  const noteColour = (story: Story, result: MatchResult): void => {
-    if (colours || !result.wrongColour) return;
-    const { expected, found } = result.wrongColour;
+  const note = `Compared ${chars.length} characters on ${pdf.pages} page${pdf.pages === 1 ? '' : 's'}.`;
+  const noteColour = (story: Story, match: Match): void => {
+    if (colours || !match.wrongColour) return;
+    const { expected, found } = match.wrongColour;
     colours = {
       message: `Text that is ${KIND_NAME[expected.kind!]} in the redline is not printed in its colour in the PDF.`,
       where: `${story.label}, paragraph ${expected.paragraph}`,
@@ -177,125 +243,159 @@ export function comparePdf(printed: StoryReading, pdf: PdfReading): PdfCheckResu
       found: `colour ${found}`,
     };
   };
-  const note = `Compared ${pdf.chars.length} characters on ${pdf.pages} page${pdf.pages === 1 ? '' : 's'}.`;
-  const missing = (story: Story, stream: Expected[], result: MatchResult): CheckFailure => ({
-    message: `The PDF does not contain the ${story.label} of the redline, complete and in order.`,
-    where: `${story.label}, paragraph ${stream[result.matched]?.paragraph ?? '?'}`,
-    expected: `…${excerpt(stream, result.matched - 15, 65)}…`,
-    found: `…${excerpt(pdf.chars, result.sourceAt - 15, 65)}… (white space is not compared)`,
-  });
-
-  if (printed.problems.length > 0) return { text: { message: printed.problems[0]! }, note };
-  if (pdf.chars.length === 0) return { text: { message: 'The PDF contains no text.' }, note };
-
-  // 1. The main text, complete and in order.
-  const body = printed.stories.find((s) => s.key === 'body');
-  if (body) {
-    const stream = expectedChars(body);
-    const result = consume(stream, source, false, true);
-    if (result.matched < stream.length) return { text: missing(body, stream, result), note };
-    noteColour(body, result);
-    bodyStream = stream;
-  }
-
-  // 2. Text boxes and notes, each exactly once; then headers and footers, as often as they repeat.
-  const repeating = (s: Story): boolean => s.kind === 'header' || s.kind === 'footer' || s.key.startsWith('header/') || s.key.startsWith('footer/');
-  for (const story of printed.stories) {
-    if (story.key === 'body' || repeating(story)) continue;
-    const stream = expectedChars(story);
-    if (stream.length === 0) continue;
-    const result = consume(stream, source);
-    if (result.matched < stream.length) return { text: missing(story, stream, result), note };
-    noteColour(story, result);
-  }
-  for (const story of printed.stories) {
-    if (!repeating(story)) continue;
-    const stream = expectedChars(story, true);
-    if (stream.length === 0) continue;
-    let times = 0;
-    for (;;) {
-      const result = consume(stream, source, true);
-      if (result.matched < stream.length) {
-        // The ordinary header or footer of a section must be printed at least once.
-        if (times === 0 && story.key.endsWith('/default')) return { text: missing(story, stream, result), note };
-        break;
-      }
-      noteColour(story, result);
-      if (++times > pdf.pages) break;
-    }
-  }
-
-  // 3. What is left must be only what a page shows without the document
-  // spelling it out, and only where a page shows it.
-  const { chars, used, bodyIndex } = source;
-  const isLetter = (c: string): boolean => /\p{L}/u.test(c);
-  // Note numbers are digits, or (Word's default for endnotes) small roman numerals, or symbols such as *.
-  const hasNotes = printed.stories.some((s) => s.kind === 'footnote' || s.kind === 'endnote');
-  const isNoteNumber = (t: string): boolean => /^(\d{1,3}|[ivxlc]{1,6}|[^\p{L}\d]{1,3})$/u.test(t);
-  const extra = (j: number, why: string): PdfCheckResult => ({
+  const missing = (story: Story, stream: Expected[], match: Match): PdfCheckResult => ({
     text: {
-      message: `The PDF contains text that is not in the static redline (${why}).`,
-      where: `page ${chars[j]!.page}`,
-      expected: 'nothing here',
-      found: `…${excerpt(chars, j - 25, 25)}[${excerpt(chars, j, 12)}]…  (the bracketed text is the extra; white space is not compared)`,
+      message: `The PDF does not contain the ${story.label} of the redline, complete and in order.`,
+      where: `${story.label}, paragraph ${stream[match.at.length]?.paragraph ?? '?'}`,
+      expected: `…${excerpt(stream, match.at.length - 15, 65)}…`,
+      found: `…${excerpt(chars, (match.at[match.at.length - 1] ?? 0) - 14, 65)}… (white space is not compared)`,
+    },
+    note,
+  });
+  const extra = (j: number, why: string, expected = 'nothing here'): PdfCheckResult => ({
+    text: {
+      message: `The PDF does not match the static redline: ${why}.`,
+      where: `page ${chars[Math.min(j, chars.length - 1)]?.page ?? '?'}`,
+      expected,
+      found: `…${excerpt(chars, j - 25, 25)}[${excerpt(chars, j, 14)}]…  (the bracketed text is where it differs; white space is not compared)`,
     },
     colours,
     note,
   });
-  // The nearest main-text character before and after each position.
-  const before: (number | undefined)[] = [];
-  let last: number | undefined;
-  for (let j = 0; j < chars.length; j++) {
-    before[j] = last;
-    if (bodyIndex[j] !== undefined) last = j;
-  }
-  const after: (number | undefined)[] = new Array<number | undefined>(chars.length).fill(undefined);
-  let next: number | undefined;
-  for (let j = chars.length - 1; j >= 0; j--) {
-    after[j] = next;
-    if (bodyIndex[j] !== undefined) next = j;
-  }
 
-  for (let j = 0; j < chars.length; j++) {
-    if (used[j]) continue;
-    // An unbroken stretch of unexplained characters.
-    let end = j;
-    while (end + 1 < chars.length && !used[end + 1]) end++;
-    const gap = chars.slice(j, end + 1);
-    const text = gap.map((x) => x.c).join('');
-    const p = before[j];
-    const n = after[end];
-    const samePage = p !== undefined && n !== undefined && chars[p]!.page === chars[n]!.page && gap.every((x) => x.page === chars[p]!.page);
-    const prev = p !== undefined ? bodyStream[bodyIndex[p]!] : undefined;
-    const following = n !== undefined ? bodyStream[bodyIndex[n]!] : undefined;
-    const consecutive = p !== undefined && n !== undefined && bodyIndex[n]! === bodyIndex[p]! + 1;
+  if (printed.problems.length > 0) return { text: { message: printed.problems[0]! }, note };
+  if (chars.length === 0) return { text: { message: 'The PDF contains no text.' }, note };
 
-    if (samePage && consecutive && prev!.toParagraphEnd > 0) {
-      // Inside a paragraph, on one page: only a footnote number or symbol, where the text has such a mark.
-      if (!prev!.markAfter) return extra(j, 'in the middle of a paragraph');
-      if (!isNoteNumber(text)) return extra(j, 'beside a footnote mark or symbol');
-    } else if (samePage && consecutive && following!.label) {
-      // Between two paragraphs on one page: only the clause number or bullet of a list item (and a note number before it).
-      const label = following!.label;
-      // A note number may come first, when the paragraph before ends with a footnote mark.
-      const allowed = prev!.markAfter ? text.replace(/^(\d{1,3}|[ivxlc]{1,6}(?![a-z])|[^\p{L}\d]{1,3})/u, '') : text;
-      if (allowed === '') {
-        // nothing but the note number
-      } else if (label.text !== '') {
-        if (allowed !== label.text) return extra(j, `where the clause number "${label.text}" belongs`);
-      } else if (!label.listed || allowed.length > 2 || [...allowed].some(isLetter)) {
-        return extra(j, 'between two paragraphs');
+  // ---- 1. Find every story in the PDF, complete and in order. ----
+  const counters: NoteCounters = { footnote: 0, endnote: 0 };
+  const repeating = (s: Story): boolean => s.key.startsWith('header/') || s.key.startsWith('footer/');
+  const isNote = (s: Story): boolean => (s.kind === 'footnote' || s.kind === 'endnote') && /^(footnote|endnote)\/\d+$/.test(s.key);
+  interface Found {
+    story: Story;
+    stream: Expected[];
+    match: Match;
+  }
+  const found: Found[] = [];
+  let pageNumbersPrinted = false;
+
+  const body = printed.stories.find((s) => s.key === 'body');
+  let bodyFound: Found | undefined;
+  if (body) {
+    const { stream } = expectedChars(body, counters);
+    const match = find(stream, source, 'body');
+    if (match.at.length < stream.length) return missing(body, stream, match);
+    noteColour(body, match);
+    bodyFound = { story: body, stream, match };
+  }
+  for (const story of printed.stories) {
+    if (story.key === 'body' || repeating(story)) continue;
+    const { stream } = expectedChars(story, counters);
+    if (stream.length === 0) continue;
+    const match = find(stream, source, 'other');
+    if (match.at.length < stream.length) return missing(story, stream, match);
+    noteColour(story, match);
+    found.push({ story, stream, match });
+  }
+  for (const story of printed.stories) {
+    if (!repeating(story)) continue;
+    const { stream, trailing } = expectedChars(story, counters);
+    if (stream.some((x) => [...x.before, ...x.after].some((t) => t.t === 'page-number')) || trailing.some((t) => t.t === 'page-number')) pageNumbersPrinted = true;
+    if (stream.length === 0) continue;
+    for (let times = 0; times <= pdf.pages; times++) {
+      const match = find(stream, source, 'other');
+      if (match.at.length < stream.length) {
+        // The ordinary header or footer of a section must be printed at least once.
+        if (times === 0 && story.key.endsWith('/default')) return missing(story, stream, match);
+        break;
       }
-    } else {
-      // At the edge of a page, or beside a text box, note, header or footer: page and note numbers, a clause
-      // number carried to the new page, bullets and rules. Never words.
-      const label = following?.label?.text ?? '';
-      const rest = label !== '' && text.endsWith(label) ? text.slice(0, text.length - label.length) : text;
-      // Digits and symbols; and, in a document with notes, a short roman numeral (an endnote's number).
-      const withoutRoman = hasNotes ? rest.replace(/[ivxlc]{1,6}/, '') : rest;
-      if (rest.length > 12 || [...withoutRoman].some(isLetter)) return extra(j, 'at the edge of a page');
+      noteColour(story, match);
+      found.push({ story, stream, match });
     }
-    j = end;
   }
+
+  // ---- 2. Everything else in the PDF must be exactly what a page adds, exactly where it adds it. ----
+  /** The unaccounted-for characters strictly between two positions, and whether anything else lies between. */
+  const between = (from: number, to: number): { free: number[]; foreign: boolean } => {
+    const free: number[] = [];
+    let foreign = false;
+    for (let j = from + 1; j < to; j++) {
+      if (owner[j] === undefined) free.push(j);
+      else if (owner[j] !== 'accepted') foreign = true;
+    }
+    return { free, foreign };
+  };
+  const textOf = (positions: number[]): string => positions.map((j) => chars[j]!.c).join('');
+  const accept = (positions: number[]): void => positions.forEach((j) => void (owner[j] = 'accepted'));
+  const fits = (text: string, tokens: Token[], around = ''): boolean => new RegExp(`^${around}${tokens.map(pattern).join('')}${around}$`, 'u').test(text);
+  const describe = (tokens: Token[]): string =>
+    tokens.length === 0
+      ? 'nothing here'
+      : tokens.map((t) => (t.t === 'label' ? `the clause number "${t.text}"` : t.t === 'note' ? `the number of ${t.kind} ${t.n}` : t.t === 'bullet' ? 'a bullet' : t.t === 'tab' ? 'a tab leader' : t.t === 'page-number' ? 'a page number' : 'a symbol')).join(', then ');
+
+  // 2a. Inside the notes, text boxes, headers and footers.
+  for (const { story, stream, match } of found) {
+    for (let i = 1; i < stream.length; i++) {
+      const { free, foreign } = between(match.at[i - 1]!, match.at[i]!);
+      const tokens = [...stream[i - 1]!.after, ...stream[i]!.before];
+      if (foreign) continue; // something else sits between (a page break inside a note); the main text's pass deals with it
+      if (!fits(textOf(free), tokens)) return extra(free[0] ?? match.at[i]!, `in the ${story.label}`, describe(tokens));
+      accept(free);
+    }
+    // Immediately before the story: a note's own number (required), and whatever precedes its first character.
+    const first = match.at[0]!;
+    const lead: number[] = [];
+    for (let j = first - 1; j >= 0 && owner[j] === undefined && lead.length < 12; j--) lead.unshift(j);
+    const number = isNote(story) ? [{ t: 'note', kind: story.kind as 'footnote' | 'endnote', n: Number(story.key.split('/')[1]) } satisfies Token] : [];
+    const tokens: Token[] = [...number, ...stream[0]!.before];
+    // Take the longest stretch right before the story that fits (other things may precede it on the page).
+    let taken = false;
+    for (let from = 0; from <= lead.length; from++) {
+      if (fits(textOf(lead.slice(from)), tokens)) {
+        accept(lead.slice(from));
+        taken = true;
+        break;
+      }
+    }
+    if (!taken) return extra(first, `in front of the ${story.label}`, describe(tokens));
+    // Immediately after the story: a page number that ends a header or footer.
+    const trail: number[] = [];
+    const lastToken = stream[stream.length - 1]!.after;
+    if (lastToken.length > 0) {
+      for (let j = match.at[match.at.length - 1]! + 1; j < chars.length && owner[j] === undefined && trail.length < 8; j++) trail.push(j);
+      for (let to = trail.length; to >= 0; to--) {
+        if (fits(textOf(trail.slice(0, to)), lastToken)) {
+          accept(trail.slice(0, to));
+          break;
+        }
+      }
+    }
+  }
+
+  // 2b. Along the main text: between each character and the next, and before the first and after the last.
+  const repeatRows = printed.repeatRows.map((row) => [...row.normalize('NFKC')].filter((c) => !isBlank(c)).map(canon).join('')).filter((row) => row !== '');
+  // At the edge of a page a page number may be printed (only if some header or footer has a page-number field).
+  const edge = pageNumbersPrinted ? '(?:\\d{1,6}|[ivxlcdm]{1,8}|[IVXLCDM]{1,8}){0,4}' : '';
+  if (bodyFound) {
+    const { stream, match } = bodyFound;
+    for (let i = 0; i <= stream.length; i++) {
+      const from = i === 0 ? -1 : match.at[i - 1]!;
+      const to = i === stream.length ? chars.length : match.at[i]!;
+      const { free, foreign } = between(from, to);
+      const tokens = [...(i > 0 ? stream[i - 1]!.after : []), ...(i < stream.length ? stream[i]!.before : [])];
+      const samePage = i > 0 && i < stream.length && chars[from]!.page === chars[to]!.page;
+      let text = textOf(free);
+      if (samePage && !foreign) {
+        if (!fits(text, tokens)) return extra(free[0] ?? to, i < stream.length && stream[i]!.before.length > 0 ? 'in front of a paragraph' : 'in the middle of the text', describe(tokens));
+      } else {
+        // A page break, the start or end of the document, or a note, text box, header or footer in between.
+        for (const row of repeatRows) if (row !== '' && text.includes(row)) text = text.replace(row, '');
+        if (!fits(text, tokens, edge)) return extra(free[0] ?? Math.min(to, chars.length - 1), 'at the edge of a page', describe(tokens));
+      }
+      accept(free);
+    }
+  }
+  // 3. Nothing may be left over.
+  const stray = owner.findIndex((o) => o === undefined);
+  if (stray >= 0) return extra(stray, 'it contains text that is not in the redline');
   return { colours, note };
 }

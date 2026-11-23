@@ -102,6 +102,8 @@ export interface StoryReading {
    * text inserted, so each view has exactly its own document's links.)
    */
   links: string[];
+  /** The text of each table row marked to repeat at the top of every page the table runs onto. */
+  repeatRows: string[];
   /** In a static redline: the text of each line of the cover page, in order. */
   cover: string[];
   /** For each cover line, how its text is formatted: 'plain', a change kind, 'shaded', with ':hidden' if it would not be shown. */
@@ -242,6 +244,7 @@ interface Source {
   markup: Markup;
   styles: Styles;
   numbering: Numbering;
+  repeatRows: string[];
 }
 
 function newContext(view: View, problems: string[], source: Source): Context {
@@ -352,7 +355,7 @@ function alternateContentBranch(element: XmlElement, context: Context, read: (br
   if (branches.length > 1) {
     // Every branch (there may be several Choices) must read the same: text, text boxes and note references.
     const readings = branches.map((branch) => {
-      const probe = newContext(context.view, [], { ...context.source, partsRead: new Set(), links: [] });
+      const probe = newContext(context.view, [], { ...context.source, partsRead: new Set(), links: [], repeatRows: [] });
       const inline = read(branch, probe);
       // Pictures are stored differently in the modern and legacy forms, so linked files are left out of this comparison.
       const texts = (list: Para[]): string[] => list.map((entry) => entry.text);
@@ -641,6 +644,11 @@ function readRow(row: XmlElement, context: Context): void {
   const kept = cells.map((cell) => readCell(cell, context)).filter((cell): cell is Context => cell !== undefined);
   if (kept.length === 0 && context.source.markup === 'static' && cells.length > 0) return;
   context.paragraphs.push(marker(MARK.row));
+  const rowProperties = child(row, W, 'trPr');
+  if (rowProperties && child(rowProperties, W, 'tblHeader')) {
+    // A heading row: Word prints it again at the top of each page the table continues onto.
+    context.source.repeatRows.push(kept.flatMap((cell) => cell.paragraphs.map((p) => [...p.text].filter((_, i) => p.meta.charCodeAt(i) & CHAR.isText).join(''))).join(''));
+  }
   for (const inner of kept) {
     context.paragraphs.push(marker(MARK.cell), ...inner.paragraphs);
     context.textBoxes.push(...inner.textBoxes);
@@ -683,6 +691,7 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
   const links: string[] = [];
   const cover: string[] = [];
   const coverLooks: string[] = [];
+  const repeatRows: string[] = [];
   const add = (key: string, kind: StoryKind, label: string, details: Para[]): void => {
     if (!isBlank(details)) stories.push(storyOf(key, kind, label, details));
   };
@@ -691,10 +700,10 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
   let body = child(pkg.xml(main), W, 'body');
   if (!body) {
     problems.push('The main document has no body.');
-    return { stories, partsRead, noteIdsRead, problems, links, cover, coverLooks };
+    return { stories, partsRead, noteIdsRead, problems, links, cover, coverLooks, repeatRows };
   }
   partsRead.add(main);
-  const shared = { pkg, partsRead, links, markup, styles: new Styles(pkg, main), numbering: new Numbering(pkg, main) };
+  const shared = { pkg, partsRead, links, markup, styles: new Styles(pkg, main), numbering: new Numbering(pkg, main), repeatRows };
 
   if (markup === 'static' && view !== 'all') {
     // The cover page: the leading paragraphs in the cover styles. It is the
@@ -807,5 +816,5 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
     });
   }
 
-  return { stories, partsRead, noteIdsRead, problems, links, cover, coverLooks };
+  return { stories, partsRead, noteIdsRead, problems, links, cover, coverLooks, repeatRows };
 }
