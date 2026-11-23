@@ -7,6 +7,7 @@ import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
 import { NS } from '../common/namespaces';
 import { unzip, zip } from '../common/zip';
 import { coverPageXml, coverStylesXml, type CoverPageContent } from './cover-page';
+import { readOriginal, StyleSheet } from './original-reader';
 import { convertPart, DEFAULT_STYLE_OPTIONS, type ChangeCounts, type StaticRedlineStyleOptions } from './static-redline';
 
 const W = NS.w;
@@ -43,7 +44,7 @@ function attributeValue(tag: string, name: string): string | undefined {
 }
 
 /** Part names by declared content type, read from [Content_Types].xml. */
-function partsOfTypes(contentTypes: string, names: Iterable<string>, wanted: string[]): { textParts: string[]; main?: string; styles?: string } {
+function partsOfTypes(contentTypes: string, names: Iterable<string>, wanted: string[]): { textParts: string[]; main?: string; styles?: string; numbering?: string } {
   const overrides = new Map<string, string>();
   for (const tag of contentTypes.match(/<Override\b[^>]*>/g) ?? []) {
     const part = attributeValue(tag, 'PartName');
@@ -53,14 +54,16 @@ function partsOfTypes(contentTypes: string, names: Iterable<string>, wanted: str
   const textParts: string[] = [];
   let main: string | undefined;
   let styles: string | undefined;
+  let numbering: string | undefined;
   for (const name of names) {
     const type = overrides.get(name);
     if (!type) continue;
     if (wanted.some((w) => type.endsWith(w))) textParts.push(name);
     if (/\.(document|template)\.(macroEnabled\.)?main\+xml$/.test(type) || type.endsWith('macroEnabledTemplate.main+xml')) main = name;
     if (type.endsWith('wordprocessingml.styles+xml')) styles = name;
+    if (type.endsWith('wordprocessingml.numbering+xml')) numbering = name;
   }
-  return { textParts: textParts.sort(), main, styles };
+  return { textParts: textParts.sort(), main, styles, numbering };
 }
 
 const isW = (node: Node | null, name: string): node is Element => !!node && node.nodeType === 1 && (node as Element).namespaceURI === W && (node as Element).localName === name;
@@ -129,7 +132,19 @@ function addCoverStyles(stylesXml: string): string {
   return stylesXml.replace('</w:styles>', `${coverStylesXml(basedOn)}</w:styles>`);
 }
 
-export async function makeStaticRedline(trackedChanges: Uint8Array, options: StaticRedlineOptions): Promise<StaticRedline> {
+export async function makeStaticRedline(trackedChanges: Uint8Array, original: Uint8Array, options: StaticRedlineOptions): Promise<StaticRedline> {
+  // The original document: the formatting its text had, and its clause numbers.
+  const originalFiles = await unzip(original);
+  const originalTypes = originalFiles.get('[Content_Types].xml');
+  if (!originalTypes) throw new Error('the original document has no content types');
+  const originalParts = partsOfTypes(decoder.decode(originalTypes), originalFiles.keys(), TEXT_PART_TYPES);
+  const text = (files: Map<string, Uint8Array>, name: string | undefined): string | undefined => (name && files.has(name) ? decoder.decode(files.get(name)!) : undefined);
+  const info = readOriginal(
+    originalParts.textParts.map((name) => ({ xml: text(originalFiles, name)!, isMain: name === originalParts.main })),
+    text(originalFiles, originalParts.styles),
+    text(originalFiles, originalParts.numbering),
+  );
+
   const files = await unzip(trackedChanges);
   const contentTypes = files.get('[Content_Types].xml');
   if (!contentTypes) throw new Error('the tracked-changes file has no content types');
@@ -137,14 +152,16 @@ export async function makeStaticRedline(trackedChanges: Uint8Array, options: Sta
   if (!main) throw new Error('the tracked-changes file has no main document part');
   if (!styles) throw new Error('the tracked-changes file has no styles part');
 
-  const counts: ChangeCounts = { insertions: 0, deletions: 0, moves: 0 };
+  const counts: ChangeCounts = { insertions: 0, deletions: 0, moves: 0, formattingChanges: 0 };
   const converted = new Map<string, string>();
+  const trackedStyles = new StyleSheet(text(files, styles));
   for (const part of textParts) {
-    const result = convertPart(decoder.decode(files.get(part)!), { ...DEFAULT_STYLE_OPTIONS, ...options.style });
+    const result = convertPart(decoder.decode(files.get(part)!), { ...DEFAULT_STYLE_OPTIONS, ...options.style }, { info, styles: trackedStyles, isMain: part === main });
     converted.set(part, result.xml);
     counts.insertions += result.counts.inserted;
     counts.deletions += result.counts.deleted;
     counts.moves += result.counts.movedFrom;
+    counts.formattingChanges += result.formattingChanges;
   }
 
   const content: CoverPageContent = { originalName: options.originalName, modifiedName: options.modifiedName, comparedAt: options.comparedAt, ...counts };

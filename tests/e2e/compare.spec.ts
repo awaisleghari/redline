@@ -6,12 +6,12 @@
 import { expect, test, type Page } from '@playwright/test';
 import { compareDocuments, initialize } from 'docxodus/core';
 import { readFile } from 'node:fs/promises';
-import { BROKEN_CASES, breakOutput } from '../fixtures/broken';
+import { BROKEN_CASES, breakOutput, expectedFailures } from '../fixtures/broken';
 import { ALL_PAIR_SPECS, PAIR_SPECS, buildPair, pairById } from '../fixtures/pairs';
 import { fullExpectation, readTrackedChanges } from '../helpers/tracked-changes';
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-const CHECKS = ['accept-all', 'reject-all', 'completeness', 'structure'];
+const CHECKS = ['accept-all', 'reject-all', 'formatting', 'numbering', 'completeness', 'structure'];
 
 async function chooseFiles(page: Page, original: Uint8Array | Buffer, modified: Uint8Array | Buffer): Promise<void> {
   await page.locator('#original').setInputFiles({ name: 'original.docx', mimeType: DOCX_MIME, buffer: Buffer.from(original) });
@@ -152,8 +152,9 @@ for (const caseId of ['dropped-word', 'changed-digit-in-insertion', 'broken-comm
     // The report names exactly the failed checks, each with an explanation…
     for (const check of CHECKS) {
       const item = page.locator(`#report li[data-check="${check}"]`);
-      await expect(item).toHaveAttribute('data-passed', String(!brokenCase.caughtBy.includes(check as never)));
-      if (brokenCase.caughtBy.includes(check as never)) await expect(item.locator('.failure')).not.toBeEmpty();
+      const shouldFail = expectedFailures(brokenCase).includes(check as never);
+      await expect(item).toHaveAttribute('data-passed', String(!shouldFail));
+      if (shouldFail) await expect(item.locator('.failure')).not.toBeEmpty();
     }
     // …and the Word file is not offered: no visible link, and no address behind it.
     const link = page.locator('#download');

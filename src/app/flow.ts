@@ -5,7 +5,7 @@
  * This is the one place where an output can reach the user, and it has no path
  * that does so without a passing report.
  */
-import { CHECK_TITLES, type CheckId, type CheckReport } from '../checker';
+import { CHECK_TITLES, CHECKS_FOR, type CheckReport, type OutputKind } from '../checker';
 
 export interface FlowDependencies {
   /** The Producer: make the tracked-changes file. */
@@ -25,12 +25,11 @@ export interface FlowResult {
 export class ProducerError extends Error {}
 
 /** A report saying the Checker could not run. The output is withheld, exactly as for a failed check. */
-function checkerUnavailable(message: string): CheckReport {
-  const ids: CheckId[] = ['accept-all', 'reject-all', 'completeness', 'structure'];
+export function checkerUnavailable(kind: OutputKind, message: string): CheckReport {
   return {
-    output: 'tracked-changes',
+    output: kind,
     passed: false,
-    checks: ids.map((id) => ({
+    checks: CHECKS_FOR[kind].map((id) => ({
       id,
       title: CHECK_TITLES[id],
       passed: false,
@@ -51,7 +50,7 @@ export async function runComparison(original: Uint8Array, modified: Uint8Array, 
   try {
     report = await deps.check({ original, modified, output: produced.trackedChanges });
   } catch (error) {
-    report = checkerUnavailable(error instanceof Error ? error.message : String(error));
+    report = checkerUnavailable('tracked-changes', error instanceof Error ? error.message : String(error));
   }
 
   // Release only on an explicit, complete pass.

@@ -4,10 +4,10 @@
  */
 import { describe, expect, it } from 'vitest';
 import { ProducerError, runComparison } from '../../src/app/flow';
-import { CHECK_TITLES, type CheckId, type CheckReport } from '../../src/checker';
+import { CHECK_TITLES, CHECKS_FOR, type CheckId, type CheckReport } from '../../src/checker';
 
 const bytes = (text: string): Uint8Array => new TextEncoder().encode(text);
-const IDS: CheckId[] = ['accept-all', 'reject-all', 'completeness', 'structure'];
+const IDS: CheckId[] = CHECKS_FOR['tracked-changes'];
 const report = (failing: CheckId[] = [], claimPassed = failing.length === 0): CheckReport => ({
   output: 'tracked-changes',
   passed: claimPassed,

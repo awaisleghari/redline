@@ -35,7 +35,7 @@ test('a 100-page contract compares in the browser', async ({ page }) => {
   await page.getByRole('button', { name: 'Compare' }).click();
   await expect(page.locator('#status')).toHaveAttribute('data-state', 'done', { timeout: 60_000 });
   // 'done' means the independent Checker also read all 100 pages and passed the output.
-  await expect(page.locator('#report li[data-passed="true"]')).toHaveCount(4);
+  await expect(page.locator('#report li[data-passed="true"]')).toHaveCount(6);
   const wallMs = Date.now() - started;
   const engineMs = Number(await page.locator('#status').getAttribute('data-engine-ms'));
   const longestGapMs = await page.evaluate(() => (window as unknown as { longestGapMs: number }).longestGapMs);

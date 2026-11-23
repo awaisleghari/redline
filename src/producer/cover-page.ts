@@ -6,7 +6,7 @@
  * The cover page sits in a section of its own, before the document, so the
  * document's headers, footers and page numbering are untouched by it.
  */
-import { CHANGE_STYLE, type ChangeKind } from './static-redline';
+import { CHANGE_STYLE, FORMAT_CHANGE_FILL, OLD_NUMBER_STYLE, type ChangeKind } from './static-redline';
 
 
 export interface CoverPageContent {
@@ -17,8 +17,7 @@ export interface CoverPageContent {
   insertions: number;
   deletions: number;
   moves: number;
-  /** Omitted when formatting changes are not counted. */
-  formattingChanges?: number;
+  formattingChanges: number;
 }
 
 /** Style ids of the cover page. The Checker recognises the cover page by these. */
@@ -45,21 +44,21 @@ function changeRunProperties(kind: ChangeKind): string {
 }
 
 /** The lines of the cover page, in order. Exported so tests can state the expected wording once. */
-export function coverLines(content: CoverPageContent): { style: string; text: string; kind?: ChangeKind }[] {
-  const lines: { style: string; text: string; kind?: ChangeKind }[] = [
+export function coverLines(content: CoverPageContent): { style: string; text: string; kind?: ChangeKind; shaded?: boolean }[] {
+  return [
     { style: COVER_STYLE.title, text: 'Comparison of documents' },
     { style: COVER_STYLE.text, text: `Original: ${content.originalName}` },
     { style: COVER_STYLE.text, text: `Modified: ${content.modifiedName}` },
     { style: COVER_STYLE.text, text: `Compared: ${content.comparedAt}` },
     { style: COVER_STYLE.heading, text: 'Legend' },
     ...(Object.keys(LEGEND) as ChangeKind[]).map((kind) => ({ style: COVER_STYLE.text, text: LEGEND[kind], kind })),
+    { style: COVER_STYLE.text, text: 'Text whose formatting changed', shaded: true },
     { style: COVER_STYLE.heading, text: 'Changes' },
     { style: COVER_STYLE.text, text: `Insertions: ${content.insertions}` },
     { style: COVER_STYLE.text, text: `Deletions: ${content.deletions}` },
     { style: COVER_STYLE.text, text: `Moves: ${content.moves}` },
+    { style: COVER_STYLE.text, text: `Formatting changes: ${content.formattingChanges}` },
   ];
-  if (content.formattingChanges !== undefined) lines.push({ style: COVER_STYLE.text, text: `Formatting changes: ${content.formattingChanges}` });
-  return lines;
 }
 
 /**
@@ -69,7 +68,7 @@ export function coverLines(content: CoverPageContent): { style: string; text: st
  */
 export function coverPageXml(content: CoverPageContent, pageSetup: string): string {
   const body = coverLines(content)
-    .map((line) => paragraph(line.style, line.text, line.kind ? changeRunProperties(line.kind) : ''))
+    .map((line) => paragraph(line.style, line.text, line.kind ? changeRunProperties(line.kind) : line.shaded ? `<w:rPr><w:shd w:val="clear" w:color="auto" w:fill="${FORMAT_CHANGE_FILL}"/></w:rPr>` : ''))
     .join('');
   const sectionEnd = `<w:p><w:pPr><w:pStyle w:val="${COVER_STYLE.text}"/><w:sectPr>${pageSetup}</w:sectPr></w:pPr></w:p>`;
   return body + sectionEnd;
@@ -86,7 +85,10 @@ export function coverStylesXml(basedOn: string | undefined): string {
     `<w:keepNext w:val="0"/><w:pageBreakBefore w:val="0"/><w:numPr><w:numId w:val="0"/></w:numPr><w:spacing w:before="${before}" w:after="${after}" w:line="240" w:lineRule="auto"/><w:ind w:left="0" w:right="0" w:firstLine="0"/><w:jc w:val="left"/>`;
   const rPr = (bold: boolean, size?: number): string =>
     `<w:b w:val="${bold ? 1 : 0}"/><w:i w:val="0"/><w:caps w:val="0"/><w:smallCaps w:val="0"/><w:strike w:val="0"/><w:dstrike w:val="0"/><w:vanish w:val="0"/><w:color w:val="000000"/>${size ? `<w:sz w:val="${size}"/><w:szCs w:val="${size}"/>` : ''}<w:u w:val="none"/>`;
+  // The old clause number shown on a removed paragraph: a character style that changes nothing by itself.
+  const oldNumber = `<w:style w:type="character" w:customStyle="1" w:styleId="${OLD_NUMBER_STYLE}"><w:name w:val="Redline Old Number"/><w:semiHidden/></w:style>`;
   return (
+    oldNumber +
     style(COVER_STYLE.title, 'Redline Cover Title', pPr(0, 360), rPr(true, 36)) +
     style(COVER_STYLE.heading, 'Redline Cover Heading', pPr(360, 120), rPr(true)) +
     style(COVER_STYLE.text, 'Redline Cover Text', pPr(0, 80), rPr(false))

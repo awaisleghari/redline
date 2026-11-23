@@ -5,7 +5,7 @@
 import { compareDocuments, initialize } from 'docxodus/core';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { checkTrackedChanges } from '../../src/checker';
-import { BROKEN_CASES, breakOutput } from '../fixtures/broken';
+import { BROKEN_CASES, breakOutput, expectedFailures } from '../fixtures/broken';
 import { buildPair, pairById } from '../fixtures/pairs';
 
 beforeAll(async () => {
@@ -33,7 +33,7 @@ describe('Checker on deliberately broken outputs', () => {
     const report = await checkTrackedChanges({ original: pair.original, modified: pair.modified, output: broken });
     expect(report.passed).toBe(false);
     const failed = report.checks.filter((c) => !c.passed);
-    expect(failed.map((c) => c.id).sort()).toEqual([...brokenCase.caughtBy].sort());
+    expect(failed.map((c) => c.id).sort()).toEqual(expectedFailures(brokenCase));
     // Every failure explains itself in words.
     for (const check of failed) expect(check.failure?.message ?? '').not.toBe('');
   });

@@ -1,6 +1,30 @@
 /** What the Checker reports. Plain data, safe to pass between workers and to show to the user. */
 
-export type CheckId = 'accept-all' | 'reject-all' | 'completeness' | 'structure';
+export type CheckId =
+  | 'accept-all'
+  | 'reject-all'
+  | 'static-new'
+  | 'static-old'
+  | 'no-tracked-changes'
+  | 'cover-page'
+  | 'formatting'
+  | 'format-marks'
+  | 'numbering'
+  | 'completeness'
+  | 'structure';
+
+export type OutputKind = 'tracked-changes' | 'static-redline';
+
+/** The checks run on each kind of output, in the order they are reported. */
+export const CHECKS_FOR: Record<OutputKind, CheckId[]> = {
+  'tracked-changes': ['accept-all', 'reject-all', 'formatting', 'numbering', 'completeness', 'structure'],
+  'static-redline': ['static-new', 'static-old', 'no-tracked-changes', 'cover-page', 'formatting', 'format-marks', 'numbering', 'completeness', 'structure'],
+};
+
+export const OUTPUT_NAME: Record<OutputKind, string> = {
+  'tracked-changes': 'Word file with tracked changes',
+  'static-redline': 'Word file with the static redline',
+};
 
 export interface CheckFailure {
   /** Plain-English explanation of what is wrong. */
@@ -25,7 +49,7 @@ export interface CheckResult {
 
 export interface CheckReport {
   /** Which output this report is about. */
-  output: 'tracked-changes';
+  output: OutputKind;
   /** True only if every check passed. The output may be released to the user only then. */
   passed: boolean;
   checks: CheckResult[];
@@ -34,6 +58,13 @@ export interface CheckReport {
 export const CHECK_TITLES: Record<CheckId, string> = {
   'accept-all': 'Accepting every change reproduces the modified document',
   'reject-all': 'Rejecting every change reproduces the original document',
+  'static-new': 'Taking out the deleted and moved-from text leaves the modified document',
+  'static-old': 'Taking out the inserted and moved-to text leaves the original document',
+  'no-tracked-changes': 'No tracked changes are left in the static redline',
+  'cover-page': 'The cover page names the right files and time, and its counts match the redline',
+  formatting: "The text has the modified document's bold, italic, underline, capitals and hidden-text settings",
+  'format-marks': 'Formatting changes are shaded exactly where formatting changed, and nowhere else',
+  numbering: 'Clause numbers match the modified document',
   completeness: 'Every part of the documents that holds text was checked',
   structure: 'The Word file is structurally sound',
 };
@@ -45,7 +76,7 @@ export function reportAsText(report: CheckReport, context: { originalName: strin
     `Original: ${context.originalName}`,
     `Modified: ${context.modifiedName}`,
     `Checked: ${context.when.toISOString()}`,
-    `Output: Word file with tracked changes`,
+    `Output: ${OUTPUT_NAME[report.output]}`,
     `Overall: ${report.passed ? 'all checks passed' : 'FAILED - this output was withheld'}`,
     '',
   ];

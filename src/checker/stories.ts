@@ -15,10 +15,50 @@
  * (spaces, punctuation, digits, tabs, line breaks) is kept.
  */
 import { NS } from '../common/namespaces';
+import { staticKindOf, Styles, type StaticKind } from './formatting';
+import { Numbering } from './numbering';
 import { DocxPackage } from './package';
 import { attribute, child, is, type XmlElement } from './xml';
 
 export type View = 'accepted' | 'rejected';
+
+/**
+ * How changes are expressed in the file being read:
+ *   - 'tracked': as Word tracked changes (w:ins, w:del, ...);
+ *   - 'static': as fixed formatting (the static redline's colours and strikes).
+ */
+export type Markup = 'tracked' | 'static';
+
+/**
+ * What is known about one character of a paragraph, packed into a character
+ * code: the low six bits are its visible formatting (see FORMAT); then:
+ */
+export const CHAR = {
+  /** A real character of text (as opposed to a marker standing for a tab-like thing or an object). */
+  isText: 64,
+  /** Carries the static redline's "formatting changed" shading. */
+  shaded: 128,
+  /** Part of a change that this view keeps (inserted text when accepting, deleted text when rejecting). */
+  changed: 256,
+} as const;
+
+/** One paragraph (or structure marker) of a story, with what the checks beyond plain text need. */
+export interface Para {
+  text: string;
+  /** One code per character of `text` (see CHAR). Empty for structure markers. */
+  meta: string;
+  /** The automatic number this paragraph carries ('' if none). */
+  number: string;
+  /** In a static redline: the old clause number typed in front of a removed paragraph ('' if none). */
+  oldNumber: string;
+  /** True when this paragraph itself is removed by the changes (so it exists only in the rejected view). */
+  removed: boolean;
+}
+
+const marker = (text: string): Para => ({ text, meta: '', number: '', oldNumber: '', removed: false });
+
+/** Style ids the static redline uses for its own additions. The Checker recognises them by name. */
+export const STATIC_STYLE = { coverPrefix: 'RedlineCover', oldNumber: 'RedlineOldNumber', shadeFill: 'FFF2CC' } as const;
 
 export type StoryKind = 'body' | 'header' | 'footer' | 'footnote' | 'endnote' | 'text box';
 
@@ -29,6 +69,8 @@ export interface Story {
   /** Plain-English name for reports, e.g. "footnote 2" or "header (section 1)". */
   label: string;
   paragraphs: string[];
+  /** The same entries as `paragraphs`, with per-character detail. */
+  details: Para[];
 }
 
 export interface StoryReading {
@@ -46,6 +88,8 @@ export interface StoryReading {
    * text inserted, so each view has exactly its own document's links.)
    */
   links: string[];
+  /** In a static redline: the text of each line of the cover page, in order. */
+  cover: string[];
 }
 
 /** Markers standing in for things that are not characters but must not vanish unnoticed. */
@@ -150,11 +194,21 @@ interface NoteRef {
 interface Context {
   view: View;
   /** Paragraphs of the story being read. */
-  paragraphs: string[];
+  paragraphs: Para[];
   /** Text of paragraphs whose marks were removed, waiting to join the next paragraph. */
   pending: string;
+  /** Per-character codes for everything emitted since the last paragraph was closed (parallel to `pending` plus the text being read). */
+  meta: string;
+  /** Code applied to characters being emitted now (formatting of the current run, and whether it is part of a change). */
+  code: number;
+  /** Style of the paragraph being read. */
+  paragraphStyle: string | undefined;
+  /** Old clause number met in the paragraph being read (static redline). */
+  oldNumber: string;
+  /** Whether the last paragraph read had its mark removed in this view. */
+  lastMarkRemoved: boolean;
   /** Paragraphs of text boxes met while reading this story. */
-  textBoxes: string[];
+  textBoxes: Para[];
   notes: NoteRef[];
   /** Section properties met, in order (for headers and footers). */
   sections: XmlElement[];
@@ -169,10 +223,54 @@ interface Source {
   part: string;
   partsRead: Set<string>;
   links: string[];
+  markup: Markup;
+  styles: Styles;
+  numbering: Numbering;
 }
 
 function newContext(view: View, problems: string[], source: Source): Context {
-  return { view, paragraphs: [], pending: '', textBoxes: [], notes: [], sections: [], problems, source };
+  return { view, paragraphs: [], pending: '', meta: '', code: 0, paragraphStyle: undefined, oldNumber: '', lastMarkRemoved: false, textBoxes: [], notes: [], sections: [], problems, source };
+}
+
+/** Record text being emitted, with the current character code, and hand it back. */
+function emit(context: Context, text: string, isText = false): string {
+  if (text !== '') context.meta += String.fromCharCode(context.code | (isText ? CHAR.isText : 0)).repeat(text.length);
+  return text;
+}
+
+/** Is a change of this kind dropped in this view? */
+function staticDropped(kind: StaticKind | undefined, view: View): boolean {
+  if (!kind) return false;
+  return view === 'accepted' ? kind === 'deleted' || kind === 'movedFrom' : kind === 'inserted' || kind === 'movedTo';
+}
+
+/** Read a run: its formatting applies to everything it emits. */
+function readRun(run: XmlElement, context: Context): string {
+  const rPr = child(run, W, 'rPr');
+  const { markup, styles } = context.source;
+  let code = styles.formatOf(rPr, context.paragraphStyle) | (context.code & CHAR.changed);
+  if (markup === 'static') {
+    const kind = staticKindOf(rPr);
+    const styleElement = rPr && child(rPr, W, 'rStyle');
+    if (styleElement && attribute(styleElement, W, 'val') === STATIC_STYLE.oldNumber) {
+      // The old number of a removed clause: shown struck through, and not part of either document's text.
+      if (kind !== 'deleted' && kind !== 'movedFrom') context.problems.push('An old clause number is not marked as deleted text.');
+      const saved = context.meta;
+      const label = inlineText(run, context);
+      context.meta = saved;
+      if (context.view === 'rejected') context.oldNumber += label;
+      return '';
+    }
+    if (staticDropped(kind, context.view)) return '';
+    if (kind) code |= CHAR.changed;
+    const shading = rPr && child(rPr, W, 'shd');
+    if (shading && attribute(shading, W, 'fill')?.toUpperCase() === STATIC_STYLE.shadeFill) code |= CHAR.shaded;
+  }
+  const outer = context.code;
+  context.code = code;
+  const text = inlineText(run, context);
+  context.code = outer;
+  return text;
 }
 
 /**
@@ -228,7 +326,8 @@ function alternateContentBranch(element: XmlElement, context: Context, read: (br
       const probe = newContext(context.view, [], { ...context.source, partsRead: new Set(), links: [] });
       const inline = read(branch, probe);
       // Pictures are stored differently in the modern and legacy forms, so linked files are left out of this comparison.
-      return JSON.stringify([inline, probe.paragraphs, probe.pending, probe.textBoxes, probe.notes]).replace(/⟦file [^⟧]*⟧/g, '');
+      const texts = (list: Para[]): string[] => list.map((entry) => entry.text);
+      return JSON.stringify([inline, texts(probe.paragraphs), probe.pending, texts(probe.textBoxes), probe.notes]).replace(/⟦file [^⟧]*⟧/g, '');
     });
     if (new Set(readings).size > 1) {
       context.problems.push('A drawing or text box is stored in alternative forms whose text differs, so what a reader would see cannot be verified.');
@@ -255,15 +354,15 @@ function inlineText(element: XmlElement, context: Context): string {
     }
     // Text that is not Word text but is still shown: drawing text, equations, watermarks.
     if ((node.ns === A_NS || node.ns === M_NS) && node.name === 't') {
-      text += node.text;
+      text += emit(context, node.text, true);
       continue;
     }
     if (node.ns === V_NS && node.name === 'textpath') {
-      text += `⟦shape text: ${attribute(node, '', 'string') ?? ''}⟧`;
+      text += emit(context, `⟦shape text: ${attribute(node, '', 'string') ?? ''}⟧`);
       continue;
     }
     unknownWrapperProblem(node, context);
-    if (node.ns !== W) text += linkedContent(node, context);
+    if (node.ns !== W) text += emit(context, linkedContent(node, context));
     if (node.ns === W) {
       switch (node.name) {
         case 'hyperlink': {
@@ -275,71 +374,90 @@ function inlineText(element: XmlElement, context: Context): string {
           text += covered;
           continue;
         }
+        case 'r':
+          text += readRun(node, context);
+          continue;
+        case 'ins':
+        case 'del':
+        case 'moveFrom':
+        case 'moveTo': {
+          // A tracked change this view keeps: what is inside is part of a change.
+          const outer = context.code;
+          context.code |= CHAR.changed;
+          text += inlineText(node, context);
+          context.code = outer;
+          continue;
+        }
         case 'object':
-          text += MARK.object + linkedContent(node, context) + inlineText(node, context);
+          text += emit(context, MARK.object + linkedContent(node, context));
+          text += inlineText(node, context);
           continue;
         case 't':
         case 'delText':
-          text += textOf(node);
+          text += emit(context, textOf(node), true);
           continue;
         case 'tab':
-          text += '\t';
+          text += emit(context, '\t');
           continue;
         case 'ptab':
-          text += '⟦alignment tab⟧';
+          text += emit(context, '⟦alignment tab⟧');
           continue;
         case 'br': {
           const type = attribute(node, W, 'type');
-          text += type === 'page' ? MARK.pageBreak : type === 'column' ? MARK.columnBreak : '\n';
+          text += emit(context, type === 'page' ? MARK.pageBreak : type === 'column' ? MARK.columnBreak : '\n');
           continue;
         }
         case 'cr':
-          text += '\n';
+          text += emit(context, '\n');
           continue;
         case 'fldChar': {
           const type = attribute(node, W, 'fldCharType');
-          text += type === 'begin' ? MARK.fieldBegin : type === 'separate' ? MARK.fieldResult : type === 'end' ? MARK.fieldEnd : '';
+          text += emit(context, type === 'begin' ? MARK.fieldBegin : type === 'separate' ? MARK.fieldResult : type === 'end' ? MARK.fieldEnd : '');
           continue;
         }
         case 'instrText':
         case 'delInstrText':
-          text += node.text; // the field's code: compared, so a cross-reference cannot be silently repointed
+          text += emit(context, node.text); // the field's code: compared, so a cross-reference cannot be silently repointed
           continue;
         case 'fldSimple':
-          text += `${MARK.fieldBegin}${attribute(node, W, 'instr') ?? ''}${MARK.fieldResult}${inlineText(node, context)}${MARK.fieldEnd}`;
+          text += emit(context, `${MARK.fieldBegin}${attribute(node, W, 'instr') ?? ''}${MARK.fieldResult}`);
+          text += inlineText(node, context);
+          text += emit(context, MARK.fieldEnd);
           continue;
         case 'altChunk':
         case 'subDoc':
           context.problems.push('The document pulls in content from another file (an embedded or linked sub-document), which cannot be checked.');
           continue;
         case 'noBreakHyphen':
-          text += '‑';
+          text += emit(context, '‑');
           continue;
         case 'softHyphen':
-          text += '­';
+          text += emit(context, '­');
           continue;
         case 'sym':
-          text += `⟦symbol ${attribute(node, W, 'font') ?? ''} ${attribute(node, W, 'char') ?? ''}⟧`;
+          text += emit(context, `⟦symbol ${attribute(node, W, 'font') ?? ''} ${attribute(node, W, 'char') ?? ''}⟧`);
           continue;
         case 'footnoteReference':
           context.notes.push({ kind: 'footnote', id: attribute(node, W, 'id') ?? '' });
-          text += MARK.footnote;
+          text += emit(context, MARK.footnote);
           continue;
         case 'endnoteReference':
           context.notes.push({ kind: 'endnote', id: attribute(node, W, 'id') ?? '' });
-          text += MARK.endnote;
+          text += emit(context, MARK.endnote);
           continue;
         case 'drawing':
         case 'pict':
           // The marker, then any text shown inside the object (watermark or shape text).
           // Text boxes inside it are read into the text-box story as they are met.
-          text += MARK.object + inlineText(node, context);
+          text += emit(context, MARK.object);
+          text += inlineText(node, context);
           continue;
         case 'txbxContent': {
           // A text box is its own flow of paragraphs, read into the text-box story.
           const box = newContext(context.view, context.problems, context.source);
+          box.code = context.code & CHAR.changed;
           readBlocks(node, box);
-          context.textBoxes.push(MARK.textBox, ...box.paragraphs, ...box.textBoxes);
+          context.textBoxes.push(marker(MARK.textBox), ...box.paragraphs, ...box.textBoxes);
           absorb(context, box);
           continue;
         }
@@ -355,14 +473,39 @@ function inlineText(element: XmlElement, context: Context): string {
   return text;
 }
 
+/** Close the paragraph being assembled and add it to the story. */
+function closeParagraph(context: Context, number: string, removed: boolean): void {
+  if (context.meta.length !== context.pending.length) throw new Error('internal error: character details are out of step with the text');
+  context.paragraphs.push({ text: context.pending, meta: context.meta, number, oldNumber: context.oldNumber, removed });
+  context.pending = '';
+  context.meta = '';
+  context.oldNumber = '';
+}
+
 function readParagraph(paragraph: XmlElement, context: Context): void {
   const properties = child(paragraph, W, 'pPr');
+  const { markup, styles, numbering } = context.source;
+  const styleElement = properties && child(properties, W, 'pStyle');
+  context.paragraphStyle = styleElement && attribute(styleElement, W, 'val');
   const text = inlineText(paragraph, context);
-  const markRemoved = removedIn(properties && child(properties, W, 'rPr'), context.view, ['ins', 'moveTo'], ['del', 'moveFrom']);
+  context.paragraphStyle = undefined;
+
+  const markProperties = properties && child(properties, W, 'rPr');
+  const markKind = markup === 'static' ? staticKindOf(markProperties) : undefined;
+  const markRemoved =
+    markup === 'static' ? staticDropped(markKind, context.view) : removedIn(markProperties, context.view, ['ins', 'moveTo'], ['del', 'moveFrom']);
+  // Is the paragraph itself removed by the changes (whatever this view shows)?
+  const removed = markup === 'static' ? markKind === 'deleted' || markKind === 'movedFrom' : removedIn(markProperties, 'accepted', [], ['del', 'moveFrom']);
+
+  // Automatic numbering. In a static redline every paragraph in the file is
+  // live and takes a number if it is numbered, so every paragraph is counted.
+  // With tracked changes, a paragraph this view removes takes no number.
+  const number = markup === 'static' || !markRemoved ? numbering.next(styles.numberingOf(properties)) : '';
+
   context.pending += text;
+  context.lastMarkRemoved = markRemoved;
   if (markRemoved) return; // this paragraph joins the next one in this view
-  context.paragraphs.push(context.pending);
-  context.pending = '';
+  closeParagraph(context, number, removed);
   const section = properties && child(properties, W, 'sectPr');
   if (section) context.sections.push(section);
 }
@@ -393,13 +536,13 @@ function readBlocks(container: XmlElement, context: Context): void {
         break;
       case 'tbl':
         flushPending(context);
-        context.paragraphs.push(MARK.table);
+        context.paragraphs.push(marker(MARK.table));
         for (const row of node.children) {
           if (droppedIn(row, context.view)) continue;
           if (w(row, 'tr')) readRow(row, context);
           else if (w(row, 'sdt') || w(row, 'customXml') || w(row, 'ins') || w(row, 'del') || w(row, 'moveFrom') || w(row, 'moveTo')) readTableContainer(row, context);
         }
-        context.paragraphs.push(MARK.tableEnd);
+        context.paragraphs.push(marker(MARK.tableEnd));
         break;
       case 'sdt': {
         const content = child(node, W, 'sdtContent');
@@ -408,12 +551,18 @@ function readBlocks(container: XmlElement, context: Context): void {
       }
       case 'customXml':
       case 'smartTag':
+        readBlocks(node, context);
+        break;
       case 'ins':
       case 'del':
       case 'moveFrom':
-      case 'moveTo':
+      case 'moveTo': {
+        const outer = context.code;
+        context.code |= CHAR.changed;
         readBlocks(node, context);
+        context.code = outer;
         break;
+      }
       case 'sectPr':
         context.sections.push(node);
         break;
@@ -426,10 +575,7 @@ function readBlocks(container: XmlElement, context: Context): void {
 
 /** Text whose paragraph mark was removed with nothing after it to join: keep it, never lose it. */
 function flushPending(context: Context): void {
-  if (context.pending !== '') {
-    context.paragraphs.push(context.pending);
-    context.pending = '';
-  }
+  if (context.pending !== '' || context.oldNumber !== '') closeParagraph(context, '', true);
 }
 
 /** Rows wrapped in a content control or similar. */
@@ -444,32 +590,46 @@ function readTableContainer(wrapper: XmlElement, context: Context): void {
 }
 
 function readRow(row: XmlElement, context: Context): void {
-  if (removedIn(child(row, W, 'trPr'), context.view, ['ins'], ['del'])) return;
-  context.paragraphs.push(MARK.row);
+  if (context.source.markup === 'tracked' && removedIn(child(row, W, 'trPr'), context.view, ['ins'], ['del'])) return;
+  const cells: XmlElement[] = [];
   for (const cell of row.children) {
-    if (w(cell, 'tc')) readCell(cell, context);
+    if (w(cell, 'tc')) cells.push(cell);
     else if (w(cell, 'sdt')) {
       const content = child(cell, W, 'sdtContent');
-      for (const inner of content?.children ?? []) if (w(inner, 'tc')) readCell(inner, context);
+      for (const inner of content?.children ?? []) if (w(inner, 'tc')) cells.push(inner);
     }
+  }
+  // Read the cells first: in a static redline a row is gone exactly when every one of its cells is gone.
+  const kept = cells.map((cell) => readCell(cell, context)).filter((cell): cell is Context => cell !== undefined);
+  if (kept.length === 0 && context.source.markup === 'static' && cells.length > 0) return;
+  context.paragraphs.push(marker(MARK.row));
+  for (const inner of kept) {
+    context.paragraphs.push(marker(MARK.cell), ...inner.paragraphs);
+    context.textBoxes.push(...inner.textBoxes);
+    absorb(context, inner);
   }
 }
 
-function readCell(cell: XmlElement, context: Context): void {
-  if (removedIn(child(cell, W, 'tcPr'), context.view, ['cellIns'], ['cellDel'])) return;
+/** Read one cell. Returns undefined when the cell does not exist in this view. */
+function readCell(cell: XmlElement, context: Context): Context | undefined {
+  if (context.source.markup === 'tracked' && removedIn(child(cell, W, 'tcPr'), context.view, ['cellIns'], ['cellDel'])) return undefined;
   // A cell is its own scope for joining paragraphs: text never leaks out of a cell.
   const inner = newContext(context.view, context.problems, context.source);
+  inner.code = context.code & CHAR.changed;
   readBlocks(cell, inner);
+  // In a static redline there are no flags on rows and cells: a cell is gone
+  // in this view exactly when its last paragraph's mark is (Word never lets a
+  // surviving cell lose its last paragraph mark) and nothing of it remains.
+  if (context.source.markup === 'static' && inner.lastMarkRemoved && inner.paragraphs.length === 0) return undefined;
   // A cell that survives in this view always holds at least one paragraph, as it
   // does in Word. So a row or cell that should have vanished, but was left behind
   // empty, still shows up as a difference.
-  if (inner.paragraphs.length === 0) inner.paragraphs.push('');
-  context.paragraphs.push(MARK.cell, ...inner.paragraphs);
-  context.textBoxes.push(...inner.textBoxes);
-  absorb(context, inner);
+  if (inner.paragraphs.length === 0) inner.paragraphs.push(marker(''));
+  return inner;
 }
 
-const isBlank = (paragraphs: string[]): boolean => paragraphs.every((p) => p === '' || isStructureMark(p));
+const isBlank = (paragraphs: Para[]): boolean => paragraphs.every((p) => p.text === '' || isStructureMark(p.text));
+const storyOf = (key: string, kind: StoryKind, label: string, details: Para[]): Story => ({ key, kind, label, details, paragraphs: details.map((p) => p.text) });
 
 /**
  * Read every story of a Word file in the given view.
@@ -477,28 +637,47 @@ const isBlank = (paragraphs: string[]): boolean => paragraphs.every((p) => p ===
  * Stories with no text at all are left out, so "a header that exists but is
  * empty" and "no header" compare as equal.
  */
-export function readStories(pkg: DocxPackage, view: View): StoryReading {
+export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'tracked'): StoryReading {
   const stories: Story[] = [];
   const partsRead = new Set<string>();
   const noteIdsRead = new Map<string, Set<string>>();
   const problems: string[] = [];
   const links: string[] = [];
-  const add = (story: Story): void => {
-    if (!isBlank(story.paragraphs)) stories.push(story);
+  const cover: string[] = [];
+  const add = (key: string, kind: StoryKind, label: string, details: Para[]): void => {
+    if (!isBlank(details)) stories.push(storyOf(key, kind, label, details));
   };
 
   const main = pkg.mainDocumentPart();
-  const body = child(pkg.xml(main), W, 'body');
+  let body = child(pkg.xml(main), W, 'body');
   if (!body) {
     problems.push('The main document has no body.');
-    return { stories, partsRead, noteIdsRead, problems, links };
+    return { stories, partsRead, noteIdsRead, problems, links, cover };
   }
   partsRead.add(main);
+  const shared = { pkg, partsRead, links, markup, styles: new Styles(pkg, main), numbering: new Numbering(pkg, main) };
 
-  const bodyContext = newContext(view, problems, { pkg, part: main, partsRead, links });
+  if (markup === 'static') {
+    // The cover page: the leading paragraphs in the cover styles. It is the
+    // redline's own addition, so it is set aside here and verified separately.
+    const isCover = (node: XmlElement): boolean => {
+      const pPr = w(node, 'p') ? child(node, W, 'pPr') : undefined;
+      const style = pPr && child(pPr, W, 'pStyle');
+      return !!style && (attribute(style, W, 'val') ?? '').startsWith(STATIC_STYLE.coverPrefix);
+    };
+    let count = 0;
+    while (count < body.children.length && isCover(body.children[count]!)) count++;
+    const rawText = (element: XmlElement): string => (w(element, 't') ? element.text : element.children.map(rawText).join(''));
+    for (const paragraph of body.children.slice(0, count)) cover.push(rawText(paragraph));
+    if (body.children.slice(count).some((node) => isCover(node))) problems.push('A cover-page paragraph appears inside the document.');
+    body = { ...body, children: body.children.slice(count) };
+  }
+
+  const bodyContext = newContext(view, problems, { ...shared, part: main });
   readBlocks(body, bodyContext);
-  add({ key: 'body', kind: 'body', label: 'main text', paragraphs: bodyContext.paragraphs });
-  add({ key: 'body/text boxes', kind: 'text box', label: 'text boxes in the main text', paragraphs: bodyContext.textBoxes });
+  // (The cover page's own section ended inside the paragraphs set aside above, so it is not in the list of sections.)
+  add('body', 'body', 'main text', bodyContext.paragraphs);
+  add('body/text boxes', 'text box', 'text boxes in the main text', bodyContext.textBoxes);
 
   const notes: NoteRef[] = [...bodyContext.notes];
 
@@ -517,11 +696,11 @@ export function readStories(pkg: DocxPackage, view: View): StoryReading {
         continue;
       }
       partsRead.add(rel.partName);
-      const context = newContext(view, problems, { pkg, part: rel.partName, partsRead, links });
+      const context = newContext(view, problems, { ...shared, part: rel.partName });
       readBlocks(pkg.xml(rel.partName), context);
       const key = `${kind}/${sectionIndex + 1}/${type}`;
-      add({ key, kind, label, paragraphs: context.paragraphs });
-      add({ key: `${key}/text boxes`, kind: 'text box', label: `text boxes in the ${label}`, paragraphs: context.textBoxes });
+      add(key, kind, label, context.paragraphs);
+      add(`${key}/text boxes`, 'text box', `text boxes in the ${label}`, context.textBoxes);
       notes.push(...context.notes);
     }
   });
@@ -548,9 +727,9 @@ export function readStories(pkg: DocxPackage, view: View): StoryReading {
       const type = attribute(note, W, 'type');
       if (type && type !== 'normal') {
         idsRead.add(id);
-        const context = newContext(view, problems, { pkg, part: partName, partsRead, links });
+        const context = newContext(view, problems, { ...shared, part: partName });
         readBlocks(note, context);
-        add({ key: `${kind} ${type}`, kind, label: `${kind} separator`, paragraphs: [...context.paragraphs, ...context.textBoxes] });
+        add(`${kind} ${type}`, kind, `${kind} separator`, [...context.paragraphs, ...context.textBoxes]);
       }
     }
     refs.forEach((ref, index) => {
@@ -561,14 +740,14 @@ export function readStories(pkg: DocxPackage, view: View): StoryReading {
         return;
       }
       idsRead.add(ref.id);
-      const context = newContext(view, problems, { pkg, part: partName, partsRead, links });
+      const context = newContext(view, problems, { ...shared, part: partName });
       readBlocks(note, context);
       // Always keep the note's story, even if blank, so a missing note cannot hide.
-      stories.push({ key: `${kind}/${index + 1}`, kind, label, paragraphs: context.paragraphs });
-      add({ key: `${kind}/${index + 1}/text boxes`, kind: 'text box', label: `text boxes in ${label}`, paragraphs: context.textBoxes });
+      stories.push(storyOf(`${kind}/${index + 1}`, kind, label, context.paragraphs));
+      add(`${kind}/${index + 1}/text boxes`, 'text box', `text boxes in ${label}`, context.textBoxes);
       if (context.notes.length > 0) problems.push(`A ${kind} contains a note reference, which this tool does not check.`);
     });
   }
 
-  return { stories, partsRead, noteIdsRead, problems, links };
+  return { stories, partsRead, noteIdsRead, problems, links, cover };
 }

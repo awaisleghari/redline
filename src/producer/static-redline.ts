@@ -13,8 +13,14 @@
  */
 import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
 import { NS } from '../common/namespaces';
+import { isWord, kid, kids, paragraphsInCountingOrder, shownText, unitsOf, type OriginalInfo, type StyleSheet } from './original-reader';
 
 const W = NS.w;
+
+/** Shading that marks unchanged text whose formatting changed. */
+export const FORMAT_CHANGE_FILL = 'FFF2CC';
+/** Character style of the old clause number typed in front of a removed paragraph. */
+export const OLD_NUMBER_STYLE = 'RedlineOldNumber';
 
 export type ChangeKind = 'inserted' | 'deleted' | 'movedFrom' | 'movedTo';
 
@@ -23,6 +29,17 @@ export interface ChangeCounts {
   deletions: number;
   /** Counted once per block moved away from its original place. */
   moves: number;
+  /** Unbroken stretches of unchanged text whose formatting changed. */
+  formattingChanges: number;
+}
+
+/** What the conversion needs from the original document and the tracked file's styles. */
+export interface OriginalContext {
+  info: OriginalInfo;
+  /** Styles of the tracked-changes file (the formatting the text has now). */
+  styles: StyleSheet;
+  /** Whether the part being converted is the main document (old clause numbers are shown there). */
+  isMain: boolean;
 }
 
 /** The formatting that marks each kind of change. */
@@ -143,17 +160,196 @@ export interface StaticRedlineStyleOptions {
    * that the remaining clause numbers are exactly those of the modified document.
    */
   unnumberRemovedParagraphs: boolean;
+  /** Type the old clause number, struck through, in front of a removed numbered paragraph. */
+  showOldNumbers: boolean;
+  /** Shade unchanged text whose bold, italic, underline, capitals or hidden-text setting changed. */
+  markFormattingChanges: boolean;
 }
 
-export const DEFAULT_STYLE_OPTIONS: StaticRedlineStyleOptions = { deletionBeforeInsertion: true, unnumberRemovedParagraphs: true };
+export const DEFAULT_STYLE_OPTIONS: StaticRedlineStyleOptions = { deletionBeforeInsertion: true, unnumberRemovedParagraphs: true, showOldNumbers: true, markFormattingChanges: true };
+
+const hasFlag = (properties: Element | undefined, names: string[]): boolean => !!properties && kids(properties).some((c) => isWord(c) && names.includes(c.localName!));
+
+/** Is this element inside a tracked wrapper of one of these kinds? */
+function insideWrapper(node: Element, names: string[]): boolean {
+  for (let n: Node | null = node.parentNode; n; n = n.parentNode) {
+    if (!isWord(n) || !names.includes(n.localName!)) continue;
+    const parent = n.parentNode as Element | null;
+    if (!(parent && isWord(parent) && FLAG_PARENTS.has(parent.localName!))) return true;
+  }
+  return false;
+}
+
+function nearestParagraph(node: Element): Element | undefined {
+  for (let n: Node | null = node.parentNode; n; n = n.parentNode) if (isWord(n, 'p')) return n;
+  return undefined;
+}
+
+/**
+ * Shade a run, or just the characters of it whose formatting changed
+ * (splitting the run where needed). `changed` has one entry per character of
+ * the run's text, in order.
+ */
+function shadeRun(run: Element, changed: boolean[]): void {
+  const shade = (target: Element): void => setRunProperty(runProperties(target), 'shd', { val: 'clear', color: 'auto', fill: FORMAT_CHANGE_FILL });
+  if (changed.every((c) => c)) {
+    shade(run);
+    return;
+  }
+  // Mixed: rebuild the run as a sequence of runs, each wholly changed or wholly unchanged.
+  const parent = run.parentNode!;
+  const doc = run.ownerDocument!;
+  const rPr = kid(run, 'rPr');
+  let at = 0;
+  let current: { element: Element; changed: boolean } | undefined;
+  const piece = (isChanged: boolean): Element => {
+    if (!current || current.changed !== isChanged) {
+      const element = doc.createElementNS(W, run.nodeName);
+      if (rPr) element.appendChild(rPr.cloneNode(true));
+      parent.insertBefore(element, run);
+      if (isChanged) shade(element);
+      current = { element, changed: isChanged };
+    }
+    return current.element;
+  };
+  for (const child of kids(run)) {
+    if (child === rPr) continue;
+    if (!isWord(child, 't') && !isWord(child, 'delText')) {
+      // Tabs, breaks and the like stay with the text before them (or after, at the start of the run).
+      piece(current?.changed ?? changed[at] ?? false).appendChild(child);
+      continue;
+    }
+    const text = shownText(child);
+    let start = 0;
+    while (start < text.length) {
+      const flag = changed[at + start]!;
+      let end = start;
+      while (end < text.length && changed[at + end] === flag) end++;
+      const part = doc.createElementNS(W, child.nodeName);
+      part.setAttribute('xml:space', 'preserve');
+      part.appendChild(doc.createTextNode(text.slice(start, end)));
+      piece(flag).appendChild(part);
+      start = end;
+    }
+    at += text.length;
+  }
+  parent.removeChild(run);
+}
+
+/**
+ * Before conversion, while the tracked changes still say what is kept and what
+ * is deleted: shade unchanged text whose formatting differs from the original's.
+ */
+function markFormattingChanges(root: Element, original: OriginalContext): void {
+  for (const unit of unitsOf(root)) {
+    // This unit as the original had it: unchanged and deleted text, in order.
+    const pieces: { run: Element; kept: boolean; bits: number; length: number }[] = [];
+    let text = '';
+    const runs = unit.getElementsByTagNameNS(W, 'r');
+    for (let i = 0; i < runs.length; i++) {
+      const run = runs.item(i) as Element;
+      if (insideWrapper(run, ['ins', 'moveTo'])) continue;
+      const kept = !insideWrapper(run, ['del', 'moveFrom']);
+      let length = 0;
+      for (const child of kids(run)) {
+        if (isWord(child, 't') || isWord(child, 'delText')) {
+          const shown = shownText(child);
+          text += shown;
+          length += shown.length;
+        }
+      }
+      if (length > 0) pieces.push({ run, kept, bits: original.styles.bits(kid(run, 'rPr'), nearestParagraph(run)), length });
+    }
+    // Find the same unit in the original by its text.
+    const match = original.info.streams.find((s) => !s.used && s.kind === root.localName && s.stream.text === text);
+    if (!match) continue;
+    match.used = true;
+    let at = 0;
+    for (const piece of pieces) {
+      const changed: boolean[] = [];
+      for (let k = 0; k < piece.length; k++) changed.push(piece.kept && match.stream.bits[at + k] !== piece.bits);
+      at += piece.length;
+      if (changed.some((c) => c)) shadeRun(piece.run, changed);
+    }
+  }
+}
+
+/** The original's clause number for each paragraph of the main document that the original had. */
+function oldNumbers(root: Element, original: OriginalContext): Map<Element, string> {
+  const result = new Map<Element, string>();
+  const paragraphs = paragraphsInCountingOrder(
+    root,
+    (paragraph) => !hasFlag(kid(kid(paragraph, 'pPr'), 'rPr'), ['ins', 'moveTo']),
+    (element) => {
+      if (!isWord(element)) return true;
+      const parent = element.parentNode as Element;
+      if ((element.localName === 'ins' || element.localName === 'moveTo') && !(isWord(parent) && FLAG_PARENTS.has(parent.localName!))) return false;
+      if (element.localName === 'tr' && hasFlag(kid(element, 'trPr'), ['ins'])) return false;
+      if (element.localName === 'tc' && hasFlag(kid(element, 'tcPr'), ['cellIns'])) return false;
+      return true;
+    },
+  );
+  // Only if the paragraphs line up one for one with the original's can the numbers be trusted.
+  if (paragraphs.length !== original.info.bodyNumbers.length) return result;
+  paragraphs.forEach((paragraph, index) => result.set(paragraph, original.info.bodyNumbers[index]!));
+  return result;
+}
+
+/** Count formatting changes: unbroken stretches of shaded runs within one paragraph. */
+function countShadedStretches(root: Element): number {
+  let count = 0;
+  const paragraphs = root.getElementsByTagNameNS(W, 'p');
+  for (let i = 0; i < paragraphs.length; i++) {
+    let shadedBefore = false;
+    const visit = (parent: Element): void => {
+      for (const child of kids(parent)) {
+        if (child.namespaceURI === W && child.localName === 'r') {
+          const rPr = kid(child, 'rPr');
+          if (!kids(child).some((c) => c !== rPr)) continue;
+          const shaded = kid(rPr, 'shd')?.getAttributeNS(W, 'fill')?.toUpperCase() === FORMAT_CHANGE_FILL;
+          if (shaded && !shadedBefore) count++;
+          shadedBefore = shaded;
+        } else if (child.namespaceURI === W && ['hyperlink', 'sdt', 'sdtContent', 'smartTag', 'fldSimple', 'customXml'].includes((child as Element).localName ?? '')) visit(child as Element);
+      }
+    };
+    visit(paragraphs.item(i) as Element);
+  }
+  return count;
+}
 
 /** Paragraph properties that come before w:numPr in Word's schema order. */
 const PPR_BEFORE_NUMPR = new Set(['pStyle', 'keepNext', 'keepLines', 'pageBreakBefore', 'framePr', 'widowControl']);
 
 class PartConverter {
   readonly tokens: Token[] = [];
+  /** Rows and cells that were themselves inserted or deleted. */
+  private readonly cellChange = new Map<Element, ChangeKind>();
 
-  constructor(private readonly options: StaticRedlineStyleOptions) {}
+  constructor(
+    private readonly options: StaticRedlineStyleOptions,
+    private readonly oldNumberOf: Map<Element, string> = new Map(),
+  ) {}
+
+  /** Type the old clause number, struck through like the paragraph it belongs to, at the start of a removed paragraph. */
+  private addOldNumber(paragraph: Element, label: string, kind: ChangeKind): void {
+    const doc = paragraph.ownerDocument!;
+    const prefix = paragraph.prefix ?? 'w';
+    const make = (name: string): Element => doc.createElementNS(W, `${prefix}:${name}`);
+    const run = make('r');
+    const rPr = make('rPr');
+    const style = make('rStyle');
+    style.setAttributeNS(W, `${prefix}:val`, OLD_NUMBER_STYLE);
+    rPr.appendChild(style);
+    run.appendChild(rPr);
+    applyChangeStyle(rPr, kind);
+    const text = make('t');
+    text.setAttribute('xml:space', 'preserve');
+    text.appendChild(doc.createTextNode(label));
+    run.appendChild(text);
+    run.appendChild(make('tab'));
+    const first = kids(paragraph).find((c) => !isWord(c, 'pPr'));
+    paragraph.insertBefore(run, first ?? null);
+  }
 
   /** Within each unbroken group of insertions and deletions, put the deletions first. */
   private putDeletionsFirst(parent: Element): void {
@@ -221,6 +417,16 @@ class PartConverter {
     }
 
     switch (name) {
+      case 'tr':
+      case 'tc': {
+        // Note whether the row or cell itself was inserted or deleted, before its flags are removed.
+        const flags = kid(element, name === 'tr' ? 'trPr' : 'tcPr');
+        const deleted = hasFlag(flags, name === 'tr' ? ['del'] : ['cellDel']);
+        const inserted = hasFlag(flags, name === 'tr' ? ['ins'] : ['cellIns']);
+        if (deleted || inserted) this.cellChange.set(element, deleted ? 'deleted' : 'inserted');
+        this.convert(element, kind);
+        return;
+      }
       case 'p':
         this.visitParagraph(element, kind);
         return;
@@ -279,12 +485,26 @@ class PartConverter {
       if (content.every((c) => isW(c, move))) markKind = WRAPPER_KIND[move];
     }
 
+    // A table cell always keeps its last paragraph mark for as long as the cell
+    // exists. So the last mark in a cell is changed only if the cell itself (or
+    // its row) was inserted or deleted, whatever the paragraph's own flag says.
+    const cell = paragraph.parentNode as Element;
+    if (!kind && isWord(cell, 'tc') && kids(cell).filter((c) => isWord(c, 'p') || isWord(c, 'tbl')).pop() === paragraph) {
+      const cellKind = this.cellChange.get(cell) ?? this.cellChange.get(cell.parentNode as Element);
+      if (markKind === 'movedFrom' || markKind === 'movedTo') markKind = cellKind ? markKind : undefined;
+      else markKind = cellKind;
+    }
+
     if (pPr) this.convert(pPr, kind);
     if (this.options.deletionBeforeInsertion) this.putDeletionsFirst(paragraph);
     for (const child of elementChildren(paragraph)) if (!isW(child, 'pPr')) this.visit(child, kind);
 
     if (markKind) applyChangeStyle(markProperties(paragraph), markKind);
-    if (this.options.unnumberRemovedParagraphs && (markKind === 'deleted' || markKind === 'movedFrom')) this.removeNumbering(paragraph);
+    if (markKind === 'deleted' || markKind === 'movedFrom') {
+      const label = this.oldNumberOf.get(paragraph);
+      if (this.options.showOldNumbers && label) this.addOldNumber(paragraph, label, markKind);
+      if (this.options.unnumberRemovedParagraphs) this.removeNumbering(paragraph);
+    }
     this.tokens.push(markKind ?? 'unchanged');
   }
 }
@@ -307,13 +527,17 @@ function countTokens(tokens: Token[]): Record<ChangeKind, number> {
 export interface ConvertedPart {
   xml: string;
   counts: Record<ChangeKind, number>;
+  formattingChanges: number;
 }
 
 /** Convert one Word-markup part (document, header, footer, footnotes, endnotes) from tracked changes to static formatting. */
-export function convertPart(xml: string, options: StaticRedlineStyleOptions = DEFAULT_STYLE_OPTIONS): ConvertedPart {
+export function convertPart(xml: string, options: StaticRedlineStyleOptions = DEFAULT_STYLE_OPTIONS, original?: OriginalContext): ConvertedPart {
   const document = new DOMParser().parseFromString(xml, 'application/xml');
   const root = document.documentElement as unknown as Element;
-  const converter = new PartConverter(options);
+  // These two need the tracked changes still in place, so they come first.
+  const numbers = original && original.isMain && options.showOldNumbers ? oldNumbers(root, original) : new Map<Element, string>();
+  if (original && options.markFormattingChanges) markFormattingChanges(root, original);
+  const converter = new PartConverter(options, numbers);
   converter.convert(root, undefined);
-  return { xml: new XMLSerializer().serializeToString(document), counts: countTokens(converter.tokens) };
+  return { xml: new XMLSerializer().serializeToString(document), counts: countTokens(converter.tokens), formattingChanges: countShadedStretches(root) };
 }
