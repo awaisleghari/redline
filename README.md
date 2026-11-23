@@ -22,7 +22,8 @@ npm run dev
 
 Then open the address it prints (normally http://localhost:5173). At this
 stage it is a bare development page: choose an original and a modified `.docx`,
-press Compare, and download the result as a Word file with tracked changes.
+press Compare, read the check report, and download the result as a Word file
+with tracked changes (offered only if every check passed).
 
 The comparison engine is [docxodus](https://www.npmjs.com/package/docxodus), a
 .NET engine compiled to WebAssembly. `npm run dev` and `npm run build` copy its
@@ -34,7 +35,17 @@ runtime files into `public/wasm/` automatically.
 npm test
 ```
 
-runs the unit tests (Vitest).
+runs the unit tests (Vitest). These include the Checker's tests: every
+generated document pair must pass it, and every deliberately broken output in
+`tests/fixtures/broken.ts` must be caught.
+
+```bash
+npm run test:schema
+```
+
+validates every generated output against the Office Open XML schema with
+Microsoft's Open XML SDK. It needs the .NET 10 SDK
+(`apt-get install -y dotnet-sdk-10.0` on Ubuntu).
 
 ```bash
 npm run test:e2e
@@ -47,7 +58,17 @@ browser with `npx playwright install chromium`.
 npm run test:all
 ```
 
-runs the type check and both test suites.
+runs the type check and all three.
+
+## How it is built
+
+The product has two halves that do not share code (a test enforces this):
+
+- `src/producer/` makes the outputs (the compare engine, in a Web Worker).
+- `src/checker/` is an independent reviewer. It re-reads the two uploads and
+  each output from their raw bytes, in its own Web Worker, and decides whether
+  the output may be released. `src/app/flow.ts` is the only route by which an
+  output reaches the user, and it releases one only when every check passes.
 
 `scripts/early-checks/` holds the one-off scripts behind the engine findings
 recorded in `PLAN.md` (same output as the .NET build, speed on a 100-page

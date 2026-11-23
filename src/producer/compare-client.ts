@@ -41,8 +41,10 @@ export class CompareClient {
     };
   }
 
-  async compare(original: Blob, modified: Blob): Promise<CompareResult> {
-    const [originalBytes, modifiedBytes] = await Promise.all([original.arrayBuffer(), modified.arrayBuffer()]);
+  compare(original: Uint8Array, modified: Uint8Array): Promise<CompareResult> {
+    // The worker receives its own copies; the caller's bytes stay usable (the Checker needs them).
+    const originalBytes = original.slice().buffer;
+    const modifiedBytes = modified.slice().buffer;
     const id = this.nextId++;
     const request: CompareRequest = { type: 'compare', id, original: originalBytes, modified: modifiedBytes };
     return new Promise<CompareResult>((resolve, reject) => {
