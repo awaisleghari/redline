@@ -1,0 +1,164 @@
+/**
+ * The Checker's own reading of character formatting: what a reader would see
+ * for a piece of text (bold, italic, underlined, capitals, hidden), resolved
+ * through the document's styles; and, for a static redline, which kind of
+ * change a piece of text is marked as.
+ */
+import { NS } from '../common/namespaces';
+import type { DocxPackage } from './package';
+import { attribute, child, is, type XmlElement } from './xml';
+
+const W = NS.w;
+
+/** One bit per property a reader can see. */
+export const FORMAT = { bold: 1, italic: 2, underline: 4, caps: 8, smallCaps: 16, hidden: 32 } as const;
+export type FormatBits = number;
+
+export const FORMAT_NAMES: [number, string][] = [
+  [FORMAT.bold, 'bold'],
+  [FORMAT.italic, 'italic'],
+  [FORMAT.underline, 'underline'],
+  [FORMAT.caps, 'capitals'],
+  [FORMAT.smallCaps, 'small capitals'],
+  [FORMAT.hidden, 'hidden text'],
+];
+
+/** "bold, italic" for a set of bits; "plain" for none. */
+export function describeFormat(bits: FormatBits): string {
+  const names = FORMAT_NAMES.filter(([bit]) => bits & bit).map(([, name]) => name);
+  return names.length > 0 ? names.join(', ') : 'plain';
+}
+
+const PROPERTY: Record<string, number> = { b: FORMAT.bold, i: FORMAT.italic, u: FORMAT.underline, caps: FORMAT.caps, smallCaps: FORMAT.smallCaps, vanish: FORMAT.hidden };
+
+/** Is an on/off property element switched on? (No value means on.) */
+export function isOn(element: XmlElement): boolean {
+  const value = attribute(element, W, 'val');
+  if (element.name === 'u') return value !== 'none';
+  return value === undefined || !['0', 'false', 'off'].includes(value);
+}
+
+/** What one set of run properties says explicitly: which properties it sets, and to what. */
+interface Stated {
+  mask: number;
+  value: number;
+}
+
+function stated(rPr: XmlElement | undefined): Stated {
+  let mask = 0;
+  let value = 0;
+  for (const property of rPr?.children ?? []) {
+    if (property.ns !== W) continue;
+    const bit = PROPERTY[property.name];
+    if (!bit) continue;
+    mask |= bit;
+    if (isOn(property)) value |= bit;
+    else value &= ~bit;
+  }
+  return { mask, value };
+}
+
+interface Style {
+  type: string;
+  basedOn?: string;
+  stated: Stated;
+  numbering?: XmlElement;
+}
+
+export class Styles {
+  private readonly styles = new Map<string, Style>();
+  private defaults: Stated = { mask: 0, value: 0 };
+  private defaultParagraphStyle: string | undefined;
+
+  constructor(pkg: DocxPackage, mainPart: string) {
+    const partName = pkg.relationshipsOfType(mainPart, 'styles')[0]?.partName;
+    if (!partName || !pkg.has(partName)) return;
+    for (const node of pkg.xml(partName).children) {
+      if (is(node, W, 'docDefaults')) {
+        const rPrDefault = child(node, W, 'rPrDefault');
+        this.defaults = stated(rPrDefault && child(rPrDefault, W, 'rPr'));
+      } else if (is(node, W, 'style')) {
+        const id = attribute(node, W, 'styleId') ?? '';
+        const type = attribute(node, W, 'type') ?? 'paragraph';
+        const basedOn = child(node, W, 'basedOn');
+        const pPr = child(node, W, 'pPr');
+        this.styles.set(id, {
+          type,
+          basedOn: basedOn && attribute(basedOn, W, 'val'),
+          stated: stated(child(node, W, 'rPr')),
+          numbering: pPr && child(pPr, W, 'numPr'),
+        });
+        const isDefault = attribute(node, W, 'default');
+        if (type === 'paragraph' && isDefault !== undefined && !['0', 'false', 'off'].includes(isDefault)) this.defaultParagraphStyle = id;
+      }
+    }
+  }
+
+  /** A style and everything it is based on, nearest first. */
+  private chain(id: string | undefined): Style[] {
+    const result: Style[] = [];
+    const seen = new Set<string>();
+    while (id !== undefined && !seen.has(id)) {
+      seen.add(id);
+      const style = this.styles.get(id);
+      if (!style) break;
+      result.push(style);
+      id = style.basedOn;
+    }
+    return result;
+  }
+
+  /**
+   * The formatting a reader sees for a run: its own properties first, then its
+   * character style, then its paragraph's style, then the document defaults.
+   */
+  formatOf(runProperties: XmlElement | undefined, paragraphStyle: string | undefined): FormatBits {
+    const characterStyle = runProperties && child(runProperties, W, 'rStyle');
+    const layers: Stated[] = [
+      stated(runProperties),
+      ...this.chain(characterStyle && attribute(characterStyle, W, 'val')).map((s) => s.stated),
+      ...this.chain(paragraphStyle ?? this.defaultParagraphStyle).map((s) => s.stated),
+      this.defaults,
+    ];
+    let decided = 0;
+    let bits = 0;
+    for (const layer of layers) {
+      const fresh = layer.mask & ~decided;
+      bits |= layer.value & fresh;
+      decided |= layer.mask;
+    }
+    return bits;
+  }
+
+  /** The numbering a paragraph has: its own, or else its style's. Undefined when it has none. */
+  numberingOf(paragraphProperties: XmlElement | undefined): XmlElement | undefined {
+    const direct = paragraphProperties && child(paragraphProperties, W, 'numPr');
+    if (direct) return direct;
+    const style = paragraphProperties && child(paragraphProperties, W, 'pStyle');
+    for (const s of this.chain((style && attribute(style, W, 'val')) ?? this.defaultParagraphStyle)) if (s.numbering) return s.numbering;
+    return undefined;
+  }
+}
+
+export type StaticKind = 'inserted' | 'deleted' | 'movedFrom' | 'movedTo';
+
+/**
+ * Which change, if any, a set of run properties marks in a static redline,
+ * per the style spec in PLAN.md. Read from the formatting alone.
+ */
+export function staticKindOf(rPr: XmlElement | undefined): StaticKind | undefined {
+  if (!rPr) return undefined;
+  const colorElement = child(rPr, W, 'color');
+  const color = (colorElement && attribute(colorElement, W, 'val'))?.toUpperCase();
+  const on = (name: string): boolean => {
+    const element = child(rPr, W, name);
+    return !!element && isOn(element);
+  };
+  const underline = child(rPr, W, 'u');
+  const doubleUnderline = !!underline && attribute(underline, W, 'val') === 'double';
+  if (color === 'FF0000' && on('strike')) return 'deleted';
+  if (color === '008000' && on('dstrike')) return 'movedFrom';
+  if (color === '0000FF' && doubleUnderline) return 'inserted';
+  if (color === '008000' && doubleUnderline) return 'movedTo';
+  return undefined;
+}

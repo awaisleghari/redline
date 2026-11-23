@@ -34,10 +34,12 @@ test('a 100-page contract compares in the browser', async ({ page }) => {
   const started = Date.now();
   await page.getByRole('button', { name: 'Compare' }).click();
   await expect(page.locator('#status')).toHaveAttribute('data-state', 'done', { timeout: 60_000 });
+  // 'done' means the independent Checker also read all 100 pages and passed the output.
+  await expect(page.locator('#report li[data-passed="true"]')).toHaveCount(4);
   const wallMs = Date.now() - started;
   const engineMs = Number(await page.locator('#status').getAttribute('data-engine-ms'));
   const longestGapMs = await page.evaluate(() => (window as unknown as { longestGapMs: number }).longestGapMs);
-  console.log(`100-page contract: engine ${engineMs} ms, click-to-done ${wallMs} ms, longest main-thread pause ${Math.round(longestGapMs)} ms`);
+  console.log(`100-page contract: engine ${engineMs} ms, click-to-done (compare + check) ${wallMs} ms, longest main-thread pause ${Math.round(longestGapMs)} ms`);
 
   // Generous ceilings: this guards against a collapse in speed, not small drifts.
   expect(engineMs).toBeLessThan(30_000);
@@ -53,4 +55,6 @@ test('a 100-page contract compares in the browser', async ({ page }) => {
   expect(found.parts.body.deletions.length).toBeGreaterThanOrEqual(contract.edits.wordChanges);
   expect(found.parts.body.movedFrom.length).toBeGreaterThanOrEqual(contract.edits.movedParagraphs);
   expect(found.parts.body.movedTo.length).toBe(found.parts.body.movedFrom.length);
+  // The generated edits include a block of consecutive paragraphs moved together.
+  expect(found.parts.body.movedFrom.length).toBeGreaterThan(contract.edits.movedParagraphs);
 });

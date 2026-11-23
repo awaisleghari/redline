@@ -10,7 +10,7 @@
 import { compareDocuments, initialize } from 'docxodus/core';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { REVISION_AUTHOR } from '../../src/producer/protocol';
-import { PAIR_SPECS, buildPair } from '../fixtures/pairs';
+import { ALL_PAIR_SPECS, PAIR_SPECS, buildPair } from '../fixtures/pairs';
 import { fullExpectation, readTrackedChanges } from '../helpers/tracked-changes';
 
 beforeAll(async () => {
@@ -32,7 +32,7 @@ describe('generated test pairs', () => {
     ]);
   });
 
-  it.each(PAIR_SPECS)('$id: the original and modified files really differ', async (spec) => {
+  it.each(ALL_PAIR_SPECS)('$id: the original and modified files really differ', async (spec) => {
     const pair = await buildPair(spec);
     const original = await readTrackedChanges(pair.original);
     const modified = await readTrackedChanges(pair.modified);
@@ -44,7 +44,7 @@ describe('generated test pairs', () => {
 });
 
 describe('compare engine', () => {
-  it.each(PAIR_SPECS)('$id: produces exactly the expected tracked changes', async (spec) => {
+  it.each(ALL_PAIR_SPECS)('$id: produces exactly the expected tracked changes', async (spec) => {
     const pair = await buildPair(spec);
     const redline = await compareDocuments(pair.original, pair.modified, { authorName: REVISION_AUTHOR });
     const found = await readTrackedChanges(redline);

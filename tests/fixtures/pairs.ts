@@ -7,7 +7,12 @@
  */
 import {
   AlignmentType,
+  CommentRangeEnd,
+  CommentRangeStart,
+  CommentReference,
   Document,
+  EndnoteReferenceRun,
+  ExternalHyperlink,
   Footer,
   FootnoteReferenceRun,
   Header,
@@ -17,7 +22,9 @@ import {
   Table,
   TableCell,
   TableRow,
+  Textbox,
   TextRun,
+  UnderlineType,
   WidthType,
 } from 'docx';
 
@@ -62,20 +69,38 @@ export interface BuiltPair {
   modified: Uint8Array;
 }
 
+/** A stretch of text with its own character formatting. */
+export interface RunSpec {
+  text: string;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  allCaps?: boolean;
+}
+
 type Block =
   | { kind: 'p'; text: string }
+  | { kind: 'rich'; text: string; runs: RunSpec[] }
+  | { kind: 'endnoted'; text: string; endnoteId: number }
+  | { kind: 'commented'; text: string; before: string; anchored: string; after: string; commentId: number }
+  | { kind: 'linked'; text: string; before: string; linkText: string; url: string; after: string }
+  | { kind: 'textbox'; text: string; lines: string[] }
   | { kind: 'numbered'; text: string }
   | { kind: 'footnoted'; text: string; footnoteId: number }
   | { kind: 'table'; rows: string[][] };
 
-interface DocSpec {
+export interface DocSpec {
   blocks: Block[];
   header?: string;
   footer?: string;
   footnotes?: Record<number, string>;
+  endnotes?: Record<number, string>;
+  comments?: Record<number, string>;
 }
 
 const p = (text: string): Block => ({ kind: 'p', text });
+/** A paragraph made of separately formatted runs. `text` is their concatenation. */
+const rich = (...runs: RunSpec[]): Block => ({ kind: 'rich', text: runs.map((r) => r.text).join(''), runs });
 const numbered = (text: string): Block => ({ kind: 'numbered', text });
 
 // ---------------------------------------------------------------------------
@@ -109,7 +134,7 @@ const none = (): ExpectedChanges => ({
 const changes = (partial: Partial<ExpectedChanges>): ExpectedChanges => ({ ...none(), ...partial });
 
 /** Replace the one block whose text equals `from`. Throws if it is not there exactly once. */
-function replaceBlock(blocks: Block[], from: string, to: Block): Block[] {
+export function replaceBlock(blocks: Block[], from: string, to: Block): Block[] {
   const hits = blocks.filter((b) => b.kind !== 'table' && b.text === from).length;
   if (hits !== 1) throw new Error(`expected exactly one block with text "${from}", found ${hits}`);
   return blocks.map((b) => (b.kind !== 'table' && b.text === from ? to : b));
@@ -232,16 +257,226 @@ export const PAIR_SPECS: PairSpec[] = [
   },
 ];
 
+/**
+ * Further pairs, beyond the nine the plan lists, covering parts of a Word file
+ * the Checker must also read: footers, endnotes, text boxes, comments, table
+ * rows, character formatting, and several changes at once.
+ */
+const FORMATTED_SERVICES: RunSpec[] = [
+  { text: 'The Supplier shall provide the ' },
+  { text: 'Services', bold: true },
+  { text: ' with ' },
+  { text: 'reasonable skill and care', italic: true },
+  { text: ', and ' },
+  { text: 'time is of the essence', underline: true },
+  { text: '. ' },
+  { text: 'Important', allCaps: true },
+  { text: ' terms follow.' },
+];
+
+export const EXTRA_PAIR_SPECS: PairSpec[] = [
+  {
+    id: 'footer-change',
+    description: 'The page footer changes; the body and header are identical.',
+    original: { blocks: BASE, header: 'Confidential', footer: 'Alpha Holdings Limited' },
+    modified: { blocks: BASE, header: 'Confidential', footer: 'Alpha Holdings plc' },
+    expected: { footer: changes({ deletions: ['Limited'], insertions: ['plc'] }) },
+  },
+  {
+    id: 'endnote-change',
+    description: 'The text of an endnote changes; the body is identical.',
+    original: {
+      blocks: replaceBlock(BASE, GOVERNING_LAW, { kind: 'endnoted', text: GOVERNING_LAW, endnoteId: 1 }),
+      endnotes: { 1: 'The courts of England have exclusive jurisdiction.' },
+    },
+    modified: {
+      blocks: replaceBlock(BASE, GOVERNING_LAW, { kind: 'endnoted', text: GOVERNING_LAW, endnoteId: 1 }),
+      endnotes: { 1: 'The courts of England have non-exclusive jurisdiction.' },
+    },
+    // The engine treats the hyphen as a word boundary, so only "non-" is new.
+    expected: { endnotes: changes({ insertions: ['non-'] }) },
+  },
+  {
+    id: 'text-box-change',
+    description: 'A word changes inside a text box.',
+    original: { blocks: [p(PARTIES), { kind: 'textbox', text: '', lines: ['Signed for and on behalf of the Supplier', 'Director'] }, p(GOVERNING_LAW)] },
+    modified: { blocks: [p(PARTIES), { kind: 'textbox', text: '', lines: ['Signed for and on behalf of the Supplier', 'Secretary'] }, p(GOVERNING_LAW)] },
+    // The engine does not compare inside a text box: it replaces the whole box,
+    // deleting the old one and inserting the new one (each in its own paragraph).
+    expected: {
+      body: changes({
+        deletions: ['Signed for and on behalf of the SupplierDirector'],
+        insertions: ['Signed for and on behalf of the SupplierSecretary'],
+        insertedParagraphMarks: 1,
+        deletedParagraphMarks: 1,
+      }),
+    },
+  },
+  {
+    id: 'comment-kept',
+    description: 'A word changes in a document that carries a reviewer comment on other text.',
+    original: {
+      blocks: [
+        p(PARTIES),
+        { kind: 'commented', text: PAYMENT, before: 'The Customer shall pay the Fees within ', anchored: 'thirty days', after: ' of the date of each invoice.', commentId: 0 },
+        p(SERVICES),
+        p(GOVERNING_LAW),
+      ],
+      comments: { 0: 'Check the payment period with the client.' },
+    },
+    modified: {
+      blocks: [
+        p(PARTIES),
+        { kind: 'commented', text: PAYMENT, before: 'The Customer shall pay the Fees within ', anchored: 'thirty days', after: ' of the date of each invoice.', commentId: 0 },
+        p('The Supplier shall provide the Services with exceptional skill and care.'),
+        p(GOVERNING_LAW),
+      ],
+      comments: { 0: 'Check the payment period with the client.' },
+    },
+    expected: { body: changes({ deletions: ['reasonable'], insertions: ['exceptional'] }) },
+  },
+  {
+    id: 'table-row-added',
+    description: 'A row is added to a table.',
+    original: { blocks: [p(PARTIES), { kind: 'table', rows: FEE_TABLE.slice(0, 2) }, p(GOVERNING_LAW)] },
+    modified: { blocks: [p(PARTIES), { kind: 'table', rows: FEE_TABLE }, p(GOVERNING_LAW)] },
+    expected: { body: changes({ insertions: ['Support', 'USD 1,500'], insertedRows: 1, insertedParagraphMarks: 2 }) },
+  },
+  {
+    id: 'table-row-deleted',
+    description: 'A row is removed from a table.',
+    original: { blocks: [p(PARTIES), { kind: 'table', rows: FEE_TABLE }, p(GOVERNING_LAW)] },
+    modified: { blocks: [p(PARTIES), { kind: 'table', rows: FEE_TABLE.slice(0, 2) }, p(GOVERNING_LAW)] },
+    expected: { body: changes({ deletions: ['Support', 'USD 1,500'], deletedRows: 1, deletedParagraphMarks: 2 }) },
+  },
+  {
+    id: 'hyperlink-address-change',
+    description: 'A web link keeps its wording but points to a new address, and one word changes elsewhere.',
+    original: {
+      blocks: [p(PARTIES), { kind: 'linked', text: '', before: 'The terms are published at ', linkText: 'our website', url: 'https://example.com/terms-2025', after: '.' }, p(SERVICES), p(GOVERNING_LAW)],
+    },
+    modified: {
+      blocks: [
+        p(PARTIES),
+        { kind: 'linked', text: '', before: 'The terms are published at ', linkText: 'our website', url: 'https://example.com/terms-2026', after: '.' },
+        p('The Supplier shall provide the Services with exceptional skill and care.'),
+        p(GOVERNING_LAW),
+      ],
+    },
+    // The engine tracks a changed address as the old link's words deleted and the new link's words inserted.
+    expected: { body: changes({ deletions: ['our website', 'reasonable'], insertions: ['our website', 'exceptional'] }) },
+  },
+  {
+    id: 'moved-block',
+    description: 'Three consecutive paragraphs are moved together, unchanged, from near the top to near the bottom.',
+    original: { blocks: [p(PARTIES), p(CONFIDENTIALITY), p(ASSIGNMENT), p(TERMINATION), p(SERVICES), p(PAYMENT), p(LIABILITY), p(GOVERNING_LAW)] },
+    modified: { blocks: [p(PARTIES), p(SERVICES), p(PAYMENT), p(LIABILITY), p(CONFIDENTIALITY), p(ASSIGNMENT), p(TERMINATION), p(GOVERNING_LAW)] },
+    expected: {
+      body: changes({
+        movedFrom: [CONFIDENTIALITY, ASSIGNMENT, TERMINATION],
+        movedTo: [CONFIDENTIALITY, ASSIGNMENT, TERMINATION],
+        moveOrder: ['from', 'from', 'from', 'to', 'to', 'to'],
+        insertedParagraphMarks: 3,
+        deletedParagraphMarks: 3,
+      }),
+    },
+  },
+  {
+    id: 'formatted-text-word-change',
+    description: 'One word changes in a paragraph that has bold, italic, underlined and all-capitals text.',
+    original: { blocks: [p(PARTIES), rich(...FORMATTED_SERVICES), p(GOVERNING_LAW)] },
+    modified: {
+      blocks: [
+        p(PARTIES),
+        rich(...FORMATTED_SERVICES.map((run) => (run.text === ' terms follow.' ? { ...run, text: ' provisions follow.' } : run))),
+        p(GOVERNING_LAW),
+      ],
+    },
+    expected: { body: changes({ deletions: ['terms'], insertions: ['provisions'] }) },
+  },
+  {
+    id: 'several-changes',
+    description: 'A word change, a number change and a rewritten clause in one document, with header and footnote changes.',
+    original: {
+      blocks: replaceBlock(BASE, PAYMENT, { kind: 'footnoted', text: PAYMENT, footnoteId: 1 }),
+      header: 'Draft 1 - Confidential',
+      footnotes: { 1: 'Fees are stated exclusive of value added tax.' },
+    },
+    modified: {
+      blocks: [
+        p(PARTIES),
+        p('The Supplier shall provide the Services with exceptional skill and care.'),
+        { kind: 'footnoted', text: PAYMENT, footnoteId: 1 },
+        p('The total liability of the Supplier under this Agreement shall not exceed $30,000 in aggregate.'),
+        p(ASSIGNMENT),
+        p(GOVERNING_LAW),
+      ],
+      header: 'Draft 2 - Confidential',
+      footnotes: { 1: 'Fees are stated inclusive of value added tax.' },
+    },
+    expected: {
+// The termination clause is replaced by the assignment clause in the same
+      // position; the two share enough words that the engine shows it as one
+      // paragraph edited word by word, not as a delete plus an insert.
+      body: changes({
+        insertions: ['exceptional', '$30,000', 'Neither', 'assign', 'without the prior', 'consent of'],
+        deletions: ['reasonable', '$300,000', 'Either', 'terminate', 'by giving ninety days', 'notice to'],
+      }),
+      header: changes({ deletions: ['1'], insertions: ['2'] }),
+      footnotes: changes({ deletions: ['exclusive'], insertions: ['inclusive'] }),
+    },
+  },
+];
+
+/** Every generated pair: the plan's nine plus the extras. */
+export const ALL_PAIR_SPECS: PairSpec[] = [...PAIR_SPECS, ...EXTRA_PAIR_SPECS];
+
 // ---------------------------------------------------------------------------
 // Building the .docx files
 // ---------------------------------------------------------------------------
 
 const NUMBERING_REFERENCE = 'clause-list';
 
-function renderBlock(block: Block): Paragraph | Table {
+function renderBlock(block: Block): Paragraph | Table | Textbox {
   switch (block.kind) {
     case 'p':
       return new Paragraph({ children: [new TextRun(block.text)] });
+    case 'rich':
+      return new Paragraph({
+        children: block.runs.map(
+          (run) =>
+            new TextRun({
+              text: run.text,
+              bold: run.bold,
+              italics: run.italic,
+              underline: run.underline ? { type: UnderlineType.SINGLE } : undefined,
+              allCaps: run.allCaps,
+            }),
+        ),
+      });
+    case 'endnoted':
+      return new Paragraph({ children: [new TextRun(block.text), new EndnoteReferenceRun(block.endnoteId)] });
+    case 'commented':
+      return new Paragraph({
+        children: [
+          new TextRun(block.before),
+          new CommentRangeStart(block.commentId),
+          new TextRun(block.anchored),
+          new CommentRangeEnd(block.commentId),
+          new TextRun({ children: [new CommentReference(block.commentId)] }),
+          new TextRun(block.after),
+        ],
+      });
+    case 'linked':
+      return new Paragraph({
+        children: [new TextRun(block.before), new ExternalHyperlink({ link: block.url, children: [new TextRun(block.linkText)] }), new TextRun(block.after)],
+      });
+    case 'textbox':
+      return new Textbox({
+        alignment: 'left',
+        style: { width: '300pt', height: '60pt' },
+        children: block.lines.map((line) => new Paragraph({ children: [new TextRun(line)] })),
+      });
     case 'numbered':
       return new Paragraph({
         children: [new TextRun(block.text)],
@@ -269,6 +504,10 @@ export async function buildDocx(spec: DocSpec): Promise<Uint8Array> {
   for (const [id, text] of Object.entries(spec.footnotes ?? {})) {
     footnotes[Number(id)] = { children: [new Paragraph({ children: [new TextRun(text)] })] };
   }
+  const endnotes: Record<number, { children: Paragraph[] }> = {};
+  for (const [id, text] of Object.entries(spec.endnotes ?? {})) {
+    endnotes[Number(id)] = { children: [new Paragraph({ children: [new TextRun(text)] })] };
+  }
   const doc = new Document({
     creator: 'Redline test fixtures',
     title: 'Generated test document',
@@ -281,6 +520,17 @@ export async function buildDocx(spec: DocSpec): Promise<Uint8Array> {
       ],
     },
     footnotes,
+    endnotes,
+    comments: spec.comments
+      ? {
+          children: Object.entries(spec.comments).map(([id, text]) => ({
+            id: Number(id),
+            author: 'Reviewer',
+            date: new Date('2026-01-15T10:00:00Z'),
+            children: [new Paragraph({ children: [new TextRun(text)] })],
+          })),
+        }
+      : undefined,
     sections: [
       {
         headers: spec.header
@@ -302,7 +552,7 @@ export async function buildPair(spec: PairSpec): Promise<BuiltPair> {
 }
 
 export function pairById(id: string): PairSpec {
-  const spec = PAIR_SPECS.find((s) => s.id === id);
+  const spec = ALL_PAIR_SPECS.find((s) => s.id === id);
   if (!spec) throw new Error(`no test pair called "${id}"`);
   return spec;
 }

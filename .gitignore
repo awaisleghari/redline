@@ -14,3 +14,6 @@ coverage/
 .vite/
 *.tsbuildinfo
 .DS_Store
+
+# Sample files generated for the owner to open in Word
+owner-checks/
