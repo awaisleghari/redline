@@ -2,6 +2,7 @@
  * Stage 5: the PDF. These tests run the real converter container (Docker) and
  * the Checker's check 9 on its output.
  */
+import { execFileSync } from 'node:child_process';
 import { initialize } from 'docxodus/core';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { checkPdf, CHECKS_FOR } from '../../src/checker';
@@ -160,6 +161,36 @@ print("done")`;
       expect(containerOfficeProcesses(name)).toEqual([]);
       expect(containerScratchFiles(name)).toEqual([]);
       expect(containerLog(name)).toBe('');
+    } finally {
+      removeContainer(name);
+    }
+  });
+
+  it('its own state report gives three counts and nothing else, and agrees with the search below', async () => {
+    const report = await (await fetch(CONVERT_URL.replace('/convert', '/state'))).text();
+    const counts = /^conversions=(\d+) files=(\d+) office_processes=(\d+)$/.exec(report);
+    expect(counts, report).not.toBeNull();
+    expect(Number(counts![1])).toBeGreaterThan(50); // every conversion this suite asked for was counted
+    expect(Number(counts![2])).toBe(0);
+    expect(Number(counts![3])).toBe(0);
+  });
+
+  it('the state report does count a file that is left behind (so a clean report means something)', async () => {
+    const name = 'redline-pdf-state';
+    startExtraContainer(name, 8793, {});
+    try {
+      const state = async (): Promise<string> => (await fetch('http://127.0.0.1:8793/state')).text();
+      for (let attempt = 0; attempt < 60; attempt++) {
+        try {
+          await state();
+          break;
+        } catch {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+      }
+      expect(await state()).toBe('conversions=0 files=0 office_processes=0');
+      execFileSync('docker', ['exec', '-u', '0', name, 'sh', '-c', 'mkdir /tmp/c-left && touch /tmp/c-left/in.docx /home/converter/stray']);
+      expect(await state()).toBe('conversions=0 files=3 office_processes=0');
     } finally {
       removeContainer(name);
     }

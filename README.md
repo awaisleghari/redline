@@ -63,10 +63,18 @@ builds and runs the PDF converter container and checks its output. It needs
 Docker. So do the browser tests, because they include making a PDF.
 
 ```bash
+npm run test:worker
+```
+
+runs the real Cloudflare Worker locally (`wrangler dev`, with the converter
+container behind it) and tests the site as it is deployed: the page, the PDF
+route, and that the converter holds nothing afterwards. It needs Docker.
+
+```bash
 npm run test:all
 ```
 
-runs the type check and all four.
+runs the type check and all five.
 
 ## The PDF converter
 
@@ -84,6 +92,75 @@ docker run --rm -p 127.0.0.1:8791:8080 redline-pdf
 
 With that running, `npm run dev` can make PDFs. `worker/` holds the Cloudflare
 Worker that does the same job in production.
+
+## How to deploy
+
+The site runs on Cloudflare. It needs the Workers Paid plan, because the PDF
+converter is a Cloudflare Container. `wrangler.jsonc` holds every deployment
+setting; no setting lives only in the Cloudflare dashboard, and the repository
+holds no password, token or key.
+
+What gets set up on Cloudflare:
+
+- **A Worker called `redline`**, at `https://redline.<your-account>.workers.dev`.
+  Cloudflare serves the built site (`dist/`) directly. The Worker's own code
+  (`worker/`) answers two addresses only: `/api/pdf` (the PDF step) and
+  `/api/converter-state` (below).
+- **The PDF converter**: the image in `pdf-container/`, at most two copies. A
+  copy starts when a PDF is asked for and is shut down after five idle minutes,
+  which also discards its disk. It has no access to the internet.
+- **No storage of any kind** (no database, no file store) and **no logs**:
+  Cloudflare's request logs are switched off for the Worker and the converter.
+  `tests/unit/deploy-config.test.ts` fails if any of that changes.
+
+### Automatic deployment (how the live site is run)
+
+The GitHub repository is connected to Cloudflare ("Workers Builds"). Whenever
+`main` changes, Cloudflare builds the site and the converter image and deploys
+them. To set that up once, in the Cloudflare dashboard: **Workers & Pages**,
+**Create application**, choose **GitHub**, pick this repository, and set:
+
+| Setting | Value |
+|---|---|
+| Project name | `redline` (must match `name` in `wrangler.jsonc`) |
+| Production branch | `main` |
+| Build command | `npm run build` |
+| Deploy command | `npx wrangler deploy` |
+| Preview builds for other branches | off |
+
+### Deploying by hand
+
+With Docker running and a Cloudflare login (`npx wrangler login`):
+
+```bash
+npm run deploy
+```
+
+### Checking the live site
+
+```bash
+npm run build
+```
+
+```bash
+npm run test:live -- https://redline.<your-account>.workers.dev
+```
+
+makes real PDFs through the live converter, runs the Checker on each, and
+confirms the refusals and the security headers.
+
+```bash
+REDLINE_URL=https://redline.<your-account>.workers.dev npm run test:e2e
+```
+
+runs the whole browser suite against the live site (Docker is still needed
+locally: a few tests make deliberately wrong PDFs to prove they are withheld).
+
+`/api/converter-state` is a public, read-only report: for each copy of the
+converter, either `asleep` or three counts (conversions attempted since it
+started, files it holds that were not there when it started, LibreOffice
+processes running). Between conversions the last two must be 0. It never
+reports a name, a size or any content.
 
 ## How it is built
 

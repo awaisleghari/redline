@@ -1,0 +1,46 @@
+// Deployment settings for Cloudflare (read by `wrangler`, Cloudflare's deployment tool).
+// What each block does is explained in README.md, "How to deploy".
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "redline",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-11-23",
+
+  // The site is reachable at https://redline.<account>.workers.dev and nowhere else:
+  // no per-version preview addresses.
+  "workers_dev": true,
+  "preview_urls": false,
+
+  // The web page itself: the built files in dist/. Cloudflare serves these directly.
+  // Only a request that matches no file (in practice /api/...) reaches the Worker code.
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "none"
+  },
+
+  // Nothing about any request is recorded: Cloudflare's request logs are switched off
+  // for the Worker and for the converter. (The converter writes no log lines anyway.)
+  "observability": {
+    "enabled": false,
+    "logs": { "enabled": false, "invocation_logs": false },
+    "traces": { "enabled": false }
+  },
+
+  // The PDF converter: the image in pdf-container/, at most two copies running at once.
+  // A copy starts when a PDF is asked for and is shut down after five idle minutes
+  // (worker/index.ts), which also wipes its disk.
+  "containers": [
+    {
+      "class_name": "PdfConverter",
+      "image": "./pdf-container/Dockerfile",
+      "instance_type": "standard-1",
+      "max_instances": 2,
+      "observability": { "logs": { "enabled": false } }
+    }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "PDF_CONVERTER", "class_name": "PdfConverter" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["PdfConverter"] }]
+}

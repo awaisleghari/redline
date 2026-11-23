@@ -1,0 +1,13 @@
+# Headers Cloudflare adds to every file of the site (the page's own content-security
+# policy is in index.html). The site may not be framed by another site, sends no
+# referrer, and asks for no device permissions.
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: no-referrer
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+
+# Files under /assets/ carry a fingerprint of their content in their name, so a
+# browser may keep them for good.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
