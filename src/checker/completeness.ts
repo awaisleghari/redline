@@ -5,7 +5,7 @@
 import { NS } from '../common/namespaces';
 import type { DocxPackage } from './package';
 import type { CheckFailure } from './report';
-import type { Story, StoryReading } from './stories';
+import { isStructureMark, type Story, type StoryReading } from './stories';
 import { attribute, descendants, is, type XmlElement } from './xml';
 
 const W = NS.w;
@@ -15,6 +15,10 @@ function hasText(element: XmlElement): boolean {
     if ((is(node, W, 't') || is(node, W, 'delText')) && node.text !== '') return true;
   }
   return false;
+}
+
+function hasAnyText(element: XmlElement): boolean {
+  return element.text.trim() !== '' || element.children.some(hasAnyText);
 }
 
 /**
@@ -39,10 +43,23 @@ export function unreadText(pkg: DocxPackage, readings: StoryReading[], fileName:
   for (const reading of readings) for (const part of reading.partsRead) partsRead.add(part);
 
   for (const partName of pkg.partNames) {
+    // Embedded documents (HTML, RTF, text, another Word file) could carry text Word would import.
+    if (/\.(html?|mht|mhtml|rtf|txt|docx?|docm|dotx?|odt)$/i.test(partName)) {
+      problems.push(`The ${fileName} embeds another document ("${partName}"), whose content cannot be checked.`);
+      continue;
+    }
     if (!partName.endsWith('.xml') || partName === '[Content_Types].xml') continue;
     const root = pkg.xml(partName);
-    if (root.ns !== W) continue; // only Word-markup parts can hold document text
     if (isExempt(partName, root)) continue;
+    if (root.ns !== W) {
+      // Charts, diagrams and the like beside the document are read as "graphics" text.
+      // Anything else outside Word's markup that holds text was not read.
+      const inDocumentFolder = /^word\//.test(partName) || partsRead.has(partName);
+      if (!partsRead.has(partName) && inDocumentFolder && !partName.includes('/theme/') && hasAnyText(root)) {
+        problems.push(`The ${fileName} contains text in "${partName}" that was not checked.`);
+      }
+      continue;
+    }
 
     if (!partsRead.has(partName)) {
       if (hasText(root)) problems.push(`The ${fileName} contains text in "${partName}" that was not checked (nothing in the document refers to it).`);
@@ -70,7 +87,7 @@ export function unreadText(pkg: DocxPackage, readings: StoryReading[], fileName:
 /** One line saying what was covered, for the report. */
 export function coverageNote(stories: Story[]): string {
   const count = (kind: Story['kind']): number => stories.filter((s) => s.kind === kind).length;
-  const paragraphs = stories.reduce((sum, s) => sum + s.paragraphs.length, 0);
+  const paragraphs = stories.reduce((sum, s) => sum + s.paragraphs.filter((p) => !isStructureMark(p)).length, 0);
   const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`;
   const parts = [
     'main text',

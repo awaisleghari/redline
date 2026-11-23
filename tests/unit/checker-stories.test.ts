@@ -59,9 +59,19 @@ describe('reading text', () => {
     expect((await read(p(r('One')) + p('') + p(r('Two')), 'accepted')).body).toEqual(['One', '', 'Two']);
   });
 
-  it('ignores field codes but keeps field results', async () => {
+  it('reads a field as its code and its result, so neither can change unnoticed', async () => {
     const body = p(`${r('See clause ')}<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> REF _Ref1 </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>${r('7.2')}<w:r><w:fldChar w:fldCharType="end"/></w:r>`);
-    expect((await read(body, 'accepted')).body).toEqual(['See clause 7.2']);
+    expect((await read(body, 'accepted')).body).toEqual([`See clause ${MARK.fieldBegin} REF _Ref1 ${MARK.fieldResult}7.2${MARK.fieldEnd}`]);
+  });
+
+  it('drops outer spaces of text that is not marked to preserve them, exactly as Word does', async () => {
+    const body = p('<w:r><w:t xml:space="preserve">kept </w:t></w:r><w:r><w:t>dropped </w:t></w:r><w:r><w:t>end</w:t></w:r>');
+    expect((await read(body, 'accepted')).body).toEqual(['kept droppedend']);
+  });
+
+  it('tells a page break and a column break from a line break', async () => {
+    const body = p(`${r('a')}<w:r><w:br/></w:r>${r('b')}<w:r><w:br w:type="page"/></w:r>${r('c')}<w:r><w:br w:type="column"/></w:r>`);
+    expect((await read(body, 'accepted')).body).toEqual([`a\nb${MARK.pageBreak}c${MARK.columnBreak}`]);
   });
 
   it('reads text inside hyperlinks and content controls', async () => {
@@ -127,31 +137,45 @@ describe('tables', () => {
 
   it('reads cells in order, each paragraph separately', async () => {
     const body = `<w:tbl>${row(cell(p(r('A1'))) + cell(p(r('B1')) + p(r('B1 second'))))}${row(cell(p(r('A2'))) + cell(p('')))}</w:tbl>`;
-    expect((await read(body, 'accepted')).body).toEqual(['A1', 'B1', 'B1 second', 'A2', '']);
+    const { table: T, row: R, cell: C, tableEnd: E } = MARK;
+    expect((await read(body, 'accepted')).body).toEqual([T, R, C, 'A1', C, 'B1', 'B1 second', R, C, 'A2', C, '', E]);
+  });
+
+  it('a table differs from the same text laid out as plain paragraphs, or in different rows or cells', async () => {
+    const asTable = `<w:tbl>${row(cell(p(r('A'))) + cell(p(r('B'))))}${row(cell(p(r('C'))) + cell(p(r('D'))))}</w:tbl>`;
+    const plain = p(r('A')) + p(r('B')) + p(r('C')) + p(r('D'));
+    const oneRow = `<w:tbl>${row(cell(p(r('A'))) + cell(p(r('B'))) + cell(p(r('C'))) + cell(p(r('D'))))}</w:tbl>`;
+    const shifted = `<w:tbl>${row(cell(p(r('A')) + p(r('B'))) + cell(p('')))}${row(cell(p(r('C'))) + cell(p(r('D'))))}</w:tbl>`;
+    const readings = await Promise.all([asTable, plain, oneRow, shifted].map(async (b) => JSON.stringify((await read(b, 'accepted')).body)));
+    expect(new Set(readings).size).toBe(4);
   });
 
   it('an inserted row vanishes when rejected; a deleted row vanishes when accepted', async () => {
     const inserted = row(cell(p(mark('ins') + ins(r('new')))), '<w:trPr><w:ins w:id="1"/></w:trPr>');
     const deleted = row(cell(p(mark('del') + del('old'))), '<w:trPr><w:del w:id="2"/></w:trPr>');
     const body = `<w:tbl>${row(cell(p(r('kept'))))}${inserted}${deleted}</w:tbl>`;
-    expect((await read(body, 'accepted')).body).toEqual(['kept', 'new']);
-    expect((await read(body, 'rejected')).body).toEqual(['kept', 'old']);
+    const { table: T, row: R, cell: C, tableEnd: E } = MARK;
+    expect((await read(body, 'accepted')).body).toEqual([T, R, C, 'kept', R, C, 'new', E]);
+    expect((await read(body, 'rejected')).body).toEqual([T, R, C, 'kept', R, C, 'old', E]);
   });
 
   it('a row whose text is tracked but which is not itself tracked leaves an empty cell behind', async () => {
     const body = `<w:tbl>${row(cell(p(r('kept'))))}${row(cell(p(mark('ins') + ins(r('new')))))}</w:tbl>`;
-    expect((await read(body, 'rejected')).body).toEqual(['kept', '']);
+    const { table: T, row: R, cell: C, tableEnd: E } = MARK;
+    expect((await read(body, 'rejected')).body).toEqual([T, R, C, 'kept', R, C, '', E]);
   });
 
   it('an inserted or deleted cell follows the same rule', async () => {
     const body = `<w:tbl>${row(cell(p(r('kept'))) + cell(p(r('added')), '<w:tcPr><w:cellIns w:id="1"/></w:tcPr>') + cell(p(r('removed')), '<w:tcPr><w:cellDel w:id="2"/></w:tcPr>'))}</w:tbl>`;
-    expect((await read(body, 'accepted')).body).toEqual(['kept', 'added']);
-    expect((await read(body, 'rejected')).body).toEqual(['kept', 'removed']);
+    const { table: T, row: R, cell: C, tableEnd: E } = MARK;
+    expect((await read(body, 'accepted')).body).toEqual([T, R, C, 'kept', C, 'added', E]);
+    expect((await read(body, 'rejected')).body).toEqual([T, R, C, 'kept', C, 'removed', E]);
   });
 
   it('text never leaks from one cell into the next', async () => {
     const body = `<w:tbl>${row(cell(p(mark('del') + r('left'))) + cell(p(r('right'))))}</w:tbl>`;
-    expect((await read(body, 'accepted')).body).toEqual(['left', 'right']);
+    const { table: T, row: R, cell: C, tableEnd: E } = MARK;
+    expect((await read(body, 'accepted')).body).toEqual([T, R, C, 'left', C, 'right', E]);
   });
 });
 
@@ -197,6 +221,35 @@ describe('notes, headers and text boxes', () => {
     const stories = await read(body, 'accepted');
     expect(stories.body).toEqual([`Host${MARK.object}`]);
     expect(stories['body/text boxes']).toEqual(['Boxed', 'text']);
+  });
+
+  it('reads text printed in a footnote separator', async () => {
+    const withText = '<w:footnote w:type="separator" w:id="-1"><w:p><w:r><w:t>Smuggled sentence.</w:t></w:r></w:p></w:footnote>';
+    const stories = await read(p(r('Body')), 'accepted', { footnotes: withText });
+    expect(stories['footnote separator']).toEqual(['Smuggled sentence.']);
+  });
+
+  it('refuses a drawing stored in two forms whose text differs', async () => {
+    const box = (text: string): string => `<w:txbxContent><w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:txbxContent>`;
+    const body = p(`<w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:drawing><wps:txbx>${box('Pay in full')}</wps:txbx></w:drawing></mc:Choice><mc:Fallback><w:pict><v:textbox>${box('Pay nothing')}</v:textbox></w:pict></mc:Fallback></mc:AlternateContent></w:r>`);
+    const reading = readStories(await pkg(body), 'accepted');
+    expect(reading.problems.join(' ')).toContain('two alternative forms');
+  });
+
+  it('refuses text wrapped in an element it does not know', async () => {
+    const body = p(`<x:wrapper xmlns:x="urn:example:unknown">${r('maybe shown')}</x:wrapper>`);
+    const reading = readStories(await pkg(body), 'accepted');
+    expect(reading.problems.join(' ')).toContain('does not know');
+  });
+
+  it('refuses a document that pulls in another file', async () => {
+    const reading = readStories(await pkg(p(r('Body')) + '<w:altChunk r:id="rId9"/>'), 'accepted');
+    expect(reading.problems.join(' ')).toContain('another file');
+  });
+
+  it('reads watermark text and drawing text', async () => {
+    const body = p(`<w:r><w:pict><v:shape><v:textpath string="CONFIDENTIAL"/></v:shape></w:pict></w:r>`);
+    expect((await read(body, 'accepted')).body![0]).toContain('CONFIDENTIAL');
   });
 
   it('a picture or other object leaves a marker, so its removal is noticed', async () => {

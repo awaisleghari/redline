@@ -1,6 +1,6 @@
 /** Paragraph-by-paragraph comparison of two readings of a document. */
 import type { CheckFailure } from './report';
-import type { Story } from './stories';
+import { isStructureMark, type Story } from './stories';
 
 /** A short excerpt of `text` around position `at`, so a difference can be shown without the whole paragraph. */
 function excerpt(text: string, at: number): string {
@@ -35,14 +35,25 @@ export function compareStories(expected: Story[], actual: Story[], expectedName:
       };
     }
     const count = Math.min(want.paragraphs.length, got.paragraphs.length);
+    // Paragraph numbers shown to the user count paragraphs only, not table markers.
+    let paragraphNumber = 0;
     for (let i = 0; i < count; i++) {
       const a = want.paragraphs[i]!;
       const b = got.paragraphs[i]!;
+      if (!isStructureMark(a)) paragraphNumber++;
       if (a === b) continue;
+      if (isStructureMark(a) || isStructureMark(b)) {
+        return {
+          message: `A table is laid out differently from the ${expectedName} (its rows, cells or position do not match).`,
+          where: `${want.label}, after paragraph ${isStructureMark(a) ? paragraphNumber : paragraphNumber - 1}`,
+          expected: isStructureMark(a) ? a : excerpt(a, 0),
+          found: isStructureMark(b) ? b : excerpt(b, 0),
+        };
+      }
       const at = firstDifference(a, b);
       return {
         message: `The text differs from the ${expectedName}.`,
-        where: `${want.label}, paragraph ${i + 1}`,
+        where: `${want.label}, paragraph ${paragraphNumber}`,
         expected: excerpt(a, at),
         found: excerpt(b, at),
       };
@@ -55,7 +66,7 @@ export function compareStories(expected: Story[], actual: Story[], expectedName:
           want.paragraphs.length > got.paragraphs.length
             ? `The output has fewer paragraphs than the ${expectedName} (${got.paragraphs.length} instead of ${want.paragraphs.length}).`
             : `The output has more paragraphs than the ${expectedName} (${got.paragraphs.length} instead of ${want.paragraphs.length}).`,
-        where: `${want.label}, paragraph ${count + 1}`,
+        where: `${want.label}, after paragraph ${paragraphNumber}`,
         expected: want.paragraphs.length > got.paragraphs.length ? excerpt(extra, 0) : '(no further paragraphs)',
         found: want.paragraphs.length > got.paragraphs.length ? '(no further paragraphs)' : excerpt(extra, 0),
       };

@@ -348,6 +348,118 @@ export const BROKEN_CASES: BrokenCase[] = [
     },
     caughtBy: ['completeness'],
   },
+  // ----- found by the Stage 2 independent review: each of these once passed -----
+  {
+    id: 'spaces-lost-preserve-flag-removed',
+    description: 'A run lost its "preserve spaces" flag, so Word drops the space at its end and two words run together.',
+    pairId: 'one-word-change',
+    damage: (f) => edit(f, DOC, (x) => swap(x, '<w:t xml:space="preserve">The Supplier shall provide the Services with </w:t>', '<w:t>The Supplier shall provide the Services with </w:t>')),
+    caughtBy: TEXT,
+  },
+  {
+    id: 'table-dissolved-into-paragraphs',
+    description: 'A table was replaced by its text as plain paragraphs.',
+    pairId: 'table-cell-change',
+    damage: (f) =>
+      edit(f, DOC, (x) => {
+        const table = x.match(/<w:tbl>.*<\/w:tbl>/)?.[0];
+        if (!table) throw new Error('broken case: no table');
+        const paragraphs = (table.match(/<w:p>.*?<\/w:p>/g) ?? []).join('');
+        return x.replace(table, paragraphs);
+      }),
+    caughtBy: TEXT,
+  },
+  {
+    id: 'table-rows-merged',
+    description: 'Two table rows were run together into one row.',
+    pairId: 'table-cell-change',
+    damage: (f) => edit(f, DOC, (x) => x.replace('</w:tr><w:tr>', '')),
+    caughtBy: TEXT,
+  },
+  {
+    id: 'paragraph-moved-to-next-cell',
+    description: 'Text was moved from one table cell into the next.',
+    pairId: 'table-cell-change',
+    damage: (f) =>
+      edit(f, DOC, (x) =>
+        swap(
+          x,
+          '<w:tc><w:p><w:r><w:t xml:space="preserve">Hosting</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t xml:space="preserve">USD 4,000</w:t></w:r></w:p></w:tc>',
+          '<w:tc><w:p/></w:tc><w:tc><w:p><w:r><w:t xml:space="preserve">Hosting</w:t></w:r></w:p><w:p><w:r><w:t xml:space="preserve">USD 4,000</w:t></w:r></w:p></w:tc>',
+        ),
+      ),
+    caughtBy: TEXT,
+  },
+  {
+    id: 'text-in-footnote-separator',
+    description: 'A sentence was added to the footnote separator, which Word prints above the footnotes.',
+    pairId: 'footnote-change',
+    damage: (f) => edit(f, 'word/footnotes.xml', (x) => swap(x, '<w:r><w:separator /></w:r>', '<w:r><w:separator /></w:r><w:r><w:t>The Customer waives all claims.</w:t></w:r>')),
+    caughtBy: TEXT,
+  },
+  {
+    id: 'alternate-content-with-different-fallback',
+    description: 'A sentence is stored in two alternative forms that say different things.',
+    pairId: 'one-word-change',
+    damage: (f) =>
+      edit(f, DOC, (x) =>
+        swap(
+          x,
+          PARA(PAYMENT),
+          `<w:p><mc:AlternateContent><mc:Choice Requires="zz"><w:r><w:t xml:space="preserve">${PAYMENT}</w:t></w:r></mc:Choice><mc:Fallback><w:r><w:t>The Customer shall pay nothing.</w:t></w:r></mc:Fallback></mc:AlternateContent></w:p>`,
+        ),
+      ),
+    caughtBy: ['completeness'],
+  },
+  {
+    id: 'text-in-unknown-wrapper',
+    description: 'Unchanged text is wrapped in an element Word may silently drop.',
+    pairId: 'one-word-change',
+    damage: (f) => edit(f, DOC, (x) => swap(x, PARA(PAYMENT), `<w:p><x:maybe xmlns:x="urn:example:unknown"><w:r><w:t xml:space="preserve">${PAYMENT}</w:t></w:r></x:maybe></w:p>`)),
+    caughtBy: ['completeness'],
+  },
+  {
+    id: 'embedded-html-chunk',
+    description: 'The file pulls in an extra HTML document with new text when Word opens it.',
+    pairId: 'one-word-change',
+    damage: (f) => {
+      f.set('word/chunk.html', encoder.encode('<html><body><p>The Supplier accepts unlimited liability.</p></body></html>'));
+      edit(f, '[Content_Types].xml', (x) => swap(x, '</Types>', '<Default Extension="html" ContentType="text/html"/></Types>'));
+      edit(f, 'word/_rels/document.xml.rels', (x) =>
+        swap(x, '</Relationships>', '<Relationship Id="rIdChunk" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/aFChunk" Target="chunk.html"/></Relationships>'),
+      );
+      edit(f, DOC, (x) => swap(x, '<w:sectPr>', '<w:altChunk r:id="rIdChunk"/><w:sectPr>'));
+    },
+    caughtBy: ['completeness'],
+  },
+  {
+    id: 'text-in-added-diagram-part',
+    description: 'An extra diagram part holds text that is not in either document.',
+    pairId: 'one-word-change',
+    damage: (f) => {
+      f.set(
+        'word/diagrams/data1.xml',
+        encoder.encode(
+          '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><dgm:dataModel xmlns:dgm="http://schemas.openxmlformats.org/drawingml/2006/diagram" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><dgm:ptLst><dgm:pt><dgm:t><a:p><a:r><a:t>Liability cap: unlimited</a:t></a:r></a:p></dgm:t></dgm:pt></dgm:ptLst></dgm:dataModel>',
+        ),
+      );
+    },
+    caughtBy: TEXT,
+  },
+  {
+    id: 'watermark-text-changed',
+    description: 'The watermark across the page says something else.',
+    pairId: 'text-box-change',
+    damage: (f) => edit(f, DOC, (x) => swap(x, /<v:textbox style="mso-fit-shape-to-text:t;"><w:txbxContent><w:p><w:r><w:t xml:space="preserve">Signed for and on behalf of the Supplier<\/w:t><\/w:r><\/w:p><w:p><w:r><w:t xml:space="preserve">Secretary/, '<v:textpath string="FINAL - AGREED"/>$&')),
+    caughtBy: ['accept-all'],
+  },
+  {
+    id: 'line-break-became-page-break',
+    description: 'A page break was slipped into unchanged text.',
+    pairId: 'one-word-change',
+    damage: (f) => edit(f, DOC, (x) => swap(x, PARA(PAYMENT), `<w:p><w:r><w:br w:type="page"/><w:t xml:space="preserve">${PAYMENT}</w:t></w:r></w:p>`)),
+    caughtBy: TEXT,
+  },
   // ----- comments -----
   {
     id: 'broken-comment-anchor',
