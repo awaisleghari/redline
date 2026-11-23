@@ -76,7 +76,13 @@ describe('reading text', () => {
 
   it('reads text inside hyperlinks and content controls', async () => {
     const body = p(`<w:hyperlink r:id="x">${r('link')}</w:hyperlink><w:sdt><w:sdtContent>${r(' control')}</w:sdtContent></w:sdt>`) + `<w:sdt><w:sdtContent>${p(r('block control'))}</w:sdtContent></w:sdt>`;
-    expect((await read(body, 'accepted')).body).toEqual(['link control', 'block control']);
+    expect((await read(body, 'accepted')).body).toEqual(['⟦link⟧link⟦/link⟧ control', 'block control']);
+  });
+
+  it('reads where a hyperlink points, so it cannot be silently repointed', async () => {
+    const to = async (anchor: string): Promise<string> => (await read(p(`<w:hyperlink w:anchor="${anchor}">${r('clause 7')}</w:hyperlink>`), 'accepted')).body![0]!;
+    expect(await to('_Ref7')).toBe('⟦link to bookmark _Ref7⟧clause 7⟦/link⟧');
+    expect(await to('_Ref9')).not.toBe(await to('_Ref7'));
   });
 });
 
@@ -220,7 +226,26 @@ describe('notes, headers and text boxes', () => {
     const body = p(`${r('Host')}<w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:drawing><wps:txbx>${box}</wps:txbx></w:drawing></mc:Choice><mc:Fallback><w:pict><v:textbox>${box}</v:textbox></w:pict></mc:Fallback></mc:AlternateContent></w:r>`);
     const stories = await read(body, 'accepted');
     expect(stories.body).toEqual([`Host${MARK.object}`]);
-    expect(stories['body/text boxes']).toEqual(['Boxed', 'text']);
+    expect(stories['body/text boxes']).toEqual([MARK.textBox, 'Boxed', 'text']);
+  });
+
+  it('keeps separate text boxes separate', async () => {
+    const box = (...lines: string[]): string => `<w:r><w:pict><v:textbox><w:txbxContent>${lines.map((l) => p(r(l))).join('')}</w:txbxContent></v:textbox></w:pict></w:r>`;
+    const a = (await read(p(box('A', 'B') + box('C')), 'accepted'))['body/text boxes'];
+    const b = (await read(p(box('A') + box('B', 'C')), 'accepted'))['body/text boxes'];
+    expect(a).toEqual([MARK.textBox, 'A', 'B', MARK.textBox, 'C']);
+    expect(b).not.toEqual(a);
+  });
+
+  it('refuses alternative forms that differ in any branch, or only in which footnote they point to', async () => {
+    const alt = (...branches: string[]): string => p(`<mc:AlternateContent>${branches.join('')}</mc:AlternateContent>`);
+    const choice = (inner: string, req = 'wps'): string => `<mc:Choice Requires="${req}">${inner}</mc:Choice>`;
+    const fallback = (inner: string): string => `<mc:Fallback>${inner}</mc:Fallback>`;
+    const problems = async (body: string): Promise<string> => readStories(await pkg(body, { footnotes: '<w:footnote w:id="1"><w:p/></w:footnote><w:footnote w:id="2"><w:p/></w:footnote>' }), 'accepted').problems.join(' ');
+    expect(await problems(alt(choice(r('same')), fallback(r('same'))))).toBe('');
+    expect(await problems(alt(choice(r('same'), 'zz'), choice(r('other')), fallback(r('same'))))).toContain('alternative forms');
+    const ref = (id: number): string => `<w:r><w:footnoteReference w:id="${id}"/></w:r>`;
+    expect(await problems(alt(choice(ref(1)), fallback(ref(2))))).toContain('alternative forms');
   });
 
   it('reads text printed in a footnote separator', async () => {
@@ -233,13 +258,16 @@ describe('notes, headers and text boxes', () => {
     const box = (text: string): string => `<w:txbxContent><w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:txbxContent>`;
     const body = p(`<w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:drawing><wps:txbx>${box('Pay in full')}</wps:txbx></w:drawing></mc:Choice><mc:Fallback><w:pict><v:textbox>${box('Pay nothing')}</v:textbox></w:pict></mc:Fallback></mc:AlternateContent></w:r>`);
     const reading = readStories(await pkg(body), 'accepted');
-    expect(reading.problems.join(' ')).toContain('two alternative forms');
+    expect(reading.problems.join(' ')).toContain('alternative forms');
   });
 
   it('refuses text wrapped in an element it does not know', async () => {
     const body = p(`<x:wrapper xmlns:x="urn:example:unknown">${r('maybe shown')}</x:wrapper>`);
     const reading = readStories(await pkg(body), 'accepted');
     expect(reading.problems.join(' ')).toContain('does not know');
+    // ...and equally a footnote mark or a tab wrapped that way, which holds no text of its own.
+    const mark = p(`<x:wrapper xmlns:x="urn:example:unknown"><w:r><w:tab/></w:r></x:wrapper>`);
+    expect(readStories(await pkg(mark), 'accepted').problems.join(' ')).toContain('does not know');
   });
 
   it('refuses a document that pulls in another file', async () => {

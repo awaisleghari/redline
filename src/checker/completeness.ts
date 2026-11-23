@@ -17,10 +17,6 @@ function hasText(element: XmlElement): boolean {
   return false;
 }
 
-function hasAnyText(element: XmlElement): boolean {
-  return element.text.trim() !== '' || element.children.some(hasAnyText);
-}
-
 /**
  * Parts that legitimately hold w:t text which is not document text:
  * reviewer comments (annotations, verified structurally instead) and the
@@ -43,23 +39,13 @@ export function unreadText(pkg: DocxPackage, readings: StoryReading[], fileName:
   for (const reading of readings) for (const part of reading.partsRead) partsRead.add(part);
 
   for (const partName of pkg.partNames) {
-    // Embedded documents (HTML, RTF, text, another Word file) could carry text Word would import.
-    if (/\.(html?|mht|mhtml|rtf|txt|docx?|docm|dotx?|odt)$/i.test(partName)) {
-      problems.push(`The ${fileName} embeds another document ("${partName}"), whose content cannot be checked.`);
-      continue;
-    }
     if (!partName.endsWith('.xml') || partName === '[Content_Types].xml') continue;
     const root = pkg.xml(partName);
     if (isExempt(partName, root)) continue;
-    if (root.ns !== W) {
-      // Charts, diagrams and the like beside the document are read as "graphics" text.
-      // Anything else outside Word's markup that holds text was not read.
-      const inDocumentFolder = /^word\//.test(partName) || partsRead.has(partName);
-      if (!partsRead.has(partName) && inDocumentFolder && !partName.includes('/theme/') && hasAnyText(root)) {
-        problems.push(`The ${fileName} contains text in "${partName}" that was not checked.`);
-      }
-      continue;
-    }
+    // Charts, diagrams, pictures and embedded files are read where the document
+    // anchors them (through a relationship). One that nothing links to is never
+    // shown by Word, so it is not document content.
+    if (root.ns !== W) continue;
 
     if (!partsRead.has(partName)) {
       if (hasText(root)) problems.push(`The ${fileName} contains text in "${partName}" that was not checked (nothing in the document refers to it).`);

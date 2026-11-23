@@ -108,6 +108,23 @@ function markupProblems(pkg: DocxPackage, partName: string, root: XmlElement, co
   const rangeEnds: Record<string, string[]> = { moveFrom: [], moveTo: [] };
   const bump = (map: Map<string, number>, key: string): void => void map.set(key, (map.get(key) ?? 0) + 1);
 
+  // Deleted text must be marked as deleted text, and only there: Word's treatment
+  // of the mismatched forms is not defined, so what a reader would see is unknown.
+  const misplaced = (element: XmlElement, inDeletion: boolean): void => {
+    for (const c of element.children) {
+      if (c.ns !== W) {
+        misplaced(c, inDeletion);
+        continue;
+      }
+      if (c.name === 'delText' && !inDeletion) problems.push(`"${partName}" has deleted-text markup outside any deletion.`);
+      if (c.name === 't' && inDeletion) problems.push(`"${partName}" has ordinary text directly inside a deletion (it should be marked as deleted text).`);
+      // (A moved-from block keeps ordinary text markup; only w:del uses deleted-text markup.)
+      const next = c.name === 'del' ? true : ['txbxContent', 'ins', 'moveTo', 'moveFrom'].includes(c.name) ? false : inDeletion;
+      misplaced(c, next);
+    }
+  };
+  misplaced(root, false);
+
   for (const node of descendants(root)) {
     // Every relationship id used in the markup must exist.
     for (const [key, value] of node.attributes) {

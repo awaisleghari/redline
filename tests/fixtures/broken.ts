@@ -433,10 +433,20 @@ export const BROKEN_CASES: BrokenCase[] = [
     caughtBy: ['completeness'],
   },
   {
-    id: 'text-in-added-diagram-part',
-    description: 'An extra diagram part holds text that is not in either document.',
+    id: 'chart-added-with-text',
+    description: 'A chart or diagram with its own text was slipped into unchanged text.',
     pairId: 'one-word-change',
     damage: (f) => {
+      edit(f, 'word/_rels/document.xml.rels', (x) =>
+        swap(x, '</Relationships>', '<Relationship Id="rIdDiagram" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramData" Target="diagrams/data1.xml"/></Relationships>'),
+      );
+      edit(f, DOC, (x) =>
+        swap(
+          x,
+          PARA(PAYMENT),
+          `<w:p><w:r><w:t xml:space="preserve">${PAYMENT}</w:t></w:r><w:r><w:drawing><wp:inline xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData><dgm:relIds xmlns:dgm="http://schemas.openxmlformats.org/drawingml/2006/diagram" r:dm="rIdDiagram"/></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`,
+        ),
+      );
       f.set(
         'word/diagrams/data1.xml',
         encoder.encode(
@@ -444,6 +454,27 @@ export const BROKEN_CASES: BrokenCase[] = [
         ),
       );
     },
+    caughtBy: TEXT,
+  },
+  {
+    id: 'deleted-text-markup-outside-a-deletion',
+    description: 'Text is marked up as deleted text but sits outside any deletion, so Word may or may not show it.',
+    pairId: 'one-word-change',
+    damage: (f) => edit(f, DOC, (x) => swap(x, PARA(PAYMENT), `<w:p><w:r><w:delText xml:space="preserve">${PAYMENT}</w:delText></w:r></w:p>`)),
+    caughtBy: ['structure'],
+  },
+  {
+    id: 'ordinary-text-inside-a-deletion',
+    description: 'A deletion holds ordinary text markup, so Word may show text that should read as deleted.',
+    pairId: 'one-word-change',
+    damage: (f) => edit(f, DOC, (x) => swap(x, '<w:delText>reasonable</w:delText>', '<w:t>reasonable</w:t>')),
+    caughtBy: ['structure'],
+  },
+  {
+    id: 'hyperlink-repointed',
+    description: 'A sentence was turned into a link to somewhere else.',
+    pairId: 'one-word-change',
+    damage: (f) => edit(f, DOC, (x) => swap(x, PARA(PAYMENT), `<w:p><w:hyperlink w:anchor="_Elsewhere"><w:r><w:t xml:space="preserve">${PAYMENT}</w:t></w:r></w:hyperlink></w:p>`)),
     caughtBy: TEXT,
   },
   {

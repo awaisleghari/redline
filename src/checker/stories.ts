@@ -56,9 +56,11 @@ export const MARK = {
   row: '⟦table row⟧',
   cell: '⟦table cell⟧',
   tableEnd: '⟦end of table⟧',
+  /** Start of one text box, as an entry of its own in a text-box story. */
+  textBox: '⟦text box⟧',
 } as const;
 
-const STRUCTURE_MARKS: ReadonlySet<string> = new Set([MARK.table, MARK.row, MARK.cell, MARK.tableEnd]);
+const STRUCTURE_MARKS: ReadonlySet<string> = new Set([MARK.table, MARK.row, MARK.cell, MARK.tableEnd, MARK.textBox]);
 /** Is this story entry a table-structure marker rather than a paragraph? */
 export const isStructureMark = (entry: string): boolean => STRUCTURE_MARKS.has(entry);
 
@@ -88,9 +90,25 @@ const A_NS = 'http://schemas.openxmlformats.org/drawingml/2006/main';
 const M_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/math';
 const V_NS = 'urn:schemas-microsoft-com:vml';
 
-function holdsWordText(element: XmlElement): boolean {
-  if (element.ns === W && (element.name === 't' || element.name === 'delText') && element.text !== '') return true;
-  return element.children.some(holdsWordText);
+/** Does an element hold any document markup at all (text, a note reference, a tab, a field, an equation, a shape...)? */
+function holdsWordMarkup(element: XmlElement): boolean {
+  return element.children.some((c) => c.ns === W || c.ns === M_NS || c.ns === A_NS || c.ns === V_NS || holdsWordMarkup(c));
+}
+
+/** A short, stable fingerprint of a file's bytes (FNV-1a, two passes), to tell whether a picture or embedded object changed. */
+function fingerprint(bytes: Uint8Array): string {
+  let a = 0x811c9dc5;
+  let b = 0x01000193;
+  for (let i = 0; i < bytes.length; i++) {
+    a = Math.imul(a ^ bytes[i]!, 0x01000193) >>> 0;
+    b = Math.imul(b ^ bytes[bytes.length - 1 - i]!, 0x811c9dc5) >>> 0;
+  }
+  return `${bytes.length}:${a.toString(16)}:${b.toString(16)}`;
+}
+
+function allText(element: XmlElement, into: string[]): void {
+  if (element.text.trim() !== '') into.push(element.text);
+  for (const c of element.children) allText(c, into);
 }
 
 /** The text of a w:t or w:delText as Word shows it: outer whitespace is dropped unless the element says to preserve it. */
@@ -135,10 +153,51 @@ interface Context {
   sections: XmlElement[];
   /** Things found that make the text impossible to verify. Shared by every nested context. */
   problems: string[];
+  /** The package and the part being read, for following links to pictures, charts and the like. */
+  source: Source;
 }
 
-function newContext(view: View, problems: string[]): Context {
-  return { view, paragraphs: [], pending: '', textBoxes: [], notes: [], sections: [], problems };
+interface Source {
+  pkg: DocxPackage;
+  part: string;
+  partsRead: Set<string>;
+}
+
+function newContext(view: View, problems: string[], source: Source): Context {
+  return { view, paragraphs: [], pending: '', textBoxes: [], notes: [], sections: [], problems, source };
+}
+
+/**
+ * What an element links to through a relationship (r:id, r:embed, ...): a
+ * chart or diagram (its text is read), a picture or embedded file (its bytes
+ * are fingerprinted), or an external address. Read at the place the document
+ * anchors it, so a swapped chart or picture shows up as a difference there.
+ */
+function linkedContent(node: XmlElement, context: Context): string {
+  let text = '';
+  for (const [key, id] of node.attributes) {
+    if (!key.startsWith(`${NS.r}|`) || id === '') continue;
+    const { pkg, part, partsRead } = context.source;
+    const rel = pkg.relationships(part).find((r) => r.id === id);
+    if (!rel) continue; // a dangling id is reported by the structure check
+    if (rel.external) {
+      text += `⟦link to ${rel.target}⟧`;
+      continue;
+    }
+    if (!rel.partName || !pkg.has(rel.partName)) continue;
+    if (/\.xml$/i.test(rel.partName)) {
+      const root = pkg.xml(rel.partName);
+      if (root.ns === W) continue; // headers, footers and notes are read as stories of their own
+      partsRead.add(rel.partName);
+      const texts: string[] = [];
+      allText(root, texts);
+      text += `⟦linked content: ${texts.join(' | ')}⟧`;
+    } else {
+      partsRead.add(rel.partName);
+      text += `⟦file ${fingerprint(pkg.entries.get(rel.partName)!)}⟧`;
+    }
+  }
+  return text;
 }
 
 /** Fold a nested reading (a cell, a text box) back into the one that contains it. */
@@ -154,23 +213,24 @@ function absorb(outer: Context, inner: Context): void {
  * is the same whichever is shown.
  */
 function alternateContentBranch(element: XmlElement, context: Context, read: (branch: XmlElement, into: Context) => string): XmlElement | undefined {
-  const choice = child(element, NS.mc, 'Choice');
-  const fallback = child(element, NS.mc, 'Fallback');
-  if (choice && fallback) {
-    const texts = [choice, fallback].map((branch) => {
-      const probe = newContext(context.view, []);
+  const branches = element.children.filter((c) => c.ns === NS.mc && (c.name === 'Choice' || c.name === 'Fallback'));
+  if (branches.length > 1) {
+    // Every branch (there may be several Choices) must read the same: text, text boxes and note references.
+    const readings = branches.map((branch) => {
+      const probe = newContext(context.view, [], { ...context.source, partsRead: new Set() });
       const inline = read(branch, probe);
-      return JSON.stringify([inline, probe.paragraphs, probe.pending, probe.textBoxes]);
+      // Pictures are stored differently in the modern and legacy forms, so linked files are left out of this comparison.
+      return JSON.stringify([inline, probe.paragraphs, probe.pending, probe.textBoxes, probe.notes]).replace(/⟦file [^⟧]*⟧/g, '');
     });
-    if (texts[0] !== texts[1]) {
-      context.problems.push('A drawing or text box is stored in two alternative forms whose text differs, so what a reader would see cannot be verified.');
+    if (new Set(readings).size > 1) {
+      context.problems.push('A drawing or text box is stored in alternative forms whose text differs, so what a reader would see cannot be verified.');
     }
   }
-  return choice ?? fallback;
+  return branches[0];
 }
 
 function unknownWrapperProblem(node: XmlElement, context: Context): void {
-  if (!KNOWN_WRAPPER_NAMESPACES.has(node.ns) && holdsWordText(node)) {
+  if (!KNOWN_WRAPPER_NAMESPACES.has(node.ns) && holdsWordMarkup(node)) {
     context.problems.push(`Text sits inside an element this tool does not know (${node.name}), so whether Word shows it cannot be verified.`);
   }
 }
@@ -195,8 +255,18 @@ function inlineText(element: XmlElement, context: Context): string {
       continue;
     }
     unknownWrapperProblem(node, context);
+    if (node.ns !== W) text += linkedContent(node, context);
     if (node.ns === W) {
       switch (node.name) {
+        case 'hyperlink': {
+          // Where the link goes is part of what the document says.
+          const anchor = attribute(node, W, 'anchor');
+          text += `⟦link${anchor ? ` to bookmark ${anchor}` : ''}${linkedContent(node, context)}⟧${inlineText(node, context)}⟦/link⟧`;
+          continue;
+        }
+        case 'object':
+          text += MARK.object + linkedContent(node, context) + inlineText(node, context);
+          continue;
         case 't':
         case 'delText':
           text += textOf(node);
@@ -250,16 +320,15 @@ function inlineText(element: XmlElement, context: Context): string {
           continue;
         case 'drawing':
         case 'pict':
-        case 'object':
           // The marker, then any text shown inside the object (watermark or shape text).
           // Text boxes inside it are read into the text-box story as they are met.
           text += MARK.object + inlineText(node, context);
           continue;
         case 'txbxContent': {
           // A text box is its own flow of paragraphs, read into the text-box story.
-          const box = newContext(context.view, context.problems);
+          const box = newContext(context.view, context.problems, context.source);
           readBlocks(node, box);
-          context.textBoxes.push(...box.paragraphs, ...box.textBoxes);
+          context.textBoxes.push(MARK.textBox, ...box.paragraphs, ...box.textBoxes);
           absorb(context, box);
           continue;
         }
@@ -300,7 +369,7 @@ function readBlocks(container: XmlElement, context: Context): void {
       continue;
     }
     if (node.ns !== W) {
-      if (holdsWordText(node)) context.problems.push(`Text sits inside an element this tool does not know (${node.name}), so whether Word shows it cannot be verified.`);
+      if (holdsWordMarkup(node)) context.problems.push(`Text sits inside an element this tool does not know (${node.name}), so whether Word shows it cannot be verified.`);
       continue;
     }
     switch (node.name) {
@@ -378,7 +447,7 @@ function readRow(row: XmlElement, context: Context): void {
 function readCell(cell: XmlElement, context: Context): void {
   if (removedIn(child(cell, W, 'tcPr'), context.view, ['cellIns'], ['cellDel'])) return;
   // A cell is its own scope for joining paragraphs: text never leaks out of a cell.
-  const inner = newContext(context.view, context.problems);
+  const inner = newContext(context.view, context.problems, context.source);
   readBlocks(cell, inner);
   // A cell that survives in this view always holds at least one paragraph, as it
   // does in Word. So a row or cell that should have vanished, but was left behind
@@ -414,7 +483,7 @@ export function readStories(pkg: DocxPackage, view: View): StoryReading {
   }
   partsRead.add(main);
 
-  const bodyContext = newContext(view, problems);
+  const bodyContext = newContext(view, problems, { pkg, part: main, partsRead });
   readBlocks(body, bodyContext);
   add({ key: 'body', kind: 'body', label: 'main text', paragraphs: bodyContext.paragraphs });
   add({ key: 'body/text boxes', kind: 'text box', label: 'text boxes in the main text', paragraphs: bodyContext.textBoxes });
@@ -436,7 +505,7 @@ export function readStories(pkg: DocxPackage, view: View): StoryReading {
         continue;
       }
       partsRead.add(rel.partName);
-      const context = newContext(view, problems);
+      const context = newContext(view, problems, { pkg, part: rel.partName, partsRead });
       readBlocks(pkg.xml(rel.partName), context);
       const key = `${kind}/${sectionIndex + 1}/${type}`;
       add({ key, kind, label, paragraphs: context.paragraphs });
@@ -467,7 +536,7 @@ export function readStories(pkg: DocxPackage, view: View): StoryReading {
       const type = attribute(note, W, 'type');
       if (type && type !== 'normal') {
         idsRead.add(id);
-        const context = newContext(view, problems);
+        const context = newContext(view, problems, { pkg, part: partName, partsRead });
         readBlocks(note, context);
         add({ key: `${kind} ${type}`, kind, label: `${kind} separator`, paragraphs: [...context.paragraphs, ...context.textBoxes] });
       }
@@ -480,7 +549,7 @@ export function readStories(pkg: DocxPackage, view: View): StoryReading {
         return;
       }
       idsRead.add(ref.id);
-      const context = newContext(view, problems);
+      const context = newContext(view, problems, { pkg, part: partName, partsRead });
       readBlocks(note, context);
       // Always keep the note's story, even if blank, so a missing note cannot hide.
       stories.push({ key: `${kind}/${index + 1}`, kind, label, paragraphs: context.paragraphs });
@@ -488,23 +557,6 @@ export function readStories(pkg: DocxPackage, view: View): StoryReading {
       if (context.notes.length > 0) problems.push(`A ${kind} contains a note reference, which this tool does not check.`);
     });
   }
-
-  // Text held outside Word's own markup, in parts beside the document: charts,
-  // diagrams (SmartArt) and the like. Read every piece of text they contain.
-  const folder = main.includes('/') ? main.slice(0, main.lastIndexOf('/') + 1) : '';
-  const graphics: string[] = [];
-  for (const partName of pkg.partNames) {
-    if (!partName.startsWith(folder) || !partName.endsWith('.xml') || partName.includes('/theme/')) continue;
-    const root = pkg.xml(partName);
-    if (root.ns === W || root.ns === NS.rels) continue;
-    partsRead.add(partName);
-    const collect = (element: XmlElement): void => {
-      if (element.text.trim() !== '') graphics.push(element.text);
-      element.children.forEach(collect);
-    };
-    collect(root);
-  }
-  add({ key: 'graphics', kind: 'text box', label: 'text in charts and diagrams', paragraphs: graphics });
 
   return { stories, partsRead, noteIdsRead, problems };
 }
