@@ -9,6 +9,7 @@ import { unzip, zip } from '../../src/common/zip';
 import { makeStaticRedline } from '../../src/producer/make-static-redline';
 import { produceTrackedChanges } from '../../src/producer/produce';
 import { BROKEN_PDF_CASES } from '../fixtures/broken-pdf';
+import { PDF_DOCUMENT_PAIRS, pdfDocumentById } from '../fixtures/pdf-documents';
 import { buildLargeContract } from '../fixtures/large';
 import { ALL_PAIR_SPECS, CHECK_ONLY_PAIRS, buildDocx, buildPair, pairById } from '../fixtures/pairs';
 import { containerLog, containerOfficeProcesses, containerScratchFiles, convertToPdf, CONVERT_URL, DOCX_TYPE, removeContainer, runInContainer, startExtraContainer } from './container';
@@ -27,6 +28,7 @@ describe('the PDF of every generated pair passes check 9', () => {
   const pairs = [
     ...ALL_PAIR_SPECS.map((spec) => ({ id: spec.id, build: async () => buildPair(spec) })),
     ...CHECK_ONLY_PAIRS.map((spec) => ({ id: spec.id, build: async () => ({ original: await buildDocx(spec.original), modified: await buildDocx(spec.modified) }) })),
+    ...PDF_DOCUMENT_PAIRS.map((spec) => ({ id: spec.id, build: spec.build })),
   ];
   it.each(pairs)('$id', async ({ build }) => {
     const pair = await build();
@@ -56,8 +58,10 @@ describe('deliberately wrong PDFs are caught', () => {
   });
 
   it.each(BROKEN_PDF_CASES)('$id ($description)', async (brokenCase) => {
-    const pair = await buildPair(pairById(brokenCase.pairId));
+    const pair = await (pdfDocumentById(brokenCase.pairId)?.build() ?? buildPair(pairById(brokenCase.pairId)));
     const genuine = await staticRedline(pair.original, pair.modified);
+    // The genuine PDF of the genuine redline passes, so any failure below is caused by the damage alone.
+    expect((await checkPdf({ staticRedline: genuine, pdf: await convertToPdf(genuine) })).passed).toBe(true);
     const files = await unzip(genuine);
     brokenCase.damage(files);
     const wrongPdf = await convertToPdf(await zip(files));

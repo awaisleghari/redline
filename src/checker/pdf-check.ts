@@ -143,6 +143,8 @@ function expectedChars(story: Story, counters: NoteCounters): { stream: Expected
       if (code & FORMAT.hidden) continue; // hidden text is not printed
       if (field?.pageNumber && field.inResult) continue; // the stored page number is not what the page prints
       const fold = (code & (FORMAT.caps | FORMAT.smallCaps)) !== 0;
+      // A tab typed in the text prints its leader (dots, a line) if the paragraph's tab stop has one.
+      if (text[i - 1] === '\t') pending.push({ t: 'tab' });
       for (const raw of text[i - 1]!.normalize('NFKC')) {
         if (isBlank(raw)) continue;
         const c = canon(raw);
@@ -310,6 +312,23 @@ export function comparePdf(printed: StoryReading, pdf: PdfReading): PdfCheckResu
       }
       noteColour(story, match);
       found.push({ story, stream, match });
+    }
+  }
+
+  // On a page, the notes are printed below the main text. Main text that comes after a note on the same
+  // page has been printed in the wrong place (down among the notes).
+  if (bodyFound) {
+    const firstNoteOnPage = new Map<number, number>();
+    for (const { story, match } of found) {
+      if (!isNote(story)) continue;
+      for (const j of match.at) {
+        const page = chars[j]!.page;
+        if (!firstNoteOnPage.has(page) || j < firstNoteOnPage.get(page)!) firstNoteOnPage.set(page, j);
+      }
+    }
+    for (const j of bodyFound.match.at) {
+      const note = firstNoteOnPage.get(chars[j]!.page);
+      if (note !== undefined && j > note) return extra(j, 'main text is printed among the footnotes', 'the main text above the notes');
     }
   }
 

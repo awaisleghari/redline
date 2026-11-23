@@ -1,0 +1,134 @@
+/**
+ * Document pairs for the PDF check, covering what a page prints that the
+ * document does not spell out: tab leaders, a table heading row repeated on
+ * each page, page numbers in a header, bullets, several footnotes, an empty
+ * numbered paragraph, and characters that print differently from how they are
+ * typed. The Stage 5 independent review found the first version of check 9
+ * wrongly withheld most of these.
+ */
+import {
+  AlignmentType,
+  Document,
+  Footer,
+  FootnoteReferenceRun,
+  Header,
+  LeaderType,
+  LevelFormat,
+  Packer,
+  PageNumber,
+  Paragraph,
+  Table,
+  TableCell,
+  TableRow,
+  TabStopType,
+  TextRun,
+  WidthType,
+} from 'docx';
+
+export interface PdfDocumentPair {
+  id: string;
+  description: string;
+  build: () => Promise<{ original: Uint8Array; modified: Uint8Array }>;
+}
+
+type Body = (Paragraph | Table)[];
+interface Extras {
+  header?: Paragraph[];
+  footer?: Paragraph[];
+  footnotes?: Record<number, string>;
+}
+
+const text = (value: string): Paragraph => new Paragraph({ children: [new TextRun(value)] });
+const numbered = (value: string): Paragraph => new Paragraph({ children: value === '' ? [] : [new TextRun(value)], numbering: { reference: 'clauses', level: 0 } });
+const bulleted = (value: string): Paragraph => new Paragraph({ children: [new TextRun(value)], bullet: { level: 0 } });
+
+async function pack(children: Body, extras: Extras = {}): Promise<Uint8Array> {
+  const footnotes: Record<number, { children: Paragraph[] }> = {};
+  for (const [id, value] of Object.entries(extras.footnotes ?? {})) footnotes[Number(id)] = { children: [text(value)] };
+  const document = new Document({
+    numbering: { config: [{ reference: 'clauses', levels: [{ level: 0, format: LevelFormat.DECIMAL, text: '%1.', alignment: AlignmentType.START }] }] },
+    footnotes,
+    sections: [
+      {
+        headers: extras.header ? { default: new Header({ children: extras.header }) } : undefined,
+        footers: extras.footer ? { default: new Footer({ children: extras.footer }) } : undefined,
+        children,
+      },
+    ],
+  });
+  return new Uint8Array(await Packer.toBuffer(document));
+}
+
+const pair = (id: string, description: string, make: (changed: boolean) => { body: Body; extras?: Extras }): PdfDocumentPair => ({
+  id,
+  description,
+  build: async () => {
+    const before = make(false);
+    const after = make(true);
+    return { original: await pack(before.body, before.extras), modified: await pack(after.body, after.extras) };
+  },
+});
+
+const CLAUSE = 'The Supplier shall provide the Services with reasonable skill and care, in accordance with good industry practice and all applicable laws.';
+const word = (changed: boolean): string => (changed ? 'exceptional' : 'reasonable');
+const sentence = (changed: boolean): Paragraph => text(`The Supplier shall provide the Services with ${word(changed)} skill and care.`);
+
+export const PDF_DOCUMENT_PAIRS: PdfDocumentPair[] = [
+  pair('tab-leaders', 'A signature line and a contents-style line, each drawn with a tab leader.', (changed) => ({
+    body: [
+      sentence(changed),
+      new Paragraph({ tabStops: [{ type: TabStopType.RIGHT, position: 9000, leader: LeaderType.DOT }], children: [new TextRun('Schedule 1: Fees\t12')] }),
+      new Paragraph({ tabStops: [{ type: TabStopType.RIGHT, position: 9000, leader: LeaderType.UNDERSCORE }], children: [new TextRun('Signed:\t')] }),
+      text('Director'),
+    ],
+  })),
+  pair('repeating-table-heading', 'A long table whose heading row is repeated at the top of each page.', (changed) => ({
+    body: [
+      sentence(false),
+      new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        rows: [
+          new TableRow({ tableHeader: true, children: ['Item', 'Description', 'Fee'].map((value) => new TableCell({ children: [text(value)] })) }),
+          ...Array.from({ length: 90 }, (_, index) => new TableRow({ children: [`${index + 1}`, `Service line ${index + 1}`, index === 60 && changed ? 'USD 2,500' : 'USD 1,500'].map((value) => new TableCell({ children: [text(value)] })) })),
+        ],
+      }),
+      text('End of schedule.'),
+    ],
+  })),
+  pair('page-numbered-header', 'Several pages with "Page X of Y" in the header and a reference in the footer.', (changed) => ({
+    body: Array.from({ length: 45 }, (_, index) => text(`${index + 1}. ${index === 20 && changed ? CLAUSE.replace('reasonable', 'exceptional') : CLAUSE}`)),
+    extras: {
+      header: [new Paragraph({ children: [new TextRun('Services Agreement - Page '), new TextRun({ children: [PageNumber.CURRENT] }), new TextRun(' of '), new TextRun({ children: [PageNumber.TOTAL_PAGES] })] })],
+      footer: [text('Draft of 12 March 2026 - Ref 4471')],
+    },
+  })),
+  pair('page-number-only-footer', 'A footer that holds nothing but the page number.', (changed) => ({
+    body: Array.from({ length: 45 }, (_, index) => text(index === 30 && changed ? CLAUSE.replace('reasonable', 'exceptional') : CLAUSE)),
+    extras: { footer: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ children: [PageNumber.CURRENT] })] })] },
+  })),
+  pair('bulleted-list', 'A bulleted list with an item added.', (changed) => ({
+    body: [text('The Supplier shall deliver:'), bulleted('a project plan;'), ...(changed ? [bulleted('a risk register;')] : []), bulleted('a monthly report;'), bulleted('the final deliverables.'), text('End.')],
+  })),
+  pair('empty-numbered-paragraph', 'A numbered list with an empty item in the middle.', (changed) => ({
+    body: [text('The parties agree:'), numbered('the Fees are payable monthly;'), numbered(''), numbered(`the term is ${changed ? 'three' : 'two'} years;`), numbered('either party may terminate on notice.'), text('End.')],
+  })),
+  pair('two-footnotes', 'Two footnotes, the second of which changes.', (changed) => ({
+    body: [
+      new Paragraph({ children: [new TextRun('The Customer shall pay the Fees within thirty days.'), new FootnoteReferenceRun(1)] }),
+      sentence(false),
+      new Paragraph({ children: [new TextRun('This Agreement is governed by the laws of England and Wales.'), new FootnoteReferenceRun(2)] }),
+    ],
+    extras: { footnotes: { 1: 'Fees are stated exclusive of value added tax.', 2: `The courts of England have ${changed ? 'non-exclusive' : 'exclusive'} jurisdiction.` } },
+  })),
+  pair('special-characters', 'A non-breaking hyphen, a sharp s in capitals formatting, accents, quotes and dashes.', (changed) => ({
+    body: [
+      text('The licence is non‑exclusive and non‑transferable – see clause 4 — “the Licence”.'),
+      new Paragraph({ children: [new TextRun('Registered office: '), new TextRun({ text: 'Hauptstraße 12, München', allCaps: true }), new TextRun('.')] }),
+      new Paragraph({ children: [new TextRun({ text: 'Société Générale', smallCaps: true }), new TextRun(` acts as ${changed ? 'security agent' : 'agent'}.`)] }),
+    ],
+  })),
+];
+
+export function pdfDocumentById(id: string): PdfDocumentPair | undefined {
+  return PDF_DOCUMENT_PAIRS.find((p) => p.id === id);
+}
