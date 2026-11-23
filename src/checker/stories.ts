@@ -67,9 +67,13 @@ export interface Para {
   removed: boolean;
   /** True when the paragraph is a list item (numbered or bulleted), whether or not its label could be worked out. */
   listed: boolean;
+  /** The bullet character of a bulleted item ('' otherwise). */
+  bullet: string;
+  /** In a static redline: the kind of change the paragraph's own mark shows (its number or bullet is printed the same way). */
+  markKind?: StaticKind;
 }
 
-const marker = (text: string): Para => ({ text, meta: '', number: '', oldNumber: '', removed: false, listed: false });
+const marker = (text: string): Para => ({ text, meta: '', number: '', oldNumber: '', removed: false, listed: false, bullet: '' });
 
 /** Style ids the static redline uses for its own additions. The Checker recognises them by name. */
 export const STATIC_STYLE = { coverPrefix: 'RedlineCover', oldNumber: 'RedlineOldNumber', shadeFill: 'FFF2CC' } as const;
@@ -506,9 +510,9 @@ function inlineText(element: XmlElement, context: Context): string {
 }
 
 /** Close the paragraph being assembled and add it to the story. */
-function closeParagraph(context: Context, number: string, removed: boolean, listed = false): void {
+function closeParagraph(context: Context, number: string, removed: boolean, listed = false, bullet = '', markKind?: StaticKind): void {
   if (context.meta.length !== context.pending.length) throw new Error('internal error: character details are out of step with the text');
-  context.paragraphs.push({ text: context.pending, meta: context.meta, number, oldNumber: context.oldNumber, removed, listed });
+  context.paragraphs.push({ text: context.pending, meta: context.meta, number, oldNumber: context.oldNumber, removed, listed, bullet, markKind });
   context.pending = '';
   context.meta = '';
   context.oldNumber = '';
@@ -543,7 +547,7 @@ function readParagraph(paragraph: XmlElement, context: Context): void {
   context.pending += text;
   context.lastMarkRemoved = markRemoved;
   if (markRemoved) return; // this paragraph joins the next one in this view
-  closeParagraph(context, number, removed, listed);
+  closeParagraph(context, number, removed, listed, numbering.bulletOf(numPr), markKind);
   const section = properties && child(properties, W, 'sectPr');
   if (section) context.sections.push(section);
 }

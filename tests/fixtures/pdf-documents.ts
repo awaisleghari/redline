@@ -17,6 +17,7 @@ import {
   Packer,
   PageNumber,
   Paragraph,
+  SymbolRun,
   Table,
   TableCell,
   TableRow,
@@ -126,6 +127,61 @@ export const PDF_DOCUMENT_PAIRS: PdfDocumentPair[] = [
       new Paragraph({ children: [new TextRun('Registered office: '), new TextRun({ text: 'Hauptstraße 12, München', allCaps: true }), new TextRun('.')] }),
       new Paragraph({ children: [new TextRun({ text: 'Société Générale', smallCaps: true }), new TextRun(` acts as ${changed ? 'security agent' : 'agent'}.`)] }),
     ],
+  })),
+  // ----- found by the second Stage 5 review -----
+  pair('page-x-of-y-footer', 'A footer that says only "Page X of Y", over several pages.', (changed) => ({
+    body: Array.from({ length: 45 }, (_, index) => text(index === 12 && changed ? CLAUSE.replace('reasonable', 'exceptional') : CLAUSE)),
+    extras: { footer: [new Paragraph({ children: [new TextRun('Page '), new TextRun({ children: [PageNumber.CURRENT] }), new TextRun(' of '), new TextRun({ children: [PageNumber.TOTAL_PAGES] })] })] },
+  })),
+  pair('dash-page-number-footer', 'A footer of the form "- X -".', (changed) => ({
+    body: Array.from({ length: 45 }, (_, index) => text(index === 40 && changed ? CLAUSE.replace('reasonable', 'exceptional') : CLAUSE)),
+    extras: { footer: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun('- '), new TextRun({ children: [PageNumber.CURRENT] }), new TextRun(' -')] })] },
+  })),
+  pair('short-page-number-header-and-footer', 'A header "Page X" and a footer "p. X/Y" on a short document.', (changed) => ({
+    body: [sentence(changed), text('End.')],
+    extras: {
+      header: [new Paragraph({ children: [new TextRun('Page '), new TextRun({ children: [PageNumber.CURRENT] })] })],
+      footer: [new Paragraph({ children: [new TextRun('p. '), new TextRun({ children: [PageNumber.CURRENT] }), new TextRun('/'), new TextRun({ children: [PageNumber.TOTAL_PAGES] })] })],
+    },
+  })),
+  pair('header-and-footer-share-first-letters', 'The footer says "Confidential" and a page begins "Confidentiality"; the header says "Supply Agreement" and a page begins "Services".', (changed) => ({
+    body: [
+      text('Services are provided as set out below.'),
+      sentence(changed),
+      new Paragraph({ pageBreakBefore: true, children: [new TextRun('Confidentiality')] }),
+      text('Each party shall keep the terms of this Agreement confidential.'),
+      new Paragraph({ pageBreakBefore: true, children: [new TextRun('Supply Agreement terms prevail over any purchase order.')] }),
+    ],
+    extras: { header: [text('Supply Agreement')], footer: [text('Confidential')] },
+  })),
+  pair('page-edges-and-short-table', 'A page-numbered header, a short table with a heading row, and a new page that begins with a figure.', (changed) => ({
+    body: [
+      sentence(changed),
+      new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        rows: [
+          new TableRow({ tableHeader: true, children: ['Item', 'Code', 'Agreed'].map((value) => new TableCell({ children: [text(value)] })) }),
+          ...[['1', 'QX', 'No'], ['2', 'AB', 'Yes']].map((cells) => new TableRow({ children: cells.map((value) => new TableCell({ children: [text(value)] })) })),
+        ],
+      }),
+      text('The Customer shall pay USD 5'),
+      new Paragraph({ pageBreakBefore: true, children: [new TextRun('50 days after the date of the invoice the Fees fall due.')] }),
+      text('End.'),
+    ],
+    extras: { header: [new Paragraph({ children: [new TextRun('Services Agreement - Page '), new TextRun({ children: [PageNumber.CURRENT] }), new TextRun(' of '), new TextRun({ children: [PageNumber.TOTAL_PAGES] })] })] },
+  })),
+  pair('tabs-before-figures-symbol-and-bullets', 'Figures after plain tabs, a symbol-font tick, and bulleted figures.', (changed) => ({
+    body: [
+      sentence(changed),
+      new Paragraph({ tabStops: [{ type: TabStopType.LEFT, position: 3000 }], children: [new TextRun('Fee:\t5 per cent')] }),
+      new Paragraph({ tabStops: [{ type: TabStopType.LEFT, position: 3000 }], children: [new TextRun('Total\t500')] }),
+      new Paragraph({ children: [new TextRun('Approved '), new SymbolRun({ char: 'F0FC', symbolfont: 'Wingdings' }), new TextRun(' by the board')] }),
+      bulleted('500 units of stock;'),
+      bulleted('20 days of support.'),
+    ],
+  })),
+  pair('numbered-clause-inserted', 'A numbered clause is added between two others.', (changed) => ({
+    body: [text('The parties agree:'), numbered('the Fees are payable monthly;'), ...(changed ? [numbered('interest accrues on late payment;')] : []), numbered('either party may terminate on notice.'), text('End.')],
   })),
 ];
 

@@ -115,6 +115,10 @@ function addCoverPage(documentXml: string, content: CoverPageContent): string {
       place(numbering);
     }
     if (!numbering.getAttributeNS(W, 'start')) numbering.setAttributeNS(W, `${prefix}:start`, '1');
+    // The cover takes the number just before it, so that the numbers run on without a jump. (A jump from one
+    // odd number to another makes LibreOffice count a hidden blank page, and "Page 1 of 3" prints as "of 4".)
+    const start = Number(numbering.getAttributeNS(W, 'start'));
+    if (Number.isInteger(start) && start >= 1) pageSetup += `<w:pgNumType w:start="${start - 1}"/>`;
   }
 
   const fragment = parser.parseFromString(`<w:body xmlns:w="${W}">${coverPageXml(content, pageSetup)}</w:body>`, 'application/xml');
