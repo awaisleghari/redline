@@ -12,6 +12,7 @@ import {
   CommentReference,
   Document,
   EndnoteReferenceRun,
+  ExternalHyperlink,
   Footer,
   FootnoteReferenceRun,
   Header,
@@ -82,6 +83,7 @@ type Block =
   | { kind: 'rich'; text: string; runs: RunSpec[] }
   | { kind: 'endnoted'; text: string; endnoteId: number }
   | { kind: 'commented'; text: string; before: string; anchored: string; after: string; commentId: number }
+  | { kind: 'linked'; text: string; before: string; linkText: string; url: string; after: string }
   | { kind: 'textbox'; text: string; lines: string[] }
   | { kind: 'numbered'; text: string }
   | { kind: 'footnoted'; text: string; footnoteId: number }
@@ -348,6 +350,23 @@ export const EXTRA_PAIR_SPECS: PairSpec[] = [
     expected: { body: changes({ deletions: ['Support', 'USD 1,500'], deletedRows: 1, deletedParagraphMarks: 2 }) },
   },
   {
+    id: 'hyperlink-address-change',
+    description: 'A web link keeps its wording but points to a new address, and one word changes elsewhere.',
+    original: {
+      blocks: [p(PARTIES), { kind: 'linked', text: '', before: 'The terms are published at ', linkText: 'our website', url: 'https://example.com/terms-2025', after: '.' }, p(SERVICES), p(GOVERNING_LAW)],
+    },
+    modified: {
+      blocks: [
+        p(PARTIES),
+        { kind: 'linked', text: '', before: 'The terms are published at ', linkText: 'our website', url: 'https://example.com/terms-2026', after: '.' },
+        p('The Supplier shall provide the Services with exceptional skill and care.'),
+        p(GOVERNING_LAW),
+      ],
+    },
+    // The engine tracks a changed address as the old link's words deleted and the new link's words inserted.
+    expected: { body: changes({ deletions: ['our website', 'reasonable'], insertions: ['our website', 'exceptional'] }) },
+  },
+  {
     id: 'moved-block',
     description: 'Three consecutive paragraphs are moved together, unchanged, from near the top to near the bottom.',
     original: { blocks: [p(PARTIES), p(CONFIDENTIALITY), p(ASSIGNMENT), p(TERMINATION), p(SERVICES), p(PAYMENT), p(LIABILITY), p(GOVERNING_LAW)] },
@@ -447,6 +466,10 @@ function renderBlock(block: Block): Paragraph | Table | Textbox {
           new TextRun({ children: [new CommentReference(block.commentId)] }),
           new TextRun(block.after),
         ],
+      });
+    case 'linked':
+      return new Paragraph({
+        children: [new TextRun(block.before), new ExternalHyperlink({ link: block.url, children: [new TextRun(block.linkText)] }), new TextRun(block.after)],
       });
     case 'textbox':
       return new Textbox({

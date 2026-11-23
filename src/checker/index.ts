@@ -43,6 +43,20 @@ function guarded(id: CheckId, run: () => CheckResult): CheckResult {
   }
 }
 
+/** Hyperlinks must cover the same words and point to the same place as in the document being reproduced. */
+function compareLinks(expected: string[], found: string[], expectedName: string): CheckFailure | undefined {
+  for (let i = 0; i < Math.max(expected.length, found.length); i++) {
+    if (expected[i] === found[i]) continue;
+    return {
+      message: `A hyperlink differs from the ${expectedName} (in the words it covers or in where it points).`,
+      where: `hyperlink ${i + 1}`,
+      expected: expected[i] ?? '(no further hyperlinks)',
+      found: found[i] ?? '(no further hyperlinks)',
+    };
+  }
+  return undefined;
+}
+
 /** Check a tracked-changes Word file (checks 1, 2, 6 and 7 of PLAN.md). */
 export async function checkTrackedChanges(input: CheckInput): Promise<CheckReport> {
   const ids: CheckId[] = ['accept-all', 'reject-all', 'completeness', 'structure'];
@@ -78,11 +92,11 @@ export async function checkTrackedChanges(input: CheckInput): Promise<CheckRepor
 
   const checks: CheckResult[] = [
     guarded('accept-all', () => {
-      const failure = compareStories(modifiedText().stories, accepted().stories, 'modified document');
+      const failure = compareStories(modifiedText().stories, accepted().stories, 'modified document') ?? compareLinks(modifiedText().links, accepted().links, 'modified document');
       return failure ? fail('accept-all', failure) : pass('accept-all');
     }),
     guarded('reject-all', () => {
-      const failure = compareStories(originalText().stories, rejected().stories, 'original document');
+      const failure = compareStories(originalText().stories, rejected().stories, 'original document') ?? compareLinks(originalText().links, rejected().links, 'original document');
       return failure ? fail('reject-all', failure) : pass('reject-all');
     }),
     guarded('completeness', () => {

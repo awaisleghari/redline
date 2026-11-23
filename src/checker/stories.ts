@@ -39,6 +39,13 @@ export interface StoryReading {
   noteIdsRead: Map<string, Set<string>>;
   /** Things that prevented a complete reading (dangling references and the like). */
   problems: string[];
+  /**
+   * Where each hyperlink points, in reading order, with the text it covers.
+   * Links whose text is entirely removed in this view are left out. (A changed
+   * destination is tracked as the old link's text deleted and the new link's
+   * text inserted, so each view has exactly its own document's links.)
+   */
+  links: string[];
 }
 
 /** Markers standing in for things that are not characters but must not vanish unnoticed. */
@@ -161,6 +168,7 @@ interface Source {
   pkg: DocxPackage;
   part: string;
   partsRead: Set<string>;
+  links: string[];
 }
 
 function newContext(view: View, problems: string[], source: Source): Context {
@@ -217,7 +225,7 @@ function alternateContentBranch(element: XmlElement, context: Context, read: (br
   if (branches.length > 1) {
     // Every branch (there may be several Choices) must read the same: text, text boxes and note references.
     const readings = branches.map((branch) => {
-      const probe = newContext(context.view, [], { ...context.source, partsRead: new Set() });
+      const probe = newContext(context.view, [], { ...context.source, partsRead: new Set(), links: [] });
       const inline = read(branch, probe);
       // Pictures are stored differently in the modern and legacy forms, so linked files are left out of this comparison.
       return JSON.stringify([inline, probe.paragraphs, probe.pending, probe.textBoxes, probe.notes]).replace(/⟦file [^⟧]*⟧/g, '');
@@ -261,7 +269,10 @@ function inlineText(element: XmlElement, context: Context): string {
         case 'hyperlink': {
           // Where the link goes is part of what the document says.
           const anchor = attribute(node, W, 'anchor');
-          text += `⟦link${anchor ? ` to bookmark ${anchor}` : ''}${linkedContent(node, context)}⟧${inlineText(node, context)}⟦/link⟧`;
+          const covered = inlineText(node, context);
+          // A link whose text is entirely removed in this view is not there to be followed.
+          if (covered !== '') context.source.links.push(`"${covered}" links to${anchor ? ` bookmark ${anchor}` : ''}${linkedContent(node, context) || (anchor ? '' : ' nothing')}`);
+          text += covered;
           continue;
         }
         case 'object':
@@ -471,6 +482,7 @@ export function readStories(pkg: DocxPackage, view: View): StoryReading {
   const partsRead = new Set<string>();
   const noteIdsRead = new Map<string, Set<string>>();
   const problems: string[] = [];
+  const links: string[] = [];
   const add = (story: Story): void => {
     if (!isBlank(story.paragraphs)) stories.push(story);
   };
@@ -479,11 +491,11 @@ export function readStories(pkg: DocxPackage, view: View): StoryReading {
   const body = child(pkg.xml(main), W, 'body');
   if (!body) {
     problems.push('The main document has no body.');
-    return { stories, partsRead, noteIdsRead, problems };
+    return { stories, partsRead, noteIdsRead, problems, links };
   }
   partsRead.add(main);
 
-  const bodyContext = newContext(view, problems, { pkg, part: main, partsRead });
+  const bodyContext = newContext(view, problems, { pkg, part: main, partsRead, links });
   readBlocks(body, bodyContext);
   add({ key: 'body', kind: 'body', label: 'main text', paragraphs: bodyContext.paragraphs });
   add({ key: 'body/text boxes', kind: 'text box', label: 'text boxes in the main text', paragraphs: bodyContext.textBoxes });
@@ -505,7 +517,7 @@ export function readStories(pkg: DocxPackage, view: View): StoryReading {
         continue;
       }
       partsRead.add(rel.partName);
-      const context = newContext(view, problems, { pkg, part: rel.partName, partsRead });
+      const context = newContext(view, problems, { pkg, part: rel.partName, partsRead, links });
       readBlocks(pkg.xml(rel.partName), context);
       const key = `${kind}/${sectionIndex + 1}/${type}`;
       add({ key, kind, label, paragraphs: context.paragraphs });
@@ -536,7 +548,7 @@ export function readStories(pkg: DocxPackage, view: View): StoryReading {
       const type = attribute(note, W, 'type');
       if (type && type !== 'normal') {
         idsRead.add(id);
-        const context = newContext(view, problems, { pkg, part: partName, partsRead });
+        const context = newContext(view, problems, { pkg, part: partName, partsRead, links });
         readBlocks(note, context);
         add({ key: `${kind} ${type}`, kind, label: `${kind} separator`, paragraphs: [...context.paragraphs, ...context.textBoxes] });
       }
@@ -549,7 +561,7 @@ export function readStories(pkg: DocxPackage, view: View): StoryReading {
         return;
       }
       idsRead.add(ref.id);
-      const context = newContext(view, problems, { pkg, part: partName, partsRead });
+      const context = newContext(view, problems, { pkg, part: partName, partsRead, links });
       readBlocks(note, context);
       // Always keep the note's story, even if blank, so a missing note cannot hide.
       stories.push({ key: `${kind}/${index + 1}`, kind, label, paragraphs: context.paragraphs });
@@ -558,5 +570,5 @@ export function readStories(pkg: DocxPackage, view: View): StoryReading {
     });
   }
 
-  return { stories, partsRead, noteIdsRead, problems };
+  return { stories, partsRead, noteIdsRead, problems, links };
 }

@@ -478,6 +478,13 @@ export const BROKEN_CASES: BrokenCase[] = [
     caughtBy: TEXT,
   },
   {
+    id: 'hyperlink-address-altered',
+    description: "The new web link's address goes somewhere other than the modified document's.",
+    pairId: 'hyperlink-address-change',
+    damage: (f) => edit(f, 'word/_rels/document.xml.rels', (x) => x.replaceAll('https://example.com/terms-2026', 'https://example.net/other')),
+    caughtBy: ['accept-all'],
+  },
+  {
     id: 'watermark-text-changed',
     description: 'The watermark across the page says something else.',
     pairId: 'text-box-change',

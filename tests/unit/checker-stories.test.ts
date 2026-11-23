@@ -76,13 +76,13 @@ describe('reading text', () => {
 
   it('reads text inside hyperlinks and content controls', async () => {
     const body = p(`<w:hyperlink r:id="x">${r('link')}</w:hyperlink><w:sdt><w:sdtContent>${r(' control')}</w:sdtContent></w:sdt>`) + `<w:sdt><w:sdtContent>${p(r('block control'))}</w:sdtContent></w:sdt>`;
-    expect((await read(body, 'accepted')).body).toEqual(['⟦link⟧link⟦/link⟧ control', 'block control']);
+    expect((await read(body, 'accepted')).body).toEqual(['link control', 'block control']);
   });
 
   it('reads where a hyperlink points, so it cannot be silently repointed', async () => {
-    const to = async (anchor: string): Promise<string> => (await read(p(`<w:hyperlink w:anchor="${anchor}">${r('clause 7')}</w:hyperlink>`), 'accepted')).body![0]!;
-    expect(await to('_Ref7')).toBe('⟦link to bookmark _Ref7⟧clause 7⟦/link⟧');
-    expect(await to('_Ref9')).not.toBe(await to('_Ref7'));
+    const to = async (anchor: string): Promise<string[]> => readStories(await pkg(p(`<w:hyperlink w:anchor="${anchor}">${r('clause 7')}</w:hyperlink>`)), 'accepted').links;
+    expect(await to('_Ref7')).toEqual(['"clause 7" links to bookmark _Ref7']);
+    expect(await to('_Ref9')).not.toEqual(await to('_Ref7'));
   });
 });
 
