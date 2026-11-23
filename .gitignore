@@ -1,0 +1,16 @@
+node_modules/
+dist/
+tests/fixtures/private/
+.env*
+.dev.vars
+
+# Copied from the docxodus package by scripts/copy-wasm.mjs
+public/wasm/
+
+# Test output
+test-results/
+playwright-report/
+coverage/
+.vite/
+*.tsbuildinfo
+.DS_Store

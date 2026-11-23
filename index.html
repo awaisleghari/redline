@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Redline</title>
+    <style>
+      body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
+      label { display: block; margin: 1rem 0; font-weight: 600; }
+      input[type='file'] { display: block; margin-top: 0.25rem; font-weight: 400; }
+      button { font: inherit; padding: 0.5rem 1.25rem; }
+      #status[data-state='error'] { color: #b00020; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Redline</h1>
+      <p>Development page. The comparison runs in your browser; the files are not uploaded.</p>
+      <label>Original <input id="original" type="file" accept=".docx" /></label>
+      <label>Modified <input id="modified" type="file" accept=".docx" /></label>
+      <button id="compare" type="button" disabled>Compare</button>
+      <p id="status" role="status" aria-live="polite"></p>
+      <a id="download" download="redline-tracked-changes.docx" hidden>Download Word file (tracked changes)</a>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
