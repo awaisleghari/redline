@@ -49,6 +49,11 @@ a.button[hidden], a[hidden], [hidden] { display: none !important; }
 .layout { display: grid; grid-template-columns: minmax(0, 1fr) 24rem; gap: 1.25rem; margin-top: 1rem; align-items: start; }
 .viewer-wrap { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #ffffff; min-height: 30rem; }
 #viewer { width: 100%; height: 78vh; border: 0; display: block; background: #ffffff; }
+.tabs { display: flex; gap: 0.5rem; padding: 0.5rem; border-bottom: 1px solid var(--line); background: var(--panel); }
+.tab { padding: 0.3rem 0.9rem; background: #ffffff; color: var(--accent); }
+.tab[aria-pressed='true'] { background: var(--accent); color: var(--accent-ink); }
+.pdf-viewer { height: 78vh; overflow: auto; background: #525659; padding: 1rem; }
+.pdf-viewer canvas { display: block; margin: 0 auto 1rem; max-width: 100%; height: auto; background: #ffffff; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4); }
 .viewer-message { padding: 2rem; color: var(--bad); font-weight: 600; }
 .side h2:first-child { margin-top: 0; }
 .note { margin: 0.2rem 0 0.6rem; color: var(--muted); font-size: 0.88rem; }

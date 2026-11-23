@@ -48,6 +48,13 @@ test('a 100-page contract compares in the browser', async ({ page }) => {
   // The page itself never froze for long while the engine worked.
   expect(longestGapMs).toBeLessThan(1_000);
 
+  // The PDF of the whole contract: converted by the server, read back and checked page by page in the browser.
+  const pdfStarted = Date.now();
+  await page.getByRole('button', { name: 'Make PDF' }).click();
+  await expect(page.locator('#pdf-status')).toHaveText('The PDF passed its checks.', { timeout: 120_000 });
+  console.log(`100-page contract: PDF made, checked and drawn in ${Date.now() - pdfStarted} ms (${await page.locator('#pdf-viewer canvas').count()} pages)`);
+  await expect(page.locator('#report-pdf li[data-passed="true"]')).toHaveCount(2);
+
   const downloadPromise = page.waitForEvent('download');
   await page.locator('#download-tracked').click();
   const redline = new Uint8Array(await readFile(await (await downloadPromise).path()));

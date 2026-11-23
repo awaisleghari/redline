@@ -13,4 +13,11 @@ export interface CheckRequest {
   comparedAt?: string;
 }
 
+export interface PdfCheckRequest {
+  type: 'check-pdf';
+  id: number;
+  staticRedline: ArrayBuffer;
+  pdf: ArrayBuffer;
+}
+
 export type CheckResponse = { type: 'checked'; id: number; report: CheckReport } | { type: 'check-crashed'; id: number; message: string };

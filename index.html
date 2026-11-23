@@ -6,7 +6,7 @@
     <!-- Nothing is loaded from, or sent to, anywhere but this site. -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' ws://localhost:* ws://127.0.0.1:*; frame-src 'self'; form-action 'none'; base-uri 'none'; object-src 'none'"
+      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data: blob:; connect-src 'self' ws://localhost:* ws://127.0.0.1:*; frame-src 'self'; form-action 'none'; base-uri 'none'; object-src 'none'"
     />
     <title>Redline: compare two Word documents</title>
     <link rel="stylesheet" href="/src/app/styles.css" />
@@ -48,7 +48,12 @@
 
         <div class="layout">
           <div class="viewer-wrap">
+            <div id="viewer-tabs" class="tabs" role="group" aria-label="What the viewer shows" hidden>
+              <button id="show-word" type="button" class="tab" aria-pressed="true">Static redline</button>
+              <button id="show-pdf" type="button" class="tab" aria-pressed="false">PDF</button>
+            </div>
             <iframe id="viewer" title="Redline" sandbox="" hidden></iframe>
+            <div id="pdf-viewer" class="pdf-viewer" aria-label="PDF of the redline" tabindex="0" hidden></div>
             <p id="viewer-message" class="viewer-message" hidden></p>
           </div>
 
@@ -65,8 +70,11 @@
                 <span id="withheld-static" class="withheld" hidden>Word (static redline): withheld, a check failed</span>
               </li>
               <li>
-                <button id="download-pdf" type="button" class="button" disabled aria-describedby="pdf-note">PDF</button>
-                <p id="pdf-note" class="note">Not available yet. When it is: making the PDF sends the static redline to our server for conversion, and it is deleted immediately afterwards.</p>
+                <button id="make-pdf" type="button" class="button" disabled aria-describedby="pdf-note">Make PDF</button>
+                <p id="pdf-note" class="note">Making the PDF sends the static redline to our server for conversion. It is deleted there immediately afterwards and nothing about it is kept. Everything else stays in your browser.</p>
+                <p id="pdf-status" class="note" role="status" aria-live="polite"></p>
+                <a id="download-pdf" class="button" download="redline.pdf" hidden>Download the PDF</a>
+                <span id="withheld-pdf" class="withheld" hidden>PDF: withheld, a check failed</span>
               </li>
               <li><a id="download-report" class="link" download="redline-check-report.txt" hidden>Download the check report</a></li>
             </ul>
@@ -76,13 +84,17 @@
             <ul id="report-static" class="report" aria-labelledby="heading-static"></ul>
             <h3 id="heading-tracked">Tracked changes <span id="verdict-tracked" class="verdict"></span></h3>
             <ul id="report-tracked" class="report" aria-labelledby="heading-tracked"></ul>
+            <div id="section-pdf" hidden>
+              <h3 id="heading-pdf">PDF <span id="verdict-pdf" class="verdict"></span></h3>
+              <ul id="report-pdf" class="report" aria-labelledby="heading-pdf"></ul>
+            </div>
           </aside>
         </div>
       </section>
     </main>
 
     <footer>
-      <p>Your documents are compared inside your browser and are not uploaded. No AI is used. <a href="https://github.com/awaisleghari/redline">Source code</a>.</p>
+      <p>Your documents are compared inside your browser and are not uploaded. The one exception is the PDF: if you ask for it, the redline is sent to our server to be converted and is deleted at once. No AI is used. <a href="https://github.com/awaisleghari/redline">Source code</a>.</p>
     </footer>
     <script type="module" src="/src/main.ts"></script>
   </body>

@@ -5,12 +5,13 @@
  * hands back a file only when the independent Checker has passed it, and this
  * page offers for download, and shows in the viewer, only files it was handed.
  */
-import { ProducerError, runComparison, type FlowResult, type Reviewed } from './app/flow';
+import { ProducerError, runComparison, runPdf, type FlowResult, type Reviewed } from './app/flow';
 import { displayName, formatComparedAt } from './app/format';
 import { refusalFor } from './app/validate';
 import { OUTPUT_NAME, reportAsText, type CheckReport } from './checker';
 import { CheckerClient } from './checker/checker-client';
 import { CompareClient } from './producer/compare-client';
+import { showPdf } from './app/pdf-viewer';
 
 function element<T extends HTMLElement>(id: string): T {
   const found = document.getElementById(id);
@@ -29,6 +30,14 @@ const summary = element<HTMLDivElement>('summary');
 const viewer = element<HTMLIFrameElement>('viewer');
 const viewerMessage = element<HTMLParagraphElement>('viewer-message');
 const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+const makePdfButton = element<HTMLButtonElement>('make-pdf');
+const pdfStatus = element<HTMLParagraphElement>('pdf-status');
+const pdfViewer = element<HTMLDivElement>('pdf-viewer');
+const tabs = element<HTMLDivElement>('viewer-tabs');
+const PDF_ENDPOINT = '/api/pdf';
+/** The static redline the Checker passed in the current comparison (the only file ever sent to the server). */
+let releasedStatic: Uint8Array | undefined;
 
 const producer = new CompareClient();
 const checker = new CheckerClient();
@@ -98,7 +107,7 @@ function objectUrl(data: Uint8Array | string, type: string): string {
   return url;
 }
 
-function showReport(kind: 'tracked' | 'static', report: CheckReport): void {
+function showReport(kind: 'tracked' | 'static' | 'pdf', report: CheckReport): void {
   const list = element<HTMLUListElement>(`report-${kind}`);
   list.replaceChildren();
   for (const check of report.checks) {
@@ -128,14 +137,14 @@ function showReport(kind: 'tracked' | 'static', report: CheckReport): void {
   verdict.textContent = report.passed ? '(all checks passed)' : '(failed: withheld)';
 }
 
-function offer(kind: 'tracked' | 'static', reviewed: Reviewed): void {
+function offer(kind: 'tracked' | 'static' | 'pdf', reviewed: Reviewed): void {
   const link = element<HTMLAnchorElement>(`download-${kind}`);
   const withheld = element(`withheld-${kind}`);
   link.removeAttribute('href');
   link.hidden = true;
   withheld.hidden = true;
   if (reviewed.file) {
-    link.href = objectUrl(reviewed.file, DOCX);
+    link.href = objectUrl(reviewed.file, kind === 'pdf' ? 'application/pdf' : DOCX);
     link.hidden = false;
   } else {
     withheld.hidden = false;
@@ -149,11 +158,40 @@ function reset(): void {
   viewer.hidden = true;
   viewer.removeAttribute('srcdoc');
   viewerMessage.hidden = true;
-  for (const id of ['download-tracked', 'download-static', 'download-report']) {
+  for (const id of ['download-tracked', 'download-static', 'download-report', 'download-pdf']) {
     const link = element<HTMLAnchorElement>(id);
     link.removeAttribute('href');
     link.hidden = true;
   }
+  releasedStatic = undefined;
+  makePdfButton.disabled = true;
+  pdfStatus.textContent = '';
+  element('withheld-pdf').hidden = true;
+  element('section-pdf').hidden = true;
+  pdfViewer.hidden = true;
+  pdfViewer.replaceChildren();
+  tabs.hidden = true;
+  pendingReports = [];
+}
+
+/** Which of the two the viewer shows. The PDF tab exists only once a PDF has passed its checks. */
+function showTab(which: 'word' | 'pdf'): void {
+  viewer.hidden = which !== 'word';
+  pdfViewer.hidden = which !== 'pdf';
+  element('show-word').setAttribute('aria-pressed', String(which === 'word'));
+  element('show-pdf').setAttribute('aria-pressed', String(which === 'pdf'));
+}
+element('show-word').addEventListener('click', () => showTab('word'));
+element('show-pdf').addEventListener('click', () => showTab('pdf'));
+
+/** The reports of the current comparison, for the downloadable check report. */
+let pendingReports: CheckReport[] = [];
+let reportContext: { originalName: string; modifiedName: string; when: Date } | undefined;
+function refreshReportLink(): void {
+  if (!reportContext) return;
+  const link = element<HTMLAnchorElement>('download-report');
+  link.href = objectUrl(pendingReports.map((report) => reportAsText(report, reportContext!)).join('\n'), 'text/plain;charset=utf-8');
+  link.hidden = false;
 }
 
 async function show(result: FlowResult, names: { originalName: string; modifiedName: string }, when: Date): Promise<void> {
@@ -162,10 +200,12 @@ async function show(result: FlowResult, names: { originalName: string; modifiedN
   offer('tracked', result.tracked);
   offer('static', result.staticRedline);
 
-  const reportText = [result.staticRedline.report, result.tracked.report].map((report) => reportAsText(report, { ...names, when })).join('\n');
-  const reportLink = element<HTMLAnchorElement>('download-report');
-  reportLink.href = objectUrl(reportText, 'text/plain;charset=utf-8');
-  reportLink.hidden = false;
+  pendingReports = [result.staticRedline.report, result.tracked.report];
+  reportContext = { ...names, when };
+  refreshReportLink();
+  // A PDF can be asked for only of a static redline that passed its checks.
+  releasedStatic = result.staticRedline.file;
+  makePdfButton.disabled = !releasedStatic;
 
   if (result.counts) {
     for (const [key, value] of Object.entries(result.counts)) {
@@ -190,6 +230,44 @@ async function show(result: FlowResult, names: { originalName: string; modifiedN
   }
   results.hidden = false;
 }
+
+makePdfButton.addEventListener('click', async () => {
+  const staticRedline = releasedStatic;
+  if (!staticRedline || running) return;
+  setRunning(true);
+  makePdfButton.disabled = true;
+  pdfStatus.textContent = 'Sending the static redline for conversion, then checking the PDF…';
+  try {
+    const reviewed = await runPdf(staticRedline, {
+      convert: async (docx) => {
+        const response = await fetch(PDF_ENDPOINT, { method: 'POST', headers: { 'Content-Type': DOCX }, body: new Blob([docx.slice().buffer], { type: DOCX }) });
+        if (!response.ok) throw new Error((await response.text()).slice(0, 200) || `the server answered ${response.status}`);
+        return new Uint8Array(await response.arrayBuffer());
+      },
+      check: (input) => checker.checkPdf(input),
+    });
+    // The comparison may have been replaced while the PDF was being made.
+    if (releasedStatic !== staticRedline) return;
+    showReport('pdf', reviewed.report);
+    element('section-pdf').hidden = false;
+    offer('pdf', reviewed);
+    pendingReports = [...pendingReports.filter((report) => report.output !== 'pdf'), reviewed.report];
+    refreshReportLink();
+    if (reviewed.file) {
+      await showPdf(pdfViewer, reviewed.file);
+      tabs.hidden = false;
+      showTab('pdf');
+      pdfStatus.textContent = 'The PDF passed its checks.';
+    } else {
+      pdfStatus.textContent = 'The PDF did not pass its checks, so it has been withheld. See the check report.';
+    }
+  } catch (error) {
+    pdfStatus.textContent = `Something went wrong while making the PDF. (${error instanceof Error ? error.message : String(error)})`;
+  } finally {
+    setRunning(false);
+    makePdfButton.disabled = !releasedStatic || !element<HTMLAnchorElement>('download-pdf').hidden;
+  }
+});
 
 compareButton.addEventListener('click', async () => {
   const { original, modified } = chosen;

@@ -4,6 +4,7 @@ import { defineConfig, devices } from '@playwright/test';
 // so they exercise the same bundled files a real deployment would serve.
 export default defineConfig({
   testDir: 'tests/e2e',
+  globalSetup: './tests/e2e/global-setup.ts',
   timeout: 120_000,
   fullyParallel: true,
   forbidOnly: !!process.env.CI,

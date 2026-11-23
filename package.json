@@ -12,7 +12,7 @@
     "copy-wasm": "node scripts/copy-wasm.mjs",
     "predev": "npm run copy-wasm",
     "prebuild": "npm run copy-wasm",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p worker",
     "test": "vitest run",
     "test:e2e": "playwright test",
     "test:all": "npm run typecheck && npm run test && npm run test:schema && npm run test:pdf && npm run test:e2e",
@@ -21,6 +21,8 @@
     "build:pdf-image": "docker build -t redline-pdf pdf-container"
   },
   "devDependencies": {
+    "@cloudflare/containers": "^0.3.7",
+    "@cloudflare/workers-types": "^5.20261123.1",
     "@playwright/test": "1.63.0",
     "@types/node": "^22.20.5",
     "@xmldom/xmldom": "^0.9.12",
