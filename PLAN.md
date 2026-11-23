@@ -25,25 +25,32 @@ The app is hosted on **Cloudflare**. Most of the work happens **inside the user'
 | Part | Where it runs | Technology |
 |---|---|---|
 | Web page and viewer | Browser, served by Cloudflare Workers (static assets) | TypeScript, Vite, plain HTML/CSS (no heavy framework unless clearly needed) |
-| Compare engine | Browser (WebAssembly, in a Web Worker so the page stays responsive) | `docxodus` npm package (MIT): a maintained fork of Microsoft's Open-XML-PowerTools `WmlComparer`, with move detection |
+| Compare engine | Browser (WebAssembly, in a Web Worker so the page stays responsive) | `docxodus` npm package (MIT): a .NET document-comparison engine compiled to WebAssembly, with move detection. It began as a fork of Microsoft's Open-XML-PowerTools `WmlComparer`; since its version 11 it uses its own engine (see decisions log, 2026-11-23) |
 | Static redline, cover page (Producer) | Browser (same Web Worker) | TypeScript, JSZip, the browser's XML parser |
 | Checker (independent reviewer of every output) | Browser (its own Web Worker) | TypeScript; separate code from the Producer (see below) |
 | In-page viewer | Browser | `docxodus` DOCX-to-HTML conversion for the redline; PDF.js (or the browser's built-in viewer) once a PDF exists |
 | PDF conversion | **Server**: Cloudflare Container | LibreOffice headless in a Docker image, called from a Worker |
 
-Expected `docxodus` usage (verify against the current README and record the real API here):
+Real `docxodus` usage (verified against version 16.1.0 in Stage 1; see the decisions log for the findings behind it):
 
 ```ts
-import { initialize, compareDocuments, convertDocxToHtml } from 'docxodus';
-await initialize('/path/to/wasm/');
-const redlinedDocx = await compareDocuments(originalFile, modifiedFile, { authorName: 'Redline' });
-const html = await convertDocxToHtml(redlinedDocx);
+// In the compare Web Worker (src/producer/compare.worker.ts)
+import { initialize, compareDocuments, convertDocxToHtml } from 'docxodus/core'; // engine only, no editor UI
+await initialize('https://<site>/wasm/');           // folder that contains _framework/ (copied by scripts/copy-wasm.mjs)
+const redlinedDocx = await compareDocuments(originalBytes, modifiedBytes, { authorName: 'Redline' }); // Uint8Array in, Uint8Array out
+const html = await convertDocxToHtml(redlinedDocx, {
+  renderTrackedChanges: true,        // off by default: without it changes are not shown at all
+  renderHeadersAndFooters: true,     // off by default
+  renderFootnotesAndEndnotes: true,  // off by default
+});
 ```
 
-Early checks to do in Stage 1 and record in the decisions log:
-- Does the npm build produce the same comparison as the .NET `WmlComparer` (moves, tables, format changes)?
-- How does it perform on a 100-page contract in a normal laptop browser?
-- Does `convertDocxToHtml` render tracked changes and the static redline's formatting faithfully enough for the viewer?
+Two rules for the worker, both learned the hard way in Stage 1: register the message handler with `addEventListener('message', …)`, never `self.onmessage = …` (the .NET runtime refuses to start in a worker that has `onmessage` set); and answer `requestAnimationFrame` with a timer inside the worker (the engine waits two animation frames before each comparison).
+
+Early checks (answered in Stage 1; details in the decisions log):
+- Does the npm build produce the same comparison as the .NET engine (moves, tables, format changes)? **Yes, byte for byte.**
+- How does it perform on a 100-page contract in a normal laptop browser? **About 2.4 seconds.**
+- Does `convertDocxToHtml` render tracked changes and the static redline's formatting faithfully enough for the viewer? **Yes, with the three options above switched on.**
 
 **Fallback.** If the browser engine is unsuitable, run the Docxodus command-line tool inside the same Cloudflare Container used for PDFs. This means documents are uploaded for comparison, which changes the privacy promise to users, so ask the owner before switching.
 
@@ -206,6 +213,11 @@ Record each significant decision: date, decision, reason.
 - 2026-11-22: Hosting on Cloudflare; compare and viewer run in the browser via `docxodus` (WASM); PDF via LibreOffice in a Cloudflare Container. Reason: Cloudflare cannot run the engine or LibreOffice outside a container, and in-browser comparison keeps documents on the user's computer.
 - 2026-11-22: GPL and AGPL dependencies are permitted (non-commercial open-source project).
 - 2026-11-22: Producing the redline and checking it are separate: an independent built-in Checker verifies every output against the uploads, and failed outputs are withheld. Reason: the producing code must never grade its own work.
+- 2026-11-23: **Engine version and entry point.** Use `docxodus` 16.1.0 through its `docxodus/core` entry (engine only), in our own Web Worker (`src/producer/compare.worker.ts`), not the package's ready-made worker. Reason: the static redline (Stage 3) is to run in the same worker, and our own worker keeps the message protocol under our control. Finding: the plan assumed the engine was Microsoft's `WmlComparer`; that engine was removed from Docxodus in its version 11 and replaced by Docxodus's own comparison engine. `compareDocuments` is the documented front door to it, in both the .NET and the npm builds.
+- 2026-11-23: **Early check 1 (same result as .NET?): yes.** The npm (WebAssembly) build and the .NET build (NuGet `Docxodus` 16.1.0, `DocxCompare.Compare`) were run on the nine test pairs, a formatting-only change, a table row insertion and the 100-page contract. Every part of every output file was byte-for-byte identical between the two. Because `WmlComparer` no longer exists in any current Docxodus release, the comparison is against the current .NET engine, which is the same source code. Reproduce with `scripts/early-checks/` (needs the .NET 10 SDK: `apt-get install dotnet-sdk-10.0`).
+- 2026-11-23: **Early check 2 (100-page contract in the browser): fast enough.** A generated contract of 1,000 paragraphs and about 46,000 words (about 100 pages) with 195 edits compared in about 2.4 seconds inside the Web Worker in Chromium, about 2.9 seconds from click to finished, and the page's own thread never paused for more than about 60 ms. First-time start-up of the engine adds under a second locally; over the internet the first visit also downloads about 18 MB of engine files (before compression), which the browser then caches. Caveats: measured in headless Chromium on the cloud machine, not on a real laptop, and on generated text; real contracts with heavy formatting, large tables or images may be slower. A browser test (`tests/e2e/large-document.spec.ts`) now guards this with a 30-second ceiling. Real-document timing belongs to Stage 7.
+- 2026-11-23: **Early check 3 (viewer fidelity): good enough.** With `renderTrackedChanges`, `renderHeadersAndFooters` and `renderFootnotesAndEndnotes` switched on (all are off by default), `convertDocxToHtml` shows insertions and deletions as `<ins>`/`<del>` in the body, tables, headers and footnotes, and shows moves distinctly (`rev-move-from` / `rev-move-to`, paired by a move id). The static redline's formatting converts exactly: blue double underline, red strikethrough, green double strikethrough and green double underline each become the matching CSS. Checked on generated documents by reading the HTML and by screenshots; the owner's eye on real output is an owner check in Stages 3 and 4.
+- 2026-11-23: **Engine behaviours to remember for later stages** (observed, not yet acted on). (a) A formatting-only change to part of a paragraph makes the engine write a formatting-change record on every run of that paragraph, including runs whose formatting did not change (three records for one real change), so Stage 3 must count only records where old and new formatting differ, and the Checker must count the same way independently. (b) When a list item is inserted, the engine also records the old number of each renumbered item (`w:numberingChange`); relevant to the automatic-numbering question in Stage 3. (c) Within a replaced phrase the engine writes the insertion before the deletion. (d) The engine silently accepts any tracked changes already in the uploads before comparing; the plan still requires detecting and refusing such files (Stage 4), so that check must be ours. (e) All tracked changes are dated 2000-01-01 by default (the engine pins dates so output is repeatable); decide in Stage 3 whether to stamp the real date.
 
 ## Status log
 
@@ -214,3 +226,7 @@ Update at the start and end of every session: current stage, what was done, what
 - 2026-11-22: Plan written. Built in Claude Code cloud sessions. Environment set to Custom network access with the default package-manager list plus Playwright's download hosts (`cdn.playwright.dev`, `playwright.download.prss.microsoft.com`, `playwright.azureedge.net`). Next: Stage 0.
 - 2026-11-23 (Stage 0, plan): Scaffold a TypeScript + Vite project; Vitest for unit tests (`tests/unit/`), Playwright for browser tests (`tests/e2e/`, Chromium, run against the production build); MIT `LICENSE`, `README.md`, `.gitignore`; one placeholder test per runner; commit and push.
 - 2026-11-23 (Stage 0, done): Scaffold in place. `npm run test:all` runs the type check, the unit tests and the browser tests; one placeholder test passes in each runner. Setup notes: the cloud image ships Chromium with Playwright 1.63.0, so `@playwright/test` is pinned to exactly 1.63.0 (a different version would look for a browser that is not installed). Next: Stage 1.
+- 2026-11-23 (Stage 0, review): Independent review found the tests passing and two gaps: the commit was not on GitHub (the push was refused; see blocker below) and `@playwright/test` was pinned loosely (`^1.63.0`) although this log said "exactly". The pin is now exact.
+- 2026-11-23 (Stage 1, plan): Verify the real `docxodus` API; run the engine in our own Web Worker; bare page (two file pickers, Compare, download); generate the nine test pairs in code with the `docx` package, each with the tracked changes a correct comparison must produce; a test-only reader that pulls insertions, deletions and moves out of the raw XML; unit tests (engine in Node) and browser tests (real page, real worker, real download); answer the three early checks with scripts kept in `scripts/early-checks/`.
+- 2026-11-23 (Stage 1, done): All of the above built. All nine pairs produce exactly the expected tracked changes (count and text of insertions, deletions and moves, in body, header, footer, footnotes and endnotes), both in Node and through the real page in Chromium. The three early checks are answered in the decisions log: the engine is suitable, so the fallback (server-side comparison) is not needed. Two engine start-up problems were found and fixed at the root (recorded under Architecture). Tests: 23 unit, 13 browser, all passing (`npm run test:all`). Next: Stage 2 (Checker).
+- 2026-11-23 (blocker, owner action): `git push` is refused with "Claude doesn't have GitHub access to awaisleghari/redline" (reading works, writing does not). Until the owner connects GitHub / installs the Claude GitHub App on the repository, work is committed locally in the session only and no pull request can be opened.

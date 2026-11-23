@@ -20,7 +20,13 @@ npm install
 npm run dev
 ```
 
-Then open the address it prints (normally http://localhost:5173).
+Then open the address it prints (normally http://localhost:5173). At this
+stage it is a bare development page: choose an original and a modified `.docx`,
+press Compare, and download the result as a Word file with tracked changes.
+
+The comparison engine is [docxodus](https://www.npmjs.com/package/docxodus), a
+.NET engine compiled to WebAssembly. `npm run dev` and `npm run build` copy its
+runtime files into `public/wasm/` automatically.
 
 ## Tests
 
@@ -42,6 +48,10 @@ npm run test:all
 ```
 
 runs the type check and both test suites.
+
+`scripts/early-checks/` holds the one-off scripts behind the engine findings
+recorded in `PLAN.md` (same output as the .NET build, speed on a 100-page
+contract, viewer fidelity).
 
 ## License
 
