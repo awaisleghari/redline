@@ -20,7 +20,12 @@ import { Numbering } from './numbering';
 import { DocxPackage } from './package';
 import { attribute, child, is, type XmlElement } from './xml';
 
-export type View = 'accepted' | 'rejected';
+/**
+ * 'accepted' and 'rejected' are the two documents a redline stands for. 'all'
+ * reads a static redline exactly as it is printed: every visible character,
+ * inserted and deleted alike, cover page included (used to check the PDF).
+ */
+export type View = 'accepted' | 'rejected' | 'all';
 
 /**
  * How changes are expressed in the file being read:
@@ -40,7 +45,14 @@ export const CHAR = {
   shaded: 512,
   /** Part of a change that this view keeps (inserted text when accepting, deleted text when rejecting). */
   changed: 1024,
+  /** Which kind of change (static redline): multiply the index in STATIC_KINDS, plus one, by this. */
+  kindUnit: 2048,
 } as const;
+
+/** The change kinds in the order their index is stored in a character code. */
+export const STATIC_KINDS: readonly StaticKind[] = ['inserted', 'deleted', 'movedFrom', 'movedTo'];
+/** The kind of change a character code records, if any. */
+export const kindOfCode = (code: number): StaticKind | undefined => STATIC_KINDS[Math.floor(code / CHAR.kindUnit) - 1];
 
 /** One paragraph (or structure marker) of a story, with what the checks beyond plain text need. */
 export interface Para {
@@ -53,9 +65,11 @@ export interface Para {
   oldNumber: string;
   /** True when this paragraph itself is removed by the changes (so it exists only in the rejected view). */
   removed: boolean;
+  /** True when the paragraph is a list item (numbered or bulleted), whether or not its label could be worked out. */
+  listed: boolean;
 }
 
-const marker = (text: string): Para => ({ text, meta: '', number: '', oldNumber: '', removed: false });
+const marker = (text: string): Para => ({ text, meta: '', number: '', oldNumber: '', removed: false, listed: false });
 
 /** Style ids the static redline uses for its own additions. The Checker recognises them by name. */
 export const STATIC_STYLE = { coverPrefix: 'RedlineCover', oldNumber: 'RedlineOldNumber', shadeFill: 'FFF2CC' } as const;
@@ -242,7 +256,7 @@ function emit(context: Context, text: string, isText = false): string {
 
 /** Is a change of this kind dropped in this view? */
 function staticDropped(kind: StaticKind | undefined, view: View): boolean {
-  if (!kind) return false;
+  if (!kind || view === 'all') return false;
   return view === 'accepted' ? kind === 'deleted' || kind === 'movedFrom' : kind === 'inserted' || kind === 'movedTo';
 }
 
@@ -254,7 +268,7 @@ function readRun(run: XmlElement, context: Context): string {
   if (markup === 'static') {
     const kind = staticKindOf(rPr);
     const styleElement = rPr && child(rPr, W, 'rStyle');
-    if (styleElement && attribute(styleElement, W, 'val') === STATIC_STYLE.oldNumber) {
+    if (styleElement && attribute(styleElement, W, 'val') === STATIC_STYLE.oldNumber && context.view !== 'all') {
       // The old number of a removed clause: shown struck through, and not part of either document's text.
       if (kind !== 'deleted' && kind !== 'movedFrom') context.problems.push('An old clause number is not marked as deleted text.');
       if (styles.formatOf(rPr, context.paragraphStyle) & FORMAT.hidden) context.problems.push('An old clause number is formatted as hidden text.');
@@ -277,7 +291,7 @@ function readRun(run: XmlElement, context: Context): string {
       inner(run);
       return '';
     }
-    if (kind) code |= CHAR.changed;
+    if (kind) code |= CHAR.changed | ((STATIC_KINDS.indexOf(kind) + 1) * CHAR.kindUnit);
     const shading = rPr && child(rPr, W, 'shd');
     if (shading && attribute(shading, W, 'fill')?.toUpperCase() === STATIC_STYLE.shadeFill) code |= CHAR.shaded;
   }
@@ -489,9 +503,9 @@ function inlineText(element: XmlElement, context: Context): string {
 }
 
 /** Close the paragraph being assembled and add it to the story. */
-function closeParagraph(context: Context, number: string, removed: boolean): void {
+function closeParagraph(context: Context, number: string, removed: boolean, listed = false): void {
   if (context.meta.length !== context.pending.length) throw new Error('internal error: character details are out of step with the text');
-  context.paragraphs.push({ text: context.pending, meta: context.meta, number, oldNumber: context.oldNumber, removed });
+  context.paragraphs.push({ text: context.pending, meta: context.meta, number, oldNumber: context.oldNumber, removed, listed });
   context.pending = '';
   context.meta = '';
   context.oldNumber = '';
@@ -502,7 +516,7 @@ function readParagraph(paragraph: XmlElement, context: Context): void {
   const { markup, styles, numbering } = context.source;
   const styleElement = properties && child(properties, W, 'pStyle');
   context.paragraphStyle = styleElement && attribute(styleElement, W, 'val');
-  if (markup === 'static' && (context.paragraphStyle ?? '').startsWith(STATIC_STYLE.coverPrefix)) {
+  if (markup === 'static' && context.view !== 'all' && (context.paragraphStyle ?? '').startsWith(STATIC_STYLE.coverPrefix)) {
     context.problems.push('A paragraph inside the document carries the cover-page style, which would exempt it from the counts.');
   }
   const text = inlineText(paragraph, context);
@@ -518,12 +532,15 @@ function readParagraph(paragraph: XmlElement, context: Context): void {
   // Automatic numbering. In a static redline every paragraph in the file is
   // live and takes a number if it is numbered, so every paragraph is counted.
   // With tracked changes, a paragraph this view removes takes no number.
-  const number = markup === 'static' || !markRemoved ? numbering.next(styles.numberingOf(properties)) : '';
+  const numPr = styles.numberingOf(properties);
+  const number = markup === 'static' || !markRemoved ? numbering.next(numPr) : '';
+  const numIdElement = numPr && child(numPr, W, 'numId');
+  const listed = !!numIdElement && !['0', undefined].includes(attribute(numIdElement, W, 'val'));
 
   context.pending += text;
   context.lastMarkRemoved = markRemoved;
   if (markRemoved) return; // this paragraph joins the next one in this view
-  closeParagraph(context, number, removed);
+  closeParagraph(context, number, removed, listed);
   const section = properties && child(properties, W, 'sectPr');
   if (section) context.sections.push(section);
 }
@@ -679,7 +696,7 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
   partsRead.add(main);
   const shared = { pkg, partsRead, links, markup, styles: new Styles(pkg, main), numbering: new Numbering(pkg, main) };
 
-  if (markup === 'static') {
+  if (markup === 'static' && view !== 'all') {
     // The cover page: the leading paragraphs in the cover styles. It is the
     // redline's own addition, so it is set aside here and verified separately.
     const isCover = (node: XmlElement): boolean => {

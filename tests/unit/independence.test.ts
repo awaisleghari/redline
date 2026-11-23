@@ -68,7 +68,7 @@ function violations(files: { path: string; source: string }[], rules: { forbidde
 
 const load = (folder: string): { path: string; source: string }[] => sourceFiles(join(SRC, folder)).map((path) => ({ path, source: readFileSync(path, 'utf8') }));
 
-const CHECKER_RULES = { forbiddenFolders: ['producer', 'app'], allowedPackages: ['saxes'] };
+const CHECKER_RULES = { forbiddenFolders: ['producer', 'app'], allowedPackages: ['saxes', 'pdfjs-dist'] };
 const COMMON_RULES = { forbiddenFolders: ['producer', 'checker', 'app'], allowedPackages: ['jszip'] };
 
 describe('Checker independence', () => {
