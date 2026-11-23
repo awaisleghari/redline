@@ -6,7 +6,9 @@ import { compareDocuments, initialize } from 'docxodus/core';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { CHECKS_FOR, checkStaticRedline } from '../../src/checker';
 import { makeStaticRedline } from '../../src/producer/make-static-redline';
-import { ALL_PAIR_SPECS, buildPair } from '../fixtures/pairs';
+import { ALL_PAIR_SPECS, CHECK_ONLY_PAIRS, buildDocx, buildPair } from '../fixtures/pairs';
+import { checkTrackedChanges } from '../../src/checker';
+import { produceTrackedChanges } from '../../src/producer/produce';
 
 export const COVER = { originalName: 'original.docx', modifiedName: 'modified.docx', comparedAt: '23 November 2026 at 14:05 (UTC+00:00)' };
 
@@ -25,5 +27,17 @@ describe('Checker on the static redline of every generated pair', () => {
     expect(report.checks.map((c) => c.id)).toEqual(CHECKS_FOR['static-redline']);
     // Where a pair states what the cover page must count, the Producer's counts must say exactly that.
     if (spec.staticCounts) expect(counts).toEqual(spec.staticCounts);
+  });
+});
+
+describe('pairs the independent review found wrongly withheld', () => {
+  it.each(CHECK_ONLY_PAIRS)('$id: both Word files pass every check ($description)', async (spec) => {
+    const [original, modified] = await Promise.all([buildDocx(spec.original), buildDocx(spec.modified)]);
+    const tracked = await produceTrackedChanges(original, modified);
+    const trackedReport = await checkTrackedChanges({ original, modified, output: tracked });
+    expect(trackedReport.checks.filter((c) => !c.passed)).toEqual([]);
+    const { docx } = await makeStaticRedline(tracked, original, COVER);
+    const report = await checkStaticRedline({ original, modified, output: docx, ...COVER });
+    expect(report.checks.filter((c) => !c.passed)).toEqual([]);
   });
 });

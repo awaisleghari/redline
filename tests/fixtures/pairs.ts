@@ -15,6 +15,7 @@ import {
   ExternalHyperlink,
   Footer,
   FootnoteReferenceRun,
+  HeadingLevel,
   Header,
   LevelFormat,
   Packer,
@@ -85,6 +86,7 @@ export interface RunSpec {
 type Block =
   | { kind: 'p'; text: string }
   | { kind: 'rich'; text: string; runs: RunSpec[] }
+  | { kind: 'heading'; text: string }
   | { kind: 'endnoted'; text: string; endnoteId: number }
   | { kind: 'commented'; text: string; before: string; anchored: string; after: string; commentId: number }
   | { kind: 'linked'; text: string; before: string; linkText: string; url: string; after: string }
@@ -473,6 +475,56 @@ export const EXTRA_PAIR_SPECS: PairSpec[] = [
   },
 ];
 
+/**
+ * Pairs found by the Stage 3 independent review to be wrongly withheld. They are
+ * checked by the Checker only (both outputs must pass every check); the exact
+ * tracked changes the engine writes for them are not pinned down here.
+ */
+export const CHECK_ONLY_PAIRS: { id: string; description: string; original: DocSpec; modified: DocSpec }[] = [
+  {
+    id: 'table-inserted',
+    description: 'A whole table is added.',
+    original: { blocks: [p(PARTIES), p(PAYMENT), p(GOVERNING_LAW)] },
+    modified: { blocks: [p(PARTIES), p(PAYMENT), { kind: 'table', rows: FEE_TABLE }, p(GOVERNING_LAW)] },
+  },
+  {
+    id: 'table-deleted',
+    description: 'A whole table is removed.',
+    original: { blocks: [p(PARTIES), p(PAYMENT), { kind: 'table', rows: FEE_TABLE }, p(GOVERNING_LAW)] },
+    modified: { blocks: [p(PARTIES), p(PAYMENT), p(GOVERNING_LAW)] },
+  },
+  {
+    id: 'cell-last-paragraph-deleted',
+    description: 'The last paragraph inside a table cell is removed.',
+    original: { blocks: [p(PARTIES), { kind: 'table', rows: [['Service', 'Notes'], ['Hosting', 'Includes backups.\nExcludes migration.']] }, p(GOVERNING_LAW)] },
+    modified: { blocks: [p(PARTIES), { kind: 'table', rows: [['Service', 'Notes'], ['Hosting', 'Includes backups.']] }, p(GOVERNING_LAW)] },
+  },
+  {
+    id: 'cell-paragraph-added-at-end',
+    description: 'A paragraph is added at the end of a table cell.',
+    original: { blocks: [p(PARTIES), { kind: 'table', rows: [['Service', 'Notes'], ['Hosting', 'Includes backups.']] }, p(GOVERNING_LAW)] },
+    modified: { blocks: [p(PARTIES), { kind: 'table', rows: [['Service', 'Notes'], ['Hosting', 'Includes backups.\nExcludes migration.']] }, p(GOVERNING_LAW)] },
+  },
+  {
+    id: 'style-changed-with-word-deleted',
+    description: 'A paragraph is turned into a heading (a bold style) and loses a word.',
+    original: { blocks: [p(PARTIES), p('Governing law and jurisdiction of the courts'), p(GOVERNING_LAW)] },
+    modified: { blocks: [p(PARTIES), { kind: 'heading', text: 'Governing law and jurisdiction' }, p(GOVERNING_LAW)] },
+  },
+  {
+    id: 'heading-made-plain-with-word-deleted',
+    description: 'A heading becomes an ordinary paragraph and loses a word.',
+    original: { blocks: [p(PARTIES), { kind: 'heading', text: 'Governing law and jurisdiction of the courts' }, p(GOVERNING_LAW)] },
+    modified: { blocks: [p(PARTIES), p('Governing law and jurisdiction'), p(GOVERNING_LAW)] },
+  },
+  {
+    id: 'numbered-clauses-merged',
+    description: 'Two automatically numbered clauses are merged into one.',
+    original: { blocks: [p(PARTIES), p(LIST_INTRO), numbered(LIST[0]!), numbered(LIST[1]!), numbered(LIST[2]!), p(GOVERNING_LAW)] },
+    modified: { blocks: [p(PARTIES), p(LIST_INTRO), numbered(`${LIST[0]!} ${LIST[1]!}`), numbered(LIST[2]!), p(GOVERNING_LAW)] },
+  },
+];
+
 /** Every generated pair: the plan's nine plus the extras. */
 export const ALL_PAIR_SPECS: PairSpec[] = [...PAIR_SPECS, ...EXTRA_PAIR_SPECS];
 
@@ -499,6 +551,8 @@ function renderBlock(block: Block): Paragraph | Table | Textbox {
             }),
         ),
       });
+    case 'heading':
+      return new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun(block.text)] });
     case 'endnoted':
       return new Paragraph({ children: [new TextRun(block.text), new EndnoteReferenceRun(block.endnoteId)] });
     case 'commented':
@@ -536,7 +590,8 @@ function renderBlock(block: Block): Paragraph | Table | Textbox {
           (cells) =>
             new TableRow({
               children: cells.map(
-                (text) => new TableCell({ children: [new Paragraph({ children: [new TextRun(text)] })] }),
+                // A line break in the cell's text starts a new paragraph within the cell.
+                (text) => new TableCell({ children: text.split('\n').map((line) => new Paragraph({ children: [new TextRun(line)] })) }),
               ),
             }),
         ),

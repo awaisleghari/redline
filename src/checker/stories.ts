@@ -15,7 +15,7 @@
  * (spaces, punctuation, digits, tabs, line breaks) is kept.
  */
 import { NS } from '../common/namespaces';
-import { staticKindOf, Styles, type StaticKind } from './formatting';
+import { FORMAT, staticKindOf, Styles, type StaticKind } from './formatting';
 import { Numbering } from './numbering';
 import { DocxPackage } from './package';
 import { attribute, child, is, type XmlElement } from './xml';
@@ -31,15 +31,15 @@ export type Markup = 'tracked' | 'static';
 
 /**
  * What is known about one character of a paragraph, packed into a character
- * code: the low six bits are its visible formatting (see FORMAT); then:
+ * code: the low eight bits are its visible formatting (see FORMAT); then:
  */
 export const CHAR = {
   /** A real character of text (as opposed to a marker standing for a tab-like thing or an object). */
-  isText: 64,
+  isText: 256,
   /** Carries the static redline's "formatting changed" shading. */
-  shaded: 128,
+  shaded: 512,
   /** Part of a change that this view keeps (inserted text when accepting, deleted text when rejecting). */
-  changed: 256,
+  changed: 1024,
 } as const;
 
 /** One paragraph (or structure marker) of a story, with what the checks beyond plain text need. */
@@ -90,6 +90,8 @@ export interface StoryReading {
   links: string[];
   /** In a static redline: the text of each line of the cover page, in order. */
   cover: string[];
+  /** For each cover line, how its text is formatted: 'plain', a change kind, 'shaded', with ':hidden' if it would not be shown. */
+  coverLooks: string[];
 }
 
 /** Markers standing in for things that are not characters but must not vanish unnoticed. */
@@ -255,13 +257,26 @@ function readRun(run: XmlElement, context: Context): string {
     if (styleElement && attribute(styleElement, W, 'val') === STATIC_STYLE.oldNumber) {
       // The old number of a removed clause: shown struck through, and not part of either document's text.
       if (kind !== 'deleted' && kind !== 'movedFrom') context.problems.push('An old clause number is not marked as deleted text.');
+      if (styles.formatOf(rPr, context.paragraphStyle) & FORMAT.hidden) context.problems.push('An old clause number is formatted as hidden text.');
       const saved = context.meta;
       const label = inlineText(run, context);
       context.meta = saved;
       if (context.view === 'rejected') context.oldNumber += label;
       return '';
     }
-    if (staticDropped(kind, context.view)) return '';
+    if (staticDropped(kind, context.view)) {
+      // Everything inside a dropped run (a text box, say) must be marked the same way, or a reader would see it as ordinary text.
+      const inner = (element: XmlElement): void => {
+        for (const c of element.children) {
+          if (w(c, 'r') && c.children.some((x) => !w(x, 'rPr')) && staticKindOf(child(c, W, 'rPr')) !== kind) {
+            context.problems.push('Text inside a deleted or inserted object is not itself marked as deleted or inserted.');
+          }
+          inner(c);
+        }
+      };
+      inner(run);
+      return '';
+    }
     if (kind) code |= CHAR.changed;
     const shading = rPr && child(rPr, W, 'shd');
     if (shading && attribute(shading, W, 'fill')?.toUpperCase() === STATIC_STYLE.shadeFill) code |= CHAR.shaded;
@@ -650,6 +665,7 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
   const problems: string[] = [];
   const links: string[] = [];
   const cover: string[] = [];
+  const coverLooks: string[] = [];
   const add = (key: string, kind: StoryKind, label: string, details: Para[]): void => {
     if (!isBlank(details)) stories.push(storyOf(key, kind, label, details));
   };
@@ -658,7 +674,7 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
   let body = child(pkg.xml(main), W, 'body');
   if (!body) {
     problems.push('The main document has no body.');
-    return { stories, partsRead, noteIdsRead, problems, links, cover };
+    return { stories, partsRead, noteIdsRead, problems, links, cover, coverLooks };
   }
   partsRead.add(main);
   const shared = { pkg, partsRead, links, markup, styles: new Styles(pkg, main), numbering: new Numbering(pkg, main) };
@@ -674,7 +690,26 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
     let count = 0;
     while (count < body.children.length && isCover(body.children[count]!)) count++;
     const rawText = (element: XmlElement): string => (w(element, 't') ? element.text : element.children.map(rawText).join(''));
-    for (const paragraph of body.children.slice(0, count)) cover.push(rawText(paragraph));
+    for (const paragraph of body.children.slice(0, count)) {
+      cover.push(rawText(paragraph));
+      // How the line looks: the legend's samples must really be in each style, and nothing may be hidden.
+      const pPr = child(paragraph, W, 'pPr');
+      const styleElement = pPr && child(pPr, W, 'pStyle');
+      const looks = new Set<string>();
+      const look = (element: XmlElement): void => {
+        for (const c of element.children) {
+          if (w(c, 'r') && rawText(c) !== '') {
+            const rPr = child(c, W, 'rPr');
+            const shading = rPr && child(rPr, W, 'shd');
+            const shaded = !!shading && attribute(shading, W, 'fill')?.toUpperCase() === STATIC_STYLE.shadeFill;
+            const hidden = (shared.styles.formatOf(rPr, styleElement && attribute(styleElement, W, 'val')) & FORMAT.hidden) !== 0;
+            looks.add(`${staticKindOf(rPr) ?? (shaded ? 'shaded' : 'plain')}${hidden ? ':hidden' : ''}`);
+          } else look(c);
+        }
+      };
+      look(paragraph);
+      coverLooks.push([...looks].sort().join(','));
+    }
     if (body.children.slice(count).some((node) => isCover(node))) problems.push('A cover-page paragraph appears inside the document.');
     body = { ...body, children: body.children.slice(count) };
   }
@@ -755,5 +790,5 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
     });
   }
 
-  return { stories, partsRead, noteIdsRead, problems, links, cover };
+  return { stories, partsRead, noteIdsRead, problems, links, cover, coverLooks };
 }

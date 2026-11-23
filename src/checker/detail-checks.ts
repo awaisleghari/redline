@@ -4,14 +4,16 @@
  * the cover page (check 5). All work from the Checker's own readings.
  */
 import { NS } from '../common/namespaces';
-import { describeFormat, FORMAT, staticKindOf, type StaticKind } from './formatting';
+import { describeFormat, FORMAT, FORMAT_MASK, staticKindOf, type StaticKind } from './formatting';
 import type { DocxPackage } from './package';
 import type { CheckFailure } from './report';
 import { CHAR, isStructureMark, STATIC_STYLE, type Para, type Story } from './stories';
 import { attribute, child, descendants, is, type XmlElement } from './xml';
 
 const W = NS.w;
-const FORMAT_BITS = 63;
+const FORMAT_BITS = FORMAT_MASK;
+/** Strikethrough is how deleted and moved-from text is shown, so it is not compared on such text. */
+const STRIKES = FORMAT.strike | FORMAT.doubleStrike;
 
 function excerptAt(text: string, at: number): string {
   const start = Math.max(0, at - 30);
@@ -89,7 +91,8 @@ export function formatMarksFailure(original: Story[], staticRejected: Story[], s
       const gotCode = got.meta.charCodeAt(i);
       const shaded = (gotCode & CHAR.shaded) !== 0;
       const isText = (gotCode & CHAR.isText) !== 0;
-      const differs = (want.meta.charCodeAt(i) & FORMAT_BITS) !== (gotCode & FORMAT_BITS);
+      const ignore = gotCode & CHAR.changed ? STRIKES : 0;
+      const differs = (want.meta.charCodeAt(i) & FORMAT_BITS & ~ignore) !== (gotCode & FORMAT_BITS & ~ignore);
       if (gotCode & CHAR.changed) {
         if (shaded) return { message: 'Deleted text is marked as a formatting change.', where, found: excerptAt(got.text, i) };
         if (differs && isText) {
@@ -186,6 +189,8 @@ export interface StaticCounts {
   deletions: number;
   moves: number;
   formattingChanges: number;
+  /** Stretches of text marked as moved to here (must be present exactly when moves are). */
+  moveDestinations: number;
 }
 
 /**
@@ -258,7 +263,7 @@ export function countStaticChanges(pkg: DocxPackage): StaticCounts {
     };
     walk(root);
   }
-  return { insertions: counts.inserted, deletions: counts.deleted, moves: counts.movedFrom, formattingChanges };
+  return { insertions: counts.inserted, deletions: counts.deleted, moves: counts.movedFrom, formattingChanges, moveDestinations: counts.movedTo };
 }
 
 export interface CoverExpectation {
@@ -268,7 +273,15 @@ export interface CoverExpectation {
 }
 
 /** Check 5: the cover page says exactly what it should, with the Checker's own counts. */
-export function coverPageFailure(cover: string[], expectation: CoverExpectation, counts: StaticCounts): CheckFailure | undefined {
+export function coverPageFailure(cover: string[], coverLooks: string[], expectation: CoverExpectation, counts: StaticCounts): CheckFailure | undefined {
+  // Text shown as moved away must have arrived somewhere, and the other way round.
+  if ((counts.moves === 0) !== (counts.moveDestinations === 0)) {
+    return {
+      message: counts.moves > 0 ? 'Text is marked as moved from somewhere, but nothing is marked as moved to anywhere.' : 'Text is marked as moved to here, but nothing is marked as moved from anywhere.',
+      expected: 'every move has an origin and a destination',
+      found: `${counts.moves} moved-from, ${counts.moveDestinations} moved-to`,
+    };
+  }
   const expected = [
     'Comparison of documents',
     `Original: ${expectation.originalName}`,
@@ -297,6 +310,14 @@ export function coverPageFailure(cover: string[], expectation: CoverExpectation,
       expected: expected[i] ?? '(no further lines)',
       found: cover[i] ?? '(line missing)',
     };
+  }
+  // The legend must show each style as it really is, and no line may be hidden or dressed as a change.
+  const looks = expected.map((line) =>
+    line === 'Inserted text' ? 'inserted' : line === 'Deleted text' ? 'deleted' : line === 'Text moved from here' ? 'movedFrom' : line === 'Text moved to here' ? 'movedTo' : line === 'Text whose formatting changed' ? 'shaded' : line === '' ? '' : 'plain',
+  );
+  for (let i = 0; i < looks.length; i++) {
+    if (looks[i] === coverLooks[i]) continue;
+    return { message: 'A line of the cover page is not formatted as it should be (the legend must show each style exactly, and nothing may be hidden).', where: `cover page, line ${i + 1} ("${expected[i]}")`, expected: looks[i] || '(empty)', found: coverLooks[i] || '(empty)' };
   }
   return undefined;
 }

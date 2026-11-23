@@ -13,7 +13,7 @@
  */
 import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
 import { NS } from '../common/namespaces';
-import { isWord, kid, kids, paragraphsInCountingOrder, shownText, unitsOf, type OriginalInfo, type StyleSheet } from './original-reader';
+import { BIT, isWord, kid, kids, paragraphsInCountingOrder, shownText, unitsOf, type OriginalInfo, type StyleSheet } from './original-reader';
 
 const W = NS.w;
 
@@ -268,6 +268,20 @@ function markFormattingChanges(root: Element, original: OriginalContext): void {
     for (const piece of pieces) {
       const changed: boolean[] = [];
       for (let k = 0; k < piece.length; k++) changed.push(piece.kept && match.stream.bits[at + k] !== piece.bits);
+      // Deleted text is shown as it looked in the original. If its surroundings
+      // changed (its paragraph's style, say) so that it would now look different,
+      // state the original look on the run itself.
+      if (!piece.kept) {
+        const was = match.stream.bits[at]!;
+        const uniform = match.stream.bits.slice(at, at + piece.length).every((b) => b === was);
+        if (uniform && was !== piece.bits) {
+          for (const [name, bit] of Object.entries(BIT)) {
+            if (name === 'strike' || name === 'dstrike' || (was & bit) === (piece.bits & bit)) continue; // strikethrough is set by the deletion itself
+            const on = (was & bit) !== 0;
+            setRunProperty(runProperties(piece.run), name, name === 'u' ? { val: on ? 'single' : 'none' } : on ? {} : { val: '0' });
+          }
+        }
+      }
       at += piece.length;
       if (changed.some((c) => c)) shadeRun(piece.run, changed);
     }
@@ -324,6 +338,8 @@ class PartConverter {
   readonly tokens: Token[] = [];
   /** Rows and cells that were themselves inserted or deleted. */
   private readonly cellChange = new Map<Element, ChangeKind>();
+  /** Where each paragraph's mark sits in `tokens`. */
+  private readonly markToken = new Map<Element, number>();
 
   constructor(
     private readonly options: StaticRedlineStyleOptions,
@@ -491,7 +507,19 @@ class PartConverter {
     const cell = paragraph.parentNode as Element;
     if (!kind && isWord(cell, 'tc') && kids(cell).filter((c) => isWord(c, 'p') || isWord(c, 'tbl')).pop() === paragraph) {
       const cellKind = this.cellChange.get(cell) ?? this.cellChange.get(cell.parentNode as Element);
-      if (markKind === 'movedFrom' || markKind === 'movedTo') markKind = cellKind ? markKind : undefined;
+      if (!cellKind && markKind) {
+        // The cell stays but its last paragraph was added or removed. Since the
+        // cell's final mark cannot change, the join or split really happens at
+        // the mark of the paragraph before: that is the mark to show as changed.
+        const before = kids(cell).filter((c) => isWord(c, 'p') || isWord(c, 'tbl'));
+        const previous = before[before.length - 2];
+        const index = previous && isWord(previous, 'p') ? this.markToken.get(previous) : undefined;
+        if (previous && index !== undefined && this.tokens[index] === 'unchanged') {
+          applyChangeStyle(markProperties(previous), markKind);
+          this.tokens[index] = markKind;
+        }
+        markKind = undefined;
+      } else if (markKind === 'movedFrom' || markKind === 'movedTo') markKind = cellKind ? markKind : undefined;
       else markKind = cellKind;
     }
 
@@ -505,6 +533,7 @@ class PartConverter {
       if (this.options.showOldNumbers && label) this.addOldNumber(paragraph, label, markKind);
       if (this.options.unnumberRemovedParagraphs) this.removeNumbering(paragraph);
     }
+    this.markToken.set(paragraph, this.tokens.length);
     this.tokens.push(markKind ?? 'unchanged');
   }
 }

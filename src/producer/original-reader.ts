@@ -39,7 +39,7 @@ export function parse(xml: string): El {
 // ---------------------------------------------------------------------------
 
 /** The properties a formatting change is judged on, as bits. */
-const BIT: Record<string, number> = { b: 1, i: 2, u: 4, caps: 8, smallCaps: 16, vanish: 32 };
+export const BIT: Record<string, number> = { b: 1, i: 2, u: 4, caps: 8, smallCaps: 16, vanish: 32, strike: 64, dstrike: 128 };
 
 interface Layer {
   set: number;

@@ -167,7 +167,7 @@ export async function checkStaticRedline(input: StaticCheckInput): Promise<Check
     guarded('cover-page', () => {
       const counts = countStaticChanges(output);
       const note = `Counted independently: ${counts.insertions} insertions, ${counts.deletions} deletions, ${counts.moves} moves, ${counts.formattingChanges} formatting changes.`;
-      return verdict('cover-page', coverPageFailure(newSide().cover, input, counts), note);
+      return verdict('cover-page', coverPageFailure(newSide().cover, newSide().coverLooks, input, counts), note);
     }),
     guarded('formatting', () => verdict('formatting', formattingFailure(modifiedText().stories, newSide().stories, true))),
     guarded('format-marks', () => verdict('format-marks', formatMarksFailure(originalText().stories, oldSide().stories, newSide().stories))),

@@ -11,7 +11,9 @@ import { attribute, child, is, type XmlElement } from './xml';
 const W = NS.w;
 
 /** One bit per property a reader can see. */
-export const FORMAT = { bold: 1, italic: 2, underline: 4, caps: 8, smallCaps: 16, hidden: 32 } as const;
+export const FORMAT = { bold: 1, italic: 2, underline: 4, caps: 8, smallCaps: 16, hidden: 32, strike: 64, doubleStrike: 128 } as const;
+/** All formatting bits together. */
+export const FORMAT_MASK = 255;
 export type FormatBits = number;
 
 export const FORMAT_NAMES: [number, string][] = [
@@ -21,6 +23,8 @@ export const FORMAT_NAMES: [number, string][] = [
   [FORMAT.caps, 'capitals'],
   [FORMAT.smallCaps, 'small capitals'],
   [FORMAT.hidden, 'hidden text'],
+  [FORMAT.strike, 'struck through'],
+  [FORMAT.doubleStrike, 'double struck through'],
 ];
 
 /** "bold, italic" for a set of bits; "plain" for none. */
@@ -29,7 +33,7 @@ export function describeFormat(bits: FormatBits): string {
   return names.length > 0 ? names.join(', ') : 'plain';
 }
 
-const PROPERTY: Record<string, number> = { b: FORMAT.bold, i: FORMAT.italic, u: FORMAT.underline, caps: FORMAT.caps, smallCaps: FORMAT.smallCaps, vanish: FORMAT.hidden };
+const PROPERTY: Record<string, number> = { b: FORMAT.bold, i: FORMAT.italic, u: FORMAT.underline, caps: FORMAT.caps, smallCaps: FORMAT.smallCaps, vanish: FORMAT.hidden, strike: FORMAT.strike, dstrike: FORMAT.doubleStrike };
 
 /** Is an on/off property element switched on? (No value means on.) */
 export function isOn(element: XmlElement): boolean {
@@ -149,7 +153,9 @@ export type StaticKind = 'inserted' | 'deleted' | 'movedFrom' | 'movedTo';
 export function staticKindOf(rPr: XmlElement | undefined): StaticKind | undefined {
   if (!rPr) return undefined;
   const colorElement = child(rPr, W, 'color');
-  const color = (colorElement && attribute(colorElement, W, 'val'))?.toUpperCase();
+  // A theme colour takes precedence over the stated one in Word, so the text would not show in the change colour.
+  const themed = !!colorElement && attribute(colorElement, W, 'themeColor') !== undefined;
+  const color = themed ? undefined : (colorElement && attribute(colorElement, W, 'val'))?.toUpperCase();
   const on = (name: string): boolean => {
     const element = child(rPr, W, name);
     return !!element && isOn(element);
