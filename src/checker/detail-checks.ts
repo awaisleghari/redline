@@ -144,8 +144,14 @@ export function numberingFailure(modified: Story[], accepted: Story[]): CheckFai
  * else carries one.
  */
 export function oldNumberFailure(original: Story[], staticRejected: Story[]): CheckFailure | undefined {
+  // Old numbers are shown in the main text only (PLAN.md); elsewhere none may appear.
+  const inBody = new Set<Para>(original.filter((s) => s.key === 'body').flatMap((s) => s.details));
   return alongside(original, staticRejected, 'original document', (want, got, where) => {
-    const expected = got.removed && want.number !== '' ? `${want.number}\t` : '';
+    // A removed clause must not also keep a live automatic number.
+    if (got.removed && got.number !== '') {
+      return { message: 'A removed clause still carries a live automatic number.', where: `${where} ("${excerptAt(want.text, 0)}")`, expected: '(no number)', found: got.number };
+    }
+    const expected = got.removed && want.number !== '' && inBody.has(want) ? `${want.number}\t` : '';
     if (got.oldNumber === expected) return undefined;
     return {
       message: expected === '' ? 'An old clause number is shown where there should be none.' : 'A removed clause does not show the number it had in the original document.',
@@ -236,6 +242,9 @@ export function countStaticChanges(pkg: DocxPackage): StaticCounts {
           token(staticKindOf(pPr && child(pPr, W, 'rPr')) ?? 'unchanged');
         } else if (node.name === 'r') {
           const rPr = child(node, W, 'rPr');
+          const runStyle = rPr && child(rPr, W, 'rStyle');
+          // The old number typed in front of a removed clause belongs to that clause's change; it is not counted on its own.
+          if (runStyle && attribute(runStyle, W, 'val') === STATIC_STYLE.oldNumber) continue;
           if (node.children.some((x) => x !== rPr)) token(staticKindOf(rPr) ?? 'unchanged');
           walk(node);
         } else if (node.name === 'footnote' || node.name === 'endnote' || node.name === 'comment') {

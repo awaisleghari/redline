@@ -487,6 +487,9 @@ function readParagraph(paragraph: XmlElement, context: Context): void {
   const { markup, styles, numbering } = context.source;
   const styleElement = properties && child(properties, W, 'pStyle');
   context.paragraphStyle = styleElement && attribute(styleElement, W, 'val');
+  if (markup === 'static' && (context.paragraphStyle ?? '').startsWith(STATIC_STYLE.coverPrefix)) {
+    context.problems.push('A paragraph inside the document carries the cover-page style, which would exempt it from the counts.');
+  }
   const text = inlineText(paragraph, context);
   context.paragraphStyle = undefined;
 
@@ -536,13 +539,16 @@ function readBlocks(container: XmlElement, context: Context): void {
         break;
       case 'tbl':
         flushPending(context);
+        const tableStart = context.paragraphs.length;
         context.paragraphs.push(marker(MARK.table));
         for (const row of node.children) {
           if (droppedIn(row, context.view)) continue;
           if (w(row, 'tr')) readRow(row, context);
           else if (w(row, 'sdt') || w(row, 'customXml') || w(row, 'ins') || w(row, 'del') || w(row, 'moveFrom') || w(row, 'moveTo')) readTableContainer(row, context);
         }
-        context.paragraphs.push(marker(MARK.tableEnd));
+        // A table none of whose rows exists in this view (wholly inserted or wholly deleted) is not there at all.
+        if (!context.paragraphs.some((entry, index) => index > tableStart && entry.text === MARK.row && entry.meta === '')) context.paragraphs.length = tableStart;
+        else context.paragraphs.push(marker(MARK.tableEnd));
         break;
       case 'sdt': {
         const content = child(node, W, 'sdtContent');
