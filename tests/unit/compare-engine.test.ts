@@ -49,7 +49,9 @@ describe('compare engine', () => {
     const redline = await compareDocuments(pair.original, pair.modified, { authorName: REVISION_AUTHOR });
     const found = await readTrackedChanges(redline);
     expect(found.parts).toEqual(fullExpectation(spec.expected));
-    expect(found.formatChanges).toBe(0);
+    // The engine writes formatting-change records only where formatting changed.
+    if (spec.formattingChanged) expect(found.formatChanges).toBeGreaterThan(0);
+    else expect(found.formatChanges).toBe(0);
   });
 
   it('comparing a document with itself produces no tracked changes', async () => {

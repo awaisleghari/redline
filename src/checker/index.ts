@@ -16,6 +16,7 @@ import { readStories, type StoryReading } from './stories';
 import { structureProblems } from './structure';
 
 export type { CheckFailure, CheckId, CheckReport, CheckResult, OutputKind } from './report';
+export type { StaticCounts } from './detail-checks';
 export { CHECK_TITLES, CHECKS_FOR, OUTPUT_NAME, reportAsText } from './report';
 
 export interface CheckInput {

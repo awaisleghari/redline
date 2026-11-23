@@ -61,6 +61,10 @@ export interface PairSpec {
   modified: DocSpec;
   /** Expected tracked changes, per part of the file. Parts not listed must have none. */
   expected: Partial<Record<PartKind, ExpectedChanges>>;
+  /** What the static redline's cover page must count (checked for the pairs that state it). */
+  staticCounts?: { insertions: number; deletions: number; moves: number; formattingChanges: number };
+  /** Set for pairs whose formatting changed: the engine then writes formatting-change records. */
+  formattingChanged?: boolean;
 }
 
 export interface BuiltPair {
@@ -365,6 +369,47 @@ export const EXTRA_PAIR_SPECS: PairSpec[] = [
     },
     // The engine tracks a changed address as the old link's words deleted and the new link's words inserted.
     expected: { body: changes({ deletions: ['our website', 'reasonable'], insertions: ['our website', 'exceptional'] }) },
+  },
+  {
+    id: 'formatting-only-change',
+    description: 'No wording changes: a phrase is made bold, another loses its italics, and a third is underlined.',
+    original: {
+      blocks: [
+        p(PARTIES),
+        rich({ text: 'The Supplier shall provide the Services with reasonable skill and care.' }),
+        rich({ text: 'Payment is due ' }, { text: 'promptly', italic: true }, { text: ' on receipt of each invoice.' }),
+        p(GOVERNING_LAW),
+      ],
+    },
+    modified: {
+      blocks: [
+        p(PARTIES),
+        rich({ text: 'The Supplier shall provide the Services with ' }, { text: 'reasonable skill', bold: true }, { text: ' and care.' }),
+        rich({ text: 'Payment is due promptly on receipt of ' }, { text: 'each invoice', underline: true }, { text: '.' }),
+        p(GOVERNING_LAW),
+      ],
+    },
+    expected: {},
+    formattingChanged: true,
+    staticCounts: { insertions: 0, deletions: 0, moves: 0, formattingChanges: 3 },
+  },
+  {
+    id: 'numbered-clause-deleted',
+    description: 'The second item of an automatically numbered list is deleted, so the later items renumber.',
+    original: { blocks: [p(PARTIES), p(LIST_INTRO), numbered(LIST[0]!), numbered(NEW_LIST_ITEM), numbered(LIST[1]!), numbered(LIST[2]!), p(GOVERNING_LAW)] },
+    modified: { blocks: [p(PARTIES), p(LIST_INTRO), numbered(LIST[0]!), numbered(LIST[1]!), numbered(LIST[2]!), p(GOVERNING_LAW)] },
+    expected: { body: changes({ deletions: [NEW_LIST_ITEM], deletedParagraphMarks: 1 }) },
+    staticCounts: { insertions: 0, deletions: 1, moves: 0, formattingChanges: 0 },
+  },
+  {
+    id: 'numbered-clause-moved',
+    description: 'The first item of an automatically numbered list is moved to the end of the list.',
+    original: { blocks: [p(PARTIES), p(LIST_INTRO), numbered(NEW_LIST_ITEM), numbered(LIST[0]!), numbered(LIST[1]!), numbered(LIST[2]!), p(GOVERNING_LAW)] },
+    modified: { blocks: [p(PARTIES), p(LIST_INTRO), numbered(LIST[0]!), numbered(LIST[1]!), numbered(LIST[2]!), numbered(NEW_LIST_ITEM), p(GOVERNING_LAW)] },
+    expected: {
+      body: changes({ movedFrom: [NEW_LIST_ITEM], movedTo: [NEW_LIST_ITEM], moveOrder: ['from', 'to'], insertedParagraphMarks: 1, deletedParagraphMarks: 1 }),
+    },
+    staticCounts: { insertions: 0, deletions: 0, moves: 1, formattingChanges: 0 },
   },
   {
     id: 'moved-block',

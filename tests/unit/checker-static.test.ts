@@ -18,10 +18,12 @@ describe('Checker on the static redline of every generated pair', () => {
   it.each(ALL_PAIR_SPECS)('$id: every check passes', async (spec) => {
     const pair = await buildPair(spec);
     const tracked = await compareDocuments(pair.original, pair.modified, { authorName: 'Redline' });
-    const { docx } = await makeStaticRedline(tracked, pair.original, COVER);
+    const { docx, counts } = await makeStaticRedline(tracked, pair.original, COVER);
     const report = await checkStaticRedline({ original: pair.original, modified: pair.modified, output: docx, ...COVER });
     expect(report.checks.filter((c) => !c.passed)).toEqual([]);
     expect(report.passed).toBe(true);
     expect(report.checks.map((c) => c.id)).toEqual(CHECKS_FOR['static-redline']);
+    // Where a pair states what the cover page must count, the Producer's counts must say exactly that.
+    if (spec.staticCounts) expect(counts).toEqual(spec.staticCounts);
   });
 });

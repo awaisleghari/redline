@@ -4,8 +4,10 @@
  * WebAssembly) runs here, off the main thread, so the page stays responsive.
  * Documents are handed over in memory and never leave the browser.
  */
-import { compareDocuments, initialize } from 'docxodus/core';
-import { REVISION_AUTHOR, type CompareRequest, type CompareResponse } from './protocol';
+import { convertDocxToHtml, initialize } from 'docxodus/core';
+import { makeStaticRedline } from './make-static-redline';
+import { produceTrackedChanges } from './produce';
+import type { ProducerRequest, ProducerResponse } from './protocol';
 
 declare const self: DedicatedWorkerGlobalScope;
 
@@ -34,25 +36,39 @@ function engineReady(): Promise<void> {
 // looks at `self.onmessage` when it starts: if a handler is already set it
 // assumes it is one of its own helper threads and waits for instructions that
 // never come, so the engine would never finish loading.
-self.addEventListener('message', async (event: MessageEvent<CompareRequest>) => {
+self.addEventListener('message', async (event: MessageEvent<ProducerRequest>) => {
   const request = event.data;
-  if (request.type !== 'compare') return;
-  let response: CompareResponse;
+  let response: ProducerResponse;
   let transfer: Transferable[] = [];
   try {
-    await engineReady();
-    const started = performance.now();
-    const result = await compareDocuments(new Uint8Array(request.original), new Uint8Array(request.modified), {
-      authorName: REVISION_AUTHOR,
-    });
-    const engineMs = performance.now() - started;
-    // Copy into a buffer we own outright so it can be handed to the page without a second copy.
-    const trackedChanges = result.slice().buffer;
-    response = { type: 'compared', id: request.id, trackedChanges, engineMs };
-    transfer = [trackedChanges];
+    if (request.type === 'compare') {
+      await engineReady();
+      const started = performance.now();
+      const result = await produceTrackedChanges(new Uint8Array(request.original), new Uint8Array(request.modified));
+      const engineMs = performance.now() - started;
+      // Copy into a buffer we own outright so it can be handed to the page without a second copy.
+      const trackedChanges = result.slice().buffer;
+      response = { type: 'compared', id: request.id, trackedChanges, engineMs };
+      transfer = [trackedChanges];
+    } else if (request.type === 'make-static') {
+      const made = await makeStaticRedline(new Uint8Array(request.trackedChanges), new Uint8Array(request.original), {
+        originalName: request.originalName,
+        modifiedName: request.modifiedName,
+        comparedAt: request.comparedAt,
+      });
+      const staticRedline = made.docx.slice().buffer;
+      response = { type: 'static-made', id: request.id, staticRedline, counts: made.counts };
+      transfer = [staticRedline];
+    } else if (request.type === 'render-html') {
+      await engineReady();
+      const html = await convertDocxToHtml(new Uint8Array(request.docx), { renderHeadersAndFooters: true, renderFootnotesAndEndnotes: true });
+      response = { type: 'rendered', id: request.id, html };
+    } else {
+      return;
+    }
   } catch (error) {
-    // Report the engine's own message only; never file names or document contents.
-    response = { type: 'failed', id: request.id, message: error instanceof Error ? error.message : String(error) };
+    // Report the failure's own message only; never file names or document contents.
+    response = { type: 'failed', id: (request as { id: number }).id, message: error instanceof Error ? error.message : String(error) };
   }
   self.postMessage(response, transfer);
 });
