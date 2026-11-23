@@ -11,19 +11,23 @@ export type CheckId =
   | 'format-marks'
   | 'numbering'
   | 'completeness'
-  | 'structure';
+  | 'structure'
+  | 'pdf-text'
+  | 'pdf-colours';
 
-export type OutputKind = 'tracked-changes' | 'static-redline';
+export type OutputKind = 'tracked-changes' | 'static-redline' | 'pdf';
 
 /** The checks run on each kind of output, in the order they are reported. */
 export const CHECKS_FOR: Record<OutputKind, CheckId[]> = {
   'tracked-changes': ['accept-all', 'reject-all', 'formatting', 'numbering', 'completeness', 'structure'],
   'static-redline': ['static-new', 'static-old', 'no-tracked-changes', 'cover-page', 'formatting', 'format-marks', 'numbering', 'completeness', 'structure'],
+  pdf: ['pdf-text', 'pdf-colours'],
 };
 
 export const OUTPUT_NAME: Record<OutputKind, string> = {
   'tracked-changes': 'Word file with tracked changes',
   'static-redline': 'Word file with the static redline',
+  pdf: 'PDF of the static redline',
 };
 
 export interface CheckFailure {
@@ -67,6 +71,8 @@ export const CHECK_TITLES: Record<CheckId, string> = {
   numbering: 'Clause numbers match the modified document',
   completeness: 'Every part of the documents that holds text was checked',
   structure: 'The Word file is structurally sound',
+  'pdf-text': "The PDF's text matches the static redline, complete and in order",
+  'pdf-colours': 'Inserted, deleted and moved text is in the right colours in the PDF',
 };
 
 /** Render a report as the short text file a user can keep with the redline. */

@@ -6,12 +6,14 @@
 import { expect, test, type Page } from '@playwright/test';
 import { initialize } from 'docxodus/core';
 import { readFile } from 'node:fs/promises';
-import { checkStaticRedline, checkTrackedChanges, CHECKS_FOR } from '../../src/checker';
+import { checkPdf, checkStaticRedline, checkTrackedChanges, CHECKS_FOR } from '../../src/checker';
 import { unzip, zip } from '../../src/common/zip';
 import { makeStaticRedline } from '../../src/producer/make-static-redline';
 import { produceTrackedChanges } from '../../src/producer/produce';
 import { BROKEN_CASES, breakOutput, expectedFailures } from '../fixtures/broken';
+import { BROKEN_PDF_CASES } from '../fixtures/broken-pdf';
 import { BROKEN_STATIC_CASES, expectedStaticFailures } from '../fixtures/broken-static';
+import { convertToPdf } from '../pdf/container';
 import { ALL_PAIR_SPECS, PAIR_SPECS, buildDocx, buildPair, pairById } from '../fixtures/pairs';
 import { fullExpectation, readTrackedChanges } from '../helpers/tracked-changes';
 
@@ -179,12 +181,130 @@ test('the check report reads in plain English and can be downloaded as a text fi
   expect(text).toContain('Counted independently: 1 insertions, 1 deletions, 0 moves, 0 formatting changes.');
 });
 
-test('the PDF button is present but not yet available, with its privacy notice', async ({ page }) => {
-  await page.goto('/');
-  const pair = await buildPair(PAIR_SPECS[0]!);
-  await compare(page, pair.original, pair.modified);
-  await expect(page.getByRole('button', { name: 'PDF' })).toBeDisabled();
-  await expect(page.locator('#pdf-note')).toContainText('sends the static redline to our server for conversion, and it is deleted immediately');
+test.describe('the PDF', () => {
+  test('nothing is sent to the server until the PDF is asked for; then the PDF is checked, shown and offered', async ({ page }) => {
+    const sent: string[] = [];
+    page.on('request', (request) => {
+      if (request.method() !== 'GET') sent.push(`${request.method()} ${new URL(request.url()).pathname}`);
+    });
+    await page.goto('/');
+    const makePdf = page.getByRole('button', { name: 'Make PDF' });
+    // Before a comparison there is no PDF button to press.
+    await expect(page.locator('#make-pdf')).toBeHidden();
+    await expect(page.locator('#make-pdf')).toBeDisabled();
+
+    const pair = await buildPair(pairById('several-changes'));
+    await compare(page, pair.original, pair.modified);
+    await expect(makePdf).toBeEnabled();
+    // The notice sits beside the button, in view before it is pressed.
+    await expect(page.locator('#pdf-note')).toBeVisible();
+    await expect(page.locator('#pdf-note')).toContainText('Making the PDF sends the static redline to our server for conversion. It is deleted there immediately afterwards');
+    expect(sent).toEqual([]); // comparing, checking and both Word files: nothing left the browser
+
+    await makePdf.click();
+    await expect(page.locator('#pdf-status')).toHaveText('The PDF passed its checks.', { timeout: 60_000 });
+    expect(sent).toEqual(['POST /api/pdf']);
+    await expect(page.locator('#report-pdf li[data-check="pdf-text"]')).toHaveAttribute('data-passed', 'true');
+    await expect(page.locator('#report-pdf li[data-check="pdf-colours"]')).toHaveAttribute('data-passed', 'true');
+    await expect(page.locator('#verdict-pdf')).toHaveText('(all checks passed)');
+
+    // The viewer shows the PDF, page by page, and can switch back to the Word view.
+    await expect(page.locator('#pdf-viewer canvas')).toHaveCount(2);
+    await expect(page.locator('#pdf-viewer')).toBeVisible();
+    await expect(page.locator('#viewer')).toBeHidden();
+    const painted = await page.locator('#pdf-viewer canvas').first().evaluate((canvas: HTMLCanvasElement) => {
+      const data = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data;
+      let dark = 0;
+      for (let i = 0; i < data.length; i += 4) if (data[i]! + data[i + 1]! + data[i + 2]! < 300) dark++;
+      return dark;
+    });
+    expect(painted).toBeGreaterThan(500); // real ink on the page, not a blank canvas
+    await page.getByRole('button', { name: 'Static redline' }).click();
+    await expect(page.locator('#viewer')).toBeVisible();
+    await expect(page.locator('#pdf-viewer')).toBeHidden();
+
+    // The downloaded PDF passes check 9 again, outside the browser, against the downloaded static redline.
+    const pdf = await downloadFrom(page, '#download-pdf');
+    expect(pdf.name).toBe('redline.pdf');
+    const staticRedline = await downloadFrom(page, '#download-static');
+    expect((await checkPdf({ staticRedline: staticRedline.bytes, pdf: pdf.bytes })).passed).toBe(true);
+    // And the check report now covers the PDF too.
+    const report = new TextDecoder().decode((await downloadFrom(page, '#download-report')).bytes);
+    expect(report).toContain('Output: PDF of the static redline');
+    expect(report).toContain("The PDF's text matches the static redline, complete and in order: passed");
+  });
+
+  test('a wrong PDF from the server is withheld and not shown', async ({ page }) => {
+    // The server answers with the PDF of a different document.
+    const other = await buildPair(pairById('moved-paragraph'));
+    await initialize();
+    const cover = { originalName: 'original.docx', modifiedName: 'modified.docx', comparedAt: 'another time' };
+    const wrongPdf = await convertToPdf((await makeStaticRedline(await produceTrackedChanges(other.original, other.modified), other.original, cover)).docx);
+    await page.route('**/api/pdf', (route) => route.fulfill({ status: 200, contentType: 'application/pdf', body: Buffer.from(wrongPdf) }));
+
+    const pair = await buildPair(pairById('one-word-change'));
+    await compare(page, pair.original, pair.modified);
+    await page.getByRole('button', { name: 'Make PDF' }).click();
+    await expect(page.locator('#pdf-status')).toContainText('did not pass its checks, so it has been withheld', { timeout: 60_000 });
+    await expect(page.locator('#report-pdf li[data-check="pdf-text"]')).toHaveAttribute('data-passed', 'false');
+    await expect(page.locator('#report-pdf li[data-check="pdf-text"] .failure')).not.toBeEmpty();
+    await expect(page.locator('#withheld-pdf')).toBeVisible();
+    await expect(page.locator('#download-pdf')).toBeHidden();
+    expect(await page.locator('#download-pdf').getAttribute('href')).toBeNull();
+    await expect(page.locator('#pdf-viewer')).toBeHidden();
+    await expect(page.locator('#pdf-viewer canvas')).toHaveCount(0);
+    await expect(page.locator('#viewer-tabs')).toBeHidden();
+    // The Word files are unaffected.
+    await expect(page.locator('#download-static')).toBeVisible();
+  });
+
+  test('a PDF with one colour wrong is withheld', async ({ page }) => {
+    const brokenCase = BROKEN_PDF_CASES.find((c) => c.id === 'pdf-deletion-in-black')!;
+    const pair = await buildPair(pairById(brokenCase.pairId));
+    await initialize();
+    await page.clock.setFixedTime(new Date('2026-11-23T14:05:00'));
+    const offsetMinutes = -new Date('2026-11-23T14:05:00').getTimezoneOffset();
+    const two = (n: number): string => String(n).padStart(2, '0');
+    const zone = `UTC${offsetMinutes < 0 ? '-' : '+'}${two(Math.floor(Math.abs(offsetMinutes) / 60))}:${two(Math.abs(offsetMinutes) % 60)}`;
+    const cover = { originalName: 'original.docx', modifiedName: 'modified.docx', comparedAt: `23 November 2026 at 14:05 (${zone})` };
+    const files = await unzip((await makeStaticRedline(await produceTrackedChanges(pair.original, pair.modified), pair.original, cover)).docx);
+    brokenCase.damage(files);
+    const wrongPdf = await convertToPdf(await zip(files));
+    await page.route('**/api/pdf', (route) => route.fulfill({ status: 200, contentType: 'application/pdf', body: Buffer.from(wrongPdf) }));
+    await compare(page, pair.original, pair.modified);
+    await page.getByRole('button', { name: 'Make PDF' }).click();
+    await expect(page.locator('#pdf-status')).toContainText('withheld', { timeout: 60_000 });
+    await expect(page.locator('#report-pdf li[data-check="pdf-text"]')).toHaveAttribute('data-passed', 'true');
+    await expect(page.locator('#report-pdf li[data-check="pdf-colours"]')).toHaveAttribute('data-passed', 'false');
+    expect(await page.locator('#download-pdf').getAttribute('href')).toBeNull();
+  });
+
+  test('when the server cannot convert, the page says so plainly and offers no PDF', async ({ page }) => {
+    await page.route('**/api/pdf', (route) => route.fulfill({ status: 422, contentType: 'text/plain', body: 'The document could not be converted to PDF.' }));
+    const pair = await buildPair(pairById('one-word-change'));
+    await compare(page, pair.original, pair.modified);
+    await page.getByRole('button', { name: 'Make PDF' }).click();
+    await expect(page.locator('#pdf-status')).toContainText('withheld');
+    await expect(page.locator('#report-pdf li[data-check="pdf-text"] .failure')).toContainText('The PDF could not be made. (The document could not be converted to PDF.)');
+    await expect(page.locator('#download-pdf')).toBeHidden();
+  });
+
+  test('no PDF can be asked for when the static redline itself was withheld', async ({ page }) => {
+    const brokenCase = BROKEN_STATIC_CASES.find((c) => c.id === 'static-leftover-tracked-change')!;
+    const pair = await buildPair(pairById(brokenCase.pairId));
+    await initialize();
+    const files = await unzip((await makeStaticRedline(await produceTrackedChanges(pair.original, pair.modified), pair.original, { originalName: 'original.docx', modifiedName: 'modified.docx', comparedAt: 'x' })).docx);
+    brokenCase.damage(files);
+    await tamper(page, 'static-made', 'staticRedline', await zip(files));
+    let asked = false;
+    await page.route('**/api/pdf', (route) => {
+      asked = true;
+      return route.abort();
+    });
+    await compare(page, pair.original, pair.modified, 'withheld');
+    await expect(page.getByRole('button', { name: 'Make PDF' })).toBeDisabled();
+    expect(asked).toBe(false);
+  });
 });
 
 test('the Producer and the Checker each run in their own Web Worker, not on the page', async ({ page }) => {

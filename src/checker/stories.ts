@@ -20,7 +20,12 @@ import { Numbering } from './numbering';
 import { DocxPackage } from './package';
 import { attribute, child, is, type XmlElement } from './xml';
 
-export type View = 'accepted' | 'rejected';
+/**
+ * 'accepted' and 'rejected' are the two documents a redline stands for. 'all'
+ * reads a static redline exactly as it is printed: every visible character,
+ * inserted and deleted alike, cover page included (used to check the PDF).
+ */
+export type View = 'accepted' | 'rejected' | 'all';
 
 /**
  * How changes are expressed in the file being read:
@@ -40,7 +45,14 @@ export const CHAR = {
   shaded: 512,
   /** Part of a change that this view keeps (inserted text when accepting, deleted text when rejecting). */
   changed: 1024,
+  /** Which kind of change (static redline): multiply the index in STATIC_KINDS, plus one, by this. */
+  kindUnit: 2048,
 } as const;
+
+/** The change kinds in the order their index is stored in a character code. */
+export const STATIC_KINDS: readonly StaticKind[] = ['inserted', 'deleted', 'movedFrom', 'movedTo'];
+/** The kind of change a character code records, if any. */
+export const kindOfCode = (code: number): StaticKind | undefined => STATIC_KINDS[Math.floor(code / CHAR.kindUnit) - 1];
 
 /** One paragraph (or structure marker) of a story, with what the checks beyond plain text need. */
 export interface Para {
@@ -53,9 +65,17 @@ export interface Para {
   oldNumber: string;
   /** True when this paragraph itself is removed by the changes (so it exists only in the rejected view). */
   removed: boolean;
+  /** True when the paragraph is a list item (numbered or bulleted), whether or not its label could be worked out. */
+  listed: boolean;
+  /** The bullet character of a bulleted item ('' otherwise). */
+  bullet: string;
+  /** True when a tab in the paragraph may draw a leader (dots, a line): one of its tab stops has one. */
+  leader?: boolean;
+  /** In a static redline: the kind of change the paragraph's own mark shows (its number or bullet is printed the same way). */
+  markKind?: StaticKind;
 }
 
-const marker = (text: string): Para => ({ text, meta: '', number: '', oldNumber: '', removed: false });
+const marker = (text: string): Para => ({ text, meta: '', number: '', oldNumber: '', removed: false, listed: false, bullet: '' });
 
 /** Style ids the static redline uses for its own additions. The Checker recognises them by name. */
 export const STATIC_STYLE = { coverPrefix: 'RedlineCover', oldNumber: 'RedlineOldNumber', shadeFill: 'FFF2CC' } as const;
@@ -88,6 +108,10 @@ export interface StoryReading {
    * text inserted, so each view has exactly its own document's links.)
    */
   links: string[];
+  /** The text of each table row marked to repeat at the top of every page the table runs onto. */
+  repeatRows: string[];
+  /** How the pages are set up: sections, their headers and footers, page numbering, note numbering. */
+  layout: Layout;
   /** In a static redline: the text of each line of the cover page, in order. */
   cover: string[];
   /** For each cover line, how its text is formatted: 'plain', a change kind, 'shaded', with ':hidden' if it would not be shown. */
@@ -95,6 +119,33 @@ export interface StoryReading {
 }
 
 /** Markers standing in for things that are not characters but must not vanish unnoticed. */
+export type PageKind = 'default' | 'first' | 'even';
+
+/** One section of the main text, as far as the printed page depends on it. */
+export interface SectionLayout {
+  /** How many entries of the main text's `details` belong to this section and those before it. */
+  end: number;
+  /** The section begins on a new page (anything but a "continuous" break). */
+  newPage: boolean;
+  /** Its first page has a header and footer of its own. */
+  titlePage: boolean;
+  /** The page number its first page is given, when it says. */
+  start: number | undefined;
+  /** The page-number format (Word's name for it: 'decimal', 'lowerRoman', ...). */
+  format: string;
+  /** The story key of each header and footer the section itself names. */
+  header: Partial<Record<PageKind, string>>;
+  footer: Partial<Record<PageKind, string>>;
+}
+
+export interface Layout {
+  sections: SectionLayout[];
+  /** Even pages have headers and footers of their own. */
+  evenAndOdd: boolean;
+  /** How footnotes and endnotes are numbered (Word's names). */
+  noteFormat: { footnote: string; endnote: string };
+}
+
 export const MARK = {
   footnote: '⟦footnote⟧',
   endnote: '⟦endnote⟧',
@@ -214,6 +265,8 @@ interface Context {
   notes: NoteRef[];
   /** Section properties met, in order (for headers and footers). */
   sections: XmlElement[];
+  /** For each of `sections`: how many paragraphs had been read when it ended. */
+  sectionEnds: number[];
   /** Things found that make the text impossible to verify. Shared by every nested context. */
   problems: string[];
   /** The package and the part being read, for following links to pictures, charts and the like. */
@@ -228,10 +281,11 @@ interface Source {
   markup: Markup;
   styles: Styles;
   numbering: Numbering;
+  repeatRows: string[];
 }
 
 function newContext(view: View, problems: string[], source: Source): Context {
-  return { view, paragraphs: [], pending: '', meta: '', code: 0, paragraphStyle: undefined, oldNumber: '', lastMarkRemoved: false, textBoxes: [], notes: [], sections: [], problems, source };
+  return { view, paragraphs: [], pending: '', meta: '', code: 0, paragraphStyle: undefined, oldNumber: '', lastMarkRemoved: false, textBoxes: [], notes: [], sections: [], sectionEnds: [], problems, source };
 }
 
 /** Record text being emitted, with the current character code, and hand it back. */
@@ -242,7 +296,7 @@ function emit(context: Context, text: string, isText = false): string {
 
 /** Is a change of this kind dropped in this view? */
 function staticDropped(kind: StaticKind | undefined, view: View): boolean {
-  if (!kind) return false;
+  if (!kind || view === 'all') return false;
   return view === 'accepted' ? kind === 'deleted' || kind === 'movedFrom' : kind === 'inserted' || kind === 'movedTo';
 }
 
@@ -254,7 +308,7 @@ function readRun(run: XmlElement, context: Context): string {
   if (markup === 'static') {
     const kind = staticKindOf(rPr);
     const styleElement = rPr && child(rPr, W, 'rStyle');
-    if (styleElement && attribute(styleElement, W, 'val') === STATIC_STYLE.oldNumber) {
+    if (styleElement && attribute(styleElement, W, 'val') === STATIC_STYLE.oldNumber && context.view !== 'all') {
       // The old number of a removed clause: shown struck through, and not part of either document's text.
       if (kind !== 'deleted' && kind !== 'movedFrom') context.problems.push('An old clause number is not marked as deleted text.');
       if (styles.formatOf(rPr, context.paragraphStyle) & FORMAT.hidden) context.problems.push('An old clause number is formatted as hidden text.');
@@ -277,7 +331,7 @@ function readRun(run: XmlElement, context: Context): string {
       inner(run);
       return '';
     }
-    if (kind) code |= CHAR.changed;
+    if (kind) code |= CHAR.changed | ((STATIC_KINDS.indexOf(kind) + 1) * CHAR.kindUnit);
     const shading = rPr && child(rPr, W, 'shd');
     if (shading && attribute(shading, W, 'fill')?.toUpperCase() === STATIC_STYLE.shadeFill) code |= CHAR.shaded;
   }
@@ -324,7 +378,10 @@ function linkedContent(node: XmlElement, context: Context): string {
 /** Fold a nested reading (a cell, a text box) back into the one that contains it. */
 function absorb(outer: Context, inner: Context): void {
   outer.notes.push(...inner.notes);
-  outer.sections.push(...inner.sections);
+  for (const section of inner.sections) {
+    outer.sections.push(section);
+    outer.sectionEnds.push(outer.paragraphs.length);
+  }
 }
 
 /**
@@ -338,7 +395,7 @@ function alternateContentBranch(element: XmlElement, context: Context, read: (br
   if (branches.length > 1) {
     // Every branch (there may be several Choices) must read the same: text, text boxes and note references.
     const readings = branches.map((branch) => {
-      const probe = newContext(context.view, [], { ...context.source, partsRead: new Set(), links: [] });
+      const probe = newContext(context.view, [], { ...context.source, partsRead: new Set(), links: [], repeatRows: [] });
       const inline = read(branch, probe);
       // Pictures are stored differently in the modern and legacy forms, so linked files are left out of this comparison.
       const texts = (list: Para[]): string[] => list.map((entry) => entry.text);
@@ -489,9 +546,9 @@ function inlineText(element: XmlElement, context: Context): string {
 }
 
 /** Close the paragraph being assembled and add it to the story. */
-function closeParagraph(context: Context, number: string, removed: boolean): void {
+function closeParagraph(context: Context, number: string, removed: boolean, listed = false, bullet = '', markKind?: StaticKind): void {
   if (context.meta.length !== context.pending.length) throw new Error('internal error: character details are out of step with the text');
-  context.paragraphs.push({ text: context.pending, meta: context.meta, number, oldNumber: context.oldNumber, removed });
+  context.paragraphs.push({ text: context.pending, meta: context.meta, number, oldNumber: context.oldNumber, removed, listed, bullet, markKind });
   context.pending = '';
   context.meta = '';
   context.oldNumber = '';
@@ -502,7 +559,7 @@ function readParagraph(paragraph: XmlElement, context: Context): void {
   const { markup, styles, numbering } = context.source;
   const styleElement = properties && child(properties, W, 'pStyle');
   context.paragraphStyle = styleElement && attribute(styleElement, W, 'val');
-  if (markup === 'static' && (context.paragraphStyle ?? '').startsWith(STATIC_STYLE.coverPrefix)) {
+  if (markup === 'static' && context.view !== 'all' && (context.paragraphStyle ?? '').startsWith(STATIC_STYLE.coverPrefix)) {
     context.problems.push('A paragraph inside the document carries the cover-page style, which would exempt it from the counts.');
   }
   const text = inlineText(paragraph, context);
@@ -518,14 +575,21 @@ function readParagraph(paragraph: XmlElement, context: Context): void {
   // Automatic numbering. In a static redline every paragraph in the file is
   // live and takes a number if it is numbered, so every paragraph is counted.
   // With tracked changes, a paragraph this view removes takes no number.
-  const number = markup === 'static' || !markRemoved ? numbering.next(styles.numberingOf(properties)) : '';
+  const numPr = styles.numberingOf(properties);
+  const number = markup === 'static' || !markRemoved ? numbering.next(numPr) : '';
+  const numIdElement = numPr && child(numPr, W, 'numId');
+  const listed = !!numIdElement && !['0', undefined].includes(attribute(numIdElement, W, 'val'));
 
   context.pending += text;
   context.lastMarkRemoved = markRemoved;
   if (markRemoved) return; // this paragraph joins the next one in this view
-  closeParagraph(context, number, removed);
+  closeParagraph(context, number, removed, listed, numbering.bulletOf(numPr), markKind);
+  if (styles.hasLeaderTab(properties)) context.paragraphs[context.paragraphs.length - 1]!.leader = true;
   const section = properties && child(properties, W, 'sectPr');
-  if (section) context.sections.push(section);
+  if (section) {
+    context.sections.push(section);
+    context.sectionEnds.push(context.paragraphs.length);
+  }
 }
 
 /** Read block-level content (paragraphs, tables, containers) of a body, cell, note, header or text box. */
@@ -586,6 +650,7 @@ function readBlocks(container: XmlElement, context: Context): void {
       }
       case 'sectPr':
         context.sections.push(node);
+        context.sectionEnds.push(context.paragraphs.length);
         break;
       default:
         break;
@@ -624,6 +689,11 @@ function readRow(row: XmlElement, context: Context): void {
   const kept = cells.map((cell) => readCell(cell, context)).filter((cell): cell is Context => cell !== undefined);
   if (kept.length === 0 && context.source.markup === 'static' && cells.length > 0) return;
   context.paragraphs.push(marker(MARK.row));
+  const rowProperties = child(row, W, 'trPr');
+  if (rowProperties && child(rowProperties, W, 'tblHeader')) {
+    // A heading row: Word prints it again at the top of each page the table continues onto.
+    context.source.repeatRows.push(kept.flatMap((cell) => cell.paragraphs.map((p) => [...p.text].filter((_, i) => p.meta.charCodeAt(i) & CHAR.isText).join(''))).join(''));
+  }
   for (const inner of kept) {
     context.paragraphs.push(marker(MARK.cell), ...inner.paragraphs);
     context.textBoxes.push(...inner.textBoxes);
@@ -666,6 +736,8 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
   const links: string[] = [];
   const cover: string[] = [];
   const coverLooks: string[] = [];
+  const repeatRows: string[] = [];
+  const layout: Layout = { sections: [], evenAndOdd: false, noteFormat: { footnote: 'decimal', endnote: 'lowerRoman' } };
   const add = (key: string, kind: StoryKind, label: string, details: Para[]): void => {
     if (!isBlank(details)) stories.push(storyOf(key, kind, label, details));
   };
@@ -674,12 +746,12 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
   let body = child(pkg.xml(main), W, 'body');
   if (!body) {
     problems.push('The main document has no body.');
-    return { stories, partsRead, noteIdsRead, problems, links, cover, coverLooks };
+    return { stories, partsRead, noteIdsRead, problems, links, cover, coverLooks, repeatRows, layout };
   }
   partsRead.add(main);
-  const shared = { pkg, partsRead, links, markup, styles: new Styles(pkg, main), numbering: new Numbering(pkg, main) };
+  const shared = { pkg, partsRead, links, markup, styles: new Styles(pkg, main), numbering: new Numbering(pkg, main), repeatRows };
 
-  if (markup === 'static') {
+  if (markup === 'static' && view !== 'all') {
     // The cover page: the leading paragraphs in the cover styles. It is the
     // redline's own addition, so it is set aside here and verified separately.
     const isCover = (node: XmlElement): boolean => {
@@ -725,6 +797,20 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
   // Headers and footers, through each section's references.
   const mainRels = pkg.relationships(main);
   bodyContext.sections.forEach((section, sectionIndex) => {
+    const numbers = child(section, W, 'pgNumType');
+    const start = Number(numbers ? (attribute(numbers, W, 'start') ?? NaN) : NaN);
+    const breakType = child(section, W, 'type');
+    const titlePage = child(section, W, 'titlePg');
+    const sectionLayout: SectionLayout = {
+      end: bodyContext.sectionEnds[sectionIndex] ?? bodyContext.paragraphs.length,
+      newPage: (breakType && attribute(breakType, W, 'val')) !== 'continuous',
+      titlePage: !!titlePage && !['0', 'false', 'off'].includes(attribute(titlePage, W, 'val') ?? '1'),
+      start: Number.isInteger(start) ? start : undefined,
+      format: (numbers && attribute(numbers, W, 'fmt')) ?? 'decimal',
+      header: {},
+      footer: {},
+    };
+    layout.sections.push(sectionLayout);
     for (const reference of section.children) {
       const kind = w(reference, 'headerReference') ? 'header' : w(reference, 'footerReference') ? 'footer' : undefined;
       if (!kind) continue;
@@ -740,6 +826,7 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
       const context = newContext(view, problems, { ...shared, part: rel.partName });
       readBlocks(pkg.xml(rel.partName), context);
       const key = `${kind}/${sectionIndex + 1}/${type}`;
+      if (type === 'default' || type === 'first' || type === 'even') sectionLayout[kind][type] = key;
       add(key, kind, label, context.paragraphs);
       add(`${key}/text boxes`, 'text box', `text boxes in the ${label}`, context.textBoxes);
       notes.push(...context.notes);
@@ -790,5 +877,33 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
     });
   }
 
-  return { stories, partsRead, noteIdsRead, problems, links, cover, coverLooks };
+  // Settings that change what a page prints.
+  const settingsPart = pkg.relationshipsOfType(main, 'settings')[0]?.partName;
+  if (settingsPart && pkg.has(settingsPart)) {
+    const settings = pkg.xml(settingsPart);
+    const flag = child(settings, W, 'evenAndOddHeaders');
+    layout.evenAndOdd = !!flag && !['0', 'false', 'off'].includes(attribute(flag, W, 'val') ?? '1');
+    for (const kind of ['footnote', 'endnote'] as const) {
+      const properties = child(settings, W, `${kind}Pr`);
+      const format = properties && child(properties, W, 'numFmt');
+      if (format) layout.noteFormat[kind] = attribute(format, W, 'val') ?? layout.noteFormat[kind];
+    }
+  }
+  // A section's own note numbering comes before the document's. Where the sections disagree, or the numbers
+  // start again on each page or section, the Checker does not work the numbers out ('mixed' matches nothing).
+  for (const kind of ['footnote', 'endnote'] as const) {
+    const stated = new Set<string>();
+    let restarts = false;
+    for (const section of bodyContext.sections) {
+      const properties = child(section, W, `${kind}Pr`);
+      const format = properties && child(properties, W, 'numFmt');
+      if (format) stated.add(attribute(format, W, 'val') ?? '');
+      const restart = properties && child(properties, W, 'numRestart');
+      if (restart && attribute(restart, W, 'val') !== 'continuous') restarts = true;
+    }
+    if (stated.size === 1) layout.noteFormat[kind] = [...stated][0]!;
+    if (stated.size > 1 || restarts) layout.noteFormat[kind] = 'mixed';
+  }
+
+  return { stories, partsRead, noteIdsRead, problems, links, cover, coverLooks, repeatRows, layout };
 }

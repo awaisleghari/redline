@@ -3,7 +3,7 @@
  * report from the Checker for that output.
  */
 import { describe, expect, it } from 'vitest';
-import { ProducerError, runComparison, type FlowDependencies } from '../../src/app/flow';
+import { ProducerError, runComparison, runPdf, type FlowDependencies } from '../../src/app/flow';
 import { CHECK_TITLES, CHECKS_FOR, type CheckId, type CheckReport, type OutputKind } from '../../src/checker';
 
 const bytes = (text: string): Uint8Array => new TextEncoder().encode(text);
@@ -114,5 +114,54 @@ describe('compare flow', () => {
     });
     await expect(attempt).rejects.toBeInstanceOf(ProducerError);
     expect(checked).toBe(false);
+  });
+});
+
+describe('PDF flow', () => {
+  const convert = async (): Promise<Uint8Array> => bytes('%PDF-');
+  const pass = async (): Promise<CheckReport> => report('pdf');
+
+  it('releases the PDF when both of its checks pass, giving the Checker the redline and the PDF', async () => {
+    let seen: unknown;
+    const result = await runPdf(bytes('static'), {
+      convert,
+      check: async (input) => {
+        seen = input;
+        return report('pdf');
+      },
+    });
+    expect(result.file).toEqual(bytes('%PDF-'));
+    expect(seen).toEqual({ staticRedline: bytes('static'), pdf: bytes('%PDF-') });
+  });
+
+  it.each(CHECKS_FOR.pdf)('withholds the PDF when its %s check fails', async (id) => {
+    const result = await runPdf(bytes('static'), { convert, check: async () => report('pdf', [id]) });
+    expect(result.report.passed).toBe(false);
+    expect(result.file).toBeUndefined();
+  });
+
+  it('withholds the PDF when the server fails, the Checker crashes, or the report is not a complete PDF report', async () => {
+    const serverDown = await runPdf(bytes('static'), {
+      convert: async () => {
+        throw new Error('The document could not be converted to PDF.');
+      },
+      check: pass,
+    });
+    expect(serverDown.file).toBeUndefined();
+    expect(serverDown.report.checks[0]!.failure!.message).toContain('The PDF could not be made');
+
+    const crashed = await runPdf(bytes('static'), {
+      convert,
+      check: async () => {
+        throw new Error('worker died');
+      },
+    });
+    expect(crashed.file).toBeUndefined();
+
+    expect((await runPdf(bytes('static'), { convert, check: async () => report('static-redline') })).file).toBeUndefined();
+    expect((await runPdf(bytes('static'), { convert, check: async () => ({ output: 'pdf', passed: true, checks: [] }) })).file).toBeUndefined();
+    const partial = report('pdf');
+    partial.checks = partial.checks.slice(0, 1);
+    expect((await runPdf(bytes('static'), { convert, check: async () => partial })).file).toBeUndefined();
   });
 });

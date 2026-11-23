@@ -56,10 +56,34 @@ runs the browser tests (Playwright, in Chromium). The first time, install the
 browser with `npx playwright install chromium`.
 
 ```bash
+npm run test:pdf
+```
+
+builds and runs the PDF converter container and checks its output. It needs
+Docker. So do the browser tests, because they include making a PDF.
+
+```bash
 npm run test:all
 ```
 
-runs the type check and all three.
+runs the type check and all four.
+
+## The PDF converter
+
+Making the PDF is the one step that happens on a server. `pdf-container/` holds
+a small image (Ubuntu, LibreOffice, fonts) that turns a static redline into a
+PDF and keeps nothing. To use it locally:
+
+```bash
+npm run build:pdf-image
+```
+
+```bash
+docker run --rm -p 127.0.0.1:8791:8080 redline-pdf
+```
+
+With that running, `npm run dev` can make PDFs. `worker/` holds the Cloudflare
+Worker that does the same job in production.
 
 ## How it is built
 

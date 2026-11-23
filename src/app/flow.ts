@@ -70,6 +70,33 @@ function review(kind: OutputKind, file: Uint8Array, report: CheckReport): Review
   return released ? { report, file } : { report: { ...report, passed: false } };
 }
 
+export interface PdfDependencies {
+  /** The one server step: send the static redline for conversion and receive the PDF. */
+  convert: (staticRedline: Uint8Array) => Promise<Uint8Array>;
+  /** The Checker: compare the PDF with the static redline it was made from. */
+  check: (input: { staticRedline: Uint8Array; pdf: Uint8Array }) => Promise<CheckReport>;
+}
+
+/**
+ * Make the PDF of a static redline that the Checker has already passed, have
+ * the Checker compare the PDF with it, and release the PDF only on a pass.
+ */
+export async function runPdf(staticRedline: Uint8Array, deps: PdfDependencies): Promise<Reviewed> {
+  let pdf: Uint8Array;
+  try {
+    pdf = await deps.convert(staticRedline);
+  } catch (error) {
+    return { report: checkerUnavailable('pdf', `The PDF could not be made. (${reason(error)})`) };
+  }
+  let report: CheckReport;
+  try {
+    report = await deps.check({ staticRedline, pdf });
+  } catch (error) {
+    report = checkerUnavailable('pdf', `The check could not be run, so the PDF was withheld. (${reason(error)})`);
+  }
+  return review('pdf', pdf, report);
+}
+
 export async function runComparison(original: Uint8Array, modified: Uint8Array, details: ComparisonDetails, deps: FlowDependencies): Promise<FlowResult> {
   let produced: { trackedChanges: Uint8Array; engineMs: number };
   try {

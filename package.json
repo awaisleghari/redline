@@ -12,13 +12,17 @@
     "copy-wasm": "node scripts/copy-wasm.mjs",
     "predev": "npm run copy-wasm",
     "prebuild": "npm run copy-wasm",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p worker",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "test:all": "npm run typecheck && npm run test && npm run test:schema && npm run test:e2e",
-    "test:schema": "tsx scripts/schema-check.ts"
+    "test:all": "npm run typecheck && npm run test && npm run test:schema && npm run test:pdf && npm run test:e2e",
+    "test:schema": "tsx scripts/schema-check.ts",
+    "test:pdf": "vitest run --config vitest.pdf.config.ts",
+    "build:pdf-image": "docker build -t redline-pdf pdf-container"
   },
   "devDependencies": {
+    "@cloudflare/containers": "^0.3.7",
+    "@cloudflare/workers-types": "^5.20261123.1",
     "@playwright/test": "1.63.0",
     "@types/node": "^22.20.5",
     "@xmldom/xmldom": "^0.9.12",
@@ -31,6 +35,7 @@
   "dependencies": {
     "docxodus": "^16.1.0",
     "jszip": "^3.10.2",
+    "pdfjs-dist": "^6.5.438",
     "saxes": "^6.0.0"
   }
 }

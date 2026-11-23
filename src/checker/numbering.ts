@@ -111,6 +111,14 @@ export class Numbering {
     }
   }
 
+  /** The bullet a list item is printed with ('' when the paragraph is not a bulleted item). Does not advance any counter. */
+  bulletOf(numPr: XmlElement | undefined): string {
+    const numId = value(numPr, 'numId');
+    if (numId === undefined || numId === '0') return '';
+    const level = this.lists.get(numId)?.levels.get(Number(value(numPr, 'ilvl') ?? 0));
+    return level?.format === 'bullet' ? level.text : '';
+  }
+
   /**
    * The label of the next paragraph carrying this numbering, advancing the
    * counters. '' when the paragraph is not numbered or its label cannot be

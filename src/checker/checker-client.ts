@@ -1,6 +1,6 @@
 /** Page-side handle on the Checker's Web Worker. */
-import type { CheckInput, CheckReport, StaticCheckInput } from './index';
-import type { CheckRequest, CheckResponse } from './protocol';
+import type { CheckInput, CheckReport, PdfCheckInput, StaticCheckInput } from './index';
+import type { CheckRequest, CheckResponse, PdfCheckRequest } from './protocol';
 
 interface Pending {
   resolve: (report: CheckReport) => void;
@@ -46,6 +46,14 @@ export class CheckerClient {
       originalName: input.originalName,
       modifiedName: input.modifiedName,
       comparedAt: input.comparedAt,
+    });
+  }
+
+  checkPdf(input: PdfCheckInput): Promise<CheckReport> {
+    const request: PdfCheckRequest = { type: 'check-pdf', id: this.nextId++, staticRedline: copy(input.staticRedline), pdf: copy(input.pdf) };
+    return new Promise<CheckReport>((resolve, reject) => {
+      this.pending.set(request.id, { resolve, reject });
+      this.worker.postMessage(request, [request.staticRedline, request.pdf]);
     });
   }
 

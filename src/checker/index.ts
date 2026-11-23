@@ -11,6 +11,8 @@ import { compareStories } from './compare-text';
 import { completenessFailure, coverageNote, unreadText } from './completeness';
 import { countStaticChanges, coverPageFailure, formatMarksFailure, formattingFailure, leftoverTrackedChanges, numberingFailure, oldNumberFailure } from './detail-checks';
 import { DocxPackage, PackageError } from './package';
+import { PdfError, readPdf } from './pdf';
+import { comparePdf, type PdfCheckResult } from './pdf-check';
 import { CHECK_TITLES, CHECKS_FOR, type CheckFailure, type CheckId, type CheckReport, type CheckResult, type OutputKind } from './report';
 import { readStories, type StoryReading } from './stories';
 import { structureProblems } from './structure';
@@ -130,6 +132,32 @@ export async function checkTrackedChanges(input: CheckInput): Promise<CheckRepor
   ];
 
   return finish('tracked-changes', checks);
+}
+
+export interface PdfCheckInput {
+  /** The static redline the PDF was made from: the very file the Checker has already passed. */
+  staticRedline: Uint8Array;
+  /** The PDF to be checked. */
+  pdf: Uint8Array;
+}
+
+/** Check a PDF against the static redline it was made from (check 9 of PLAN.md). */
+export async function checkPdf(input: PdfCheckInput): Promise<CheckReport> {
+  const failBoth = (message: string): CheckReport => ({ output: 'pdf', passed: false, checks: CHECKS_FOR.pdf.map((id) => fail(id, { message })) });
+  let result: PdfCheckResult;
+  try {
+    const redline = await DocxPackage.open(input.staticRedline);
+    const pdf = await readPdf(input.pdf);
+    result = comparePdf(readStories(redline, 'all', 'static'), pdf);
+  } catch (error) {
+    return failBoth(error instanceof PdfError ? error.message : describe(error));
+  }
+  const checks: CheckResult[] = [
+    verdict('pdf-text', result.text, result.note),
+    // Colours can only be vouched for where the text itself was found.
+    verdict('pdf-colours', result.colours ?? (result.text ? { message: 'This could not be checked because the text does not match (see the text check).' } : undefined)),
+  ];
+  return finish('pdf', checks);
 }
 
 export interface StaticCheckInput extends CheckInput {
