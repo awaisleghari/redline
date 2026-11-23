@@ -620,10 +620,11 @@ export function comparePdf(printed: StoryReading, pdf: PdfReading): PdfCheckResu
 
   // A page's header or footer that is not the very first or last thing on the page (it has a text box beside
   // it, say) is accepted only whole and unbroken, and only clear of the main text: a header before the first
-  // of the page's main text, a footer after the last of it. One that is not there fails.
+  // of the page's main text, a footer after the last of it and of its footnotes. One that is not there fails.
   const bodyFirst: number[] = [];
   const bodyLast: number[] = [];
-  for (const j of bodyFound?.match.at ?? []) {
+  // (The main text here includes its notes and text boxes: a footer comes after the page's footnotes too.)
+  for (const j of [...(bodyFound?.match.at ?? []), ...found.flatMap((other) => other.match.at)].sort((x, y) => x - y)) {
     bodyFirst[chars[j]!.page] ??= j;
     bodyLast[chars[j]!.page] = j;
   }

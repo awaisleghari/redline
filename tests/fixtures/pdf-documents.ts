@@ -295,6 +295,20 @@ export const PDF_DOCUMENT_PAIRS: PdfDocumentPair[] = [
     body: [sentence(changed), text('This offer is binding on the Buyer.'), text('End.')],
     extras: { header: [text('Subject to contract')] },
   })),
+  // ----- found when the fourth review's fixes were verified -----
+  ...(['footnotes-and-page-number-footer', 'footnotes-and-page-x-footer'] as const).map((id) =>
+    pair(id, `One page with two footnotes and a footer that is ${id.endsWith('x-footer') ? '"Page X"' : 'only the page number'}.`, (changed) => ({
+      body: [
+        new Paragraph({ children: [new TextRun('The Customer shall pay the Fees within thirty days.'), new FootnoteReferenceRun(1)] }),
+        new Paragraph({ children: [new TextRun('The Services are defined in the Schedule.'), new FootnoteReferenceRun(2)] }),
+        text('The term is 5 years.'),
+      ],
+      extras: {
+        footnotes: { 1: 'Fees are stated exclusive of value added tax.', 2: `The Schedule ${changed ? 'forms' : 'does not form'} part of this Agreement.` },
+        footer: [new Paragraph({ children: [...(id.endsWith('x-footer') ? [new TextRun('Page ')] : []), new TextRun({ children: [PageNumber.CURRENT] })] })],
+      },
+    })),
+  ),
 ];
 
 export function pdfDocumentById(id: string): PdfDocumentPair | undefined {
