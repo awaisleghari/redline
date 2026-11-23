@@ -46,42 +46,87 @@ function textOf(node: XmlNode): string {
 }
 
 function emptyChanges(): ExpectedChanges {
-  return { insertions: [], deletions: [], movedFrom: [], movedTo: [] };
+  return {
+    insertions: [],
+    deletions: [],
+    movedFrom: [],
+    movedTo: [],
+    moveOrder: [],
+    insertedParagraphMarks: 0,
+    deletedParagraphMarks: 0,
+    insertedRows: 0,
+    deletedRows: 0,
+  };
+}
+
+/** Elements that merely group runs inside a paragraph; changes can sit inside them. */
+const CONTAINERS = new Set(['hyperlink', 'sdt', 'sdtContent', 'smartTag', 'fldSimple', 'customXml']);
+/** Elements with no width that may sit between two pieces of one change. */
+const isInvisible = (name: string): boolean =>
+  name === 'pPr' || name === 'sdtPr' || name === 'sdtEndPr' || name === 'proofErr' || /Range(Start|End)$/.test(name) || /^bookmark(Start|End)$/.test(name);
+
+function firstChild(node: XmlNode, name: string): XmlNode | undefined {
+  for (let i = 0; i < node.childNodes.length; i++) if (isW(node.childNodes[i]!, name)) return node.childNodes[i]!;
+  return undefined;
 }
 
 /**
  * Walk one paragraph. Neighbouring wrappers of the same kind (which Word and
  * the engine may split arbitrarily, e.g. at formatting boundaries) are joined
- * into one change; anything else between them ends the change.
+ * into one change; anything else between them ends the change. Wrappers inside
+ * hyperlinks and content controls are found too.
  */
 function collectParagraph(paragraph: XmlNode, into: ExpectedChanges): void {
   let open: { kind: WrapperName; text: string } | undefined;
   const flush = (): void => {
-    if (open && open.text !== '') into[WRAPPERS[open.kind]].push(open.text);
+    if (open && open.text !== '') {
+      into[WRAPPERS[open.kind]].push(open.text);
+      if (open.kind === 'moveFrom') into.moveOrder.push('from');
+      if (open.kind === 'moveTo') into.moveOrder.push('to');
+    }
     open = undefined;
   };
-  for (let i = 0; i < paragraph.childNodes.length; i++) {
-    const child = paragraph.childNodes[i]!;
-    if (child.nodeType !== 1) continue;
-    const name = child.localName ?? '';
-    if (child.namespaceURI === W && name in WRAPPERS) {
-      const kind = name as WrapperName;
-      if (open && open.kind !== kind) flush();
-      open ??= { kind, text: '' };
-      open.text += textOf(child);
-    } else if (child.namespaceURI === W && (name === 'pPr' || /Range(Start|End)$/.test(name) || /^bookmark(Start|End)$/.test(name))) {
-      // Paragraph properties and zero-width range markers do not interrupt a change.
-    } else {
-      flush();
+  const walk = (parent: XmlNode): void => {
+    for (let i = 0; i < parent.childNodes.length; i++) {
+      const child = parent.childNodes[i]!;
+      if (child.nodeType !== 1) continue;
+      const name = child.localName ?? '';
+      const isWord = child.namespaceURI === W;
+      if (isWord && name in WRAPPERS) {
+        const kind = name as WrapperName;
+        if (open && open.kind !== kind) flush();
+        open ??= { kind, text: '' };
+        open.text += textOf(child);
+      } else if (isWord && CONTAINERS.has(name)) {
+        walk(child);
+      } else if (isWord && isInvisible(name)) {
+        // Does not interrupt a change.
+      } else {
+        flush();
+      }
     }
-  }
+  };
+  walk(paragraph);
   flush();
+
+  // A tracked paragraph mark: the paragraph itself (not just its text) was added or removed.
+  const markProperties = firstChild(paragraph, 'pPr');
+  const mark = markProperties && firstChild(markProperties, 'rPr');
+  if (mark) {
+    if (firstChild(mark, 'ins') || firstChild(mark, 'moveTo')) into.insertedParagraphMarks++;
+    if (firstChild(mark, 'del') || firstChild(mark, 'moveFrom')) into.deletedParagraphMarks++;
+  }
 }
 
 function collect(node: XmlNode, into: ExpectedChanges): void {
   if (isW(node, 'p')) {
     collectParagraph(node, into);
     // Paragraphs can nest (text boxes); keep walking for those.
+  }
+  if (isW(node, 'tr')) {
+    const rowProperties = firstChild(node, 'trPr');
+    if (rowProperties && firstChild(rowProperties, 'ins')) into.insertedRows++;
+    if (rowProperties && firstChild(rowProperties, 'del')) into.deletedRows++;
   }
   for (let i = 0; i < node.childNodes.length; i++) {
     const child = node.childNodes[i]!;

@@ -33,6 +33,16 @@ export interface ExpectedChanges {
   movedFrom: string[];
   /** Text of each block moved to its new place. */
   movedTo: string[];
+  /** The moved-from and moved-to marks in document order, so a move's direction is checked. */
+  moveOrder: ('from' | 'to')[];
+  /** Paragraphs whose paragraph mark is tracked as inserted (the paragraph itself is new). */
+  insertedParagraphMarks: number;
+  /** Paragraphs whose paragraph mark is tracked as deleted (the paragraph itself is gone). */
+  deletedParagraphMarks: number;
+  /** Table rows tracked as inserted. */
+  insertedRows: number;
+  /** Table rows tracked as deleted. */
+  deletedRows: number;
 }
 
 export interface PairSpec {
@@ -85,7 +95,17 @@ const GOVERNING_LAW = 'This Agreement is governed by the laws of England and Wal
 
 const BASE: Block[] = [p(PARTIES), p(SERVICES), p(PAYMENT), p(LIABILITY), p(TERMINATION), p(GOVERNING_LAW)];
 
-const none = (): ExpectedChanges => ({ insertions: [], deletions: [], movedFrom: [], movedTo: [] });
+const none = (): ExpectedChanges => ({
+  insertions: [],
+  deletions: [],
+  movedFrom: [],
+  movedTo: [],
+  moveOrder: [],
+  insertedParagraphMarks: 0,
+  deletedParagraphMarks: 0,
+  insertedRows: 0,
+  deletedRows: 0,
+});
 const changes = (partial: Partial<ExpectedChanges>): ExpectedChanges => ({ ...none(), ...partial });
 
 /** Replace the one block whose text equals `from`. Throws if it is not there exactly once. */
@@ -148,21 +168,31 @@ export const PAIR_SPECS: PairSpec[] = [
     description: 'A whole new paragraph is added.',
     original: { blocks: BASE },
     modified: { blocks: [...BASE.slice(0, 5), p(ASSIGNMENT), ...BASE.slice(5)] },
-    expected: { body: changes({ insertions: [ASSIGNMENT] }) },
+    expected: { body: changes({ insertions: [ASSIGNMENT], insertedParagraphMarks: 1 }) },
   },
   {
     id: 'deleted-paragraph',
     description: 'A whole paragraph is removed.',
     original: { blocks: BASE },
     modified: { blocks: BASE.filter((b) => b.kind === 'table' || b.text !== PAYMENT) },
-    expected: { body: changes({ deletions: [PAYMENT] }) },
+    expected: { body: changes({ deletions: [PAYMENT], deletedParagraphMarks: 1 }) },
   },
   {
     id: 'moved-paragraph',
     description: 'A paragraph is moved, unchanged, from near the top to near the bottom.',
     original: { blocks: [p(PARTIES), p(CONFIDENTIALITY), p(SERVICES), p(PAYMENT), p(LIABILITY), p(TERMINATION), p(GOVERNING_LAW)] },
     modified: { blocks: [p(PARTIES), p(SERVICES), p(PAYMENT), p(LIABILITY), p(TERMINATION), p(CONFIDENTIALITY), p(GOVERNING_LAW)] },
-    expected: { body: changes({ movedFrom: [CONFIDENTIALITY], movedTo: [CONFIDENTIALITY] }) },
+    // The clause leaves its old place near the top ('from' comes first in the
+    // document) and arrives near the bottom; both paragraph marks are tracked.
+    expected: {
+      body: changes({
+        movedFrom: [CONFIDENTIALITY],
+        movedTo: [CONFIDENTIALITY],
+        moveOrder: ['from', 'to'],
+        insertedParagraphMarks: 1,
+        deletedParagraphMarks: 1,
+      }),
+    },
   },
   {
     id: 'table-cell-change',
@@ -198,7 +228,7 @@ export const PAIR_SPECS: PairSpec[] = [
     modified: {
       blocks: [p(PARTIES), p(LIST_INTRO), numbered(LIST[0]!), numbered(LIST[1]!), numbered(NEW_LIST_ITEM), numbered(LIST[2]!), p(GOVERNING_LAW)],
     },
-    expected: { body: changes({ insertions: [NEW_LIST_ITEM] }) },
+    expected: { body: changes({ insertions: [NEW_LIST_ITEM], insertedParagraphMarks: 1 }) },
   },
 ];
 
