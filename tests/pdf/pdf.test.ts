@@ -189,8 +189,9 @@ print("done")`;
         }
       }
       expect(await state()).toBe('conversions=0 files=0 office_processes=0');
-      execFileSync('docker', ['exec', '-u', '0', name, 'sh', '-c', 'mkdir /tmp/c-left && touch /tmp/c-left/in.docx /home/converter/stray']);
-      expect(await state()).toBe('conversions=0 files=3 office_processes=0');
+      // Planted as the converter's own account, where a conversion works (the only place that account can write here).
+      execFileSync('docker', ['exec', name, 'sh', '-c', 'mkdir /tmp/c-left && touch /tmp/c-left/in.docx']);
+      expect(await state()).toBe('conversions=0 files=2 office_processes=0');
     } finally {
       removeContainer(name);
     }
