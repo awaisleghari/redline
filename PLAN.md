@@ -212,3 +212,5 @@ Record each significant decision: date, decision, reason.
 Update at the start and end of every session: current stage, what was done, what is next, any blockers.
 
 - 2026-11-22: Plan written. Built in Claude Code cloud sessions. Environment set to Custom network access with the default package-manager list plus Playwright's download hosts (`cdn.playwright.dev`, `playwright.download.prss.microsoft.com`, `playwright.azureedge.net`). Next: Stage 0.
+- 2026-11-23 (Stage 0, plan): Scaffold a TypeScript + Vite project; Vitest for unit tests (`tests/unit/`), Playwright for browser tests (`tests/e2e/`, Chromium, run against the production build); MIT `LICENSE`, `README.md`, `.gitignore`; one placeholder test per runner; commit and push.
+- 2026-11-23 (Stage 0, done): Scaffold in place. `npm run test:all` runs the type check, the unit tests and the browser tests; one placeholder test passes in each runner. Setup notes: the cloud image ships Chromium with Playwright 1.63.0, so `@playwright/test` is pinned to exactly 1.63.0 (a different version would look for a browser that is not installed). Next: Stage 1.
