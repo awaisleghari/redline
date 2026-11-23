@@ -3,6 +3,11 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Nothing is loaded from, or sent to, anywhere but this site. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' ws://localhost:* ws://127.0.0.1:*; frame-src 'self'; form-action 'none'; base-uri 'none'; object-src 'none'"
+    />
     <title>Redline: compare two Word documents</title>
     <link rel="stylesheet" href="/src/app/styles.css" />
   </head>
@@ -28,7 +33,7 @@
         </div>
         <div class="go">
           <button id="compare" type="button" disabled>Compare</button>
-          <div id="progress" class="progress" hidden><span class="spinner" aria-hidden="true"></span><span id="progress-text">Comparing…</span></div>
+          <div id="progress" class="progress" role="status" aria-live="polite" hidden><span class="spinner" aria-hidden="true"></span><span id="progress-text">Comparing…</span></div>
           <p id="status" role="status" aria-live="polite"></p>
         </div>
       </section>

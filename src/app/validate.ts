@@ -27,9 +27,24 @@ export async function refusalFor(file: { name: string; size: number; bytes: () =
   const decoder = new TextDecoder();
   for (const [part, bytes] of parts) {
     if (!/^word\/[^/]+\.xml$/.test(part)) continue;
-    if (/<w:(ins|del|moveFrom|moveTo)[\s>/]/.test(decoder.decode(bytes))) {
+    if (hasTrackedChanges(decoder.decode(bytes))) {
       return `${which} already contains tracked changes. Please accept or reject the existing changes first, then compare.`;
     }
   }
   return undefined;
+}
+
+/**
+ * Every kind of tracked change Word can store: inserted, deleted and moved
+ * text; tracked changes to formatting, numbering, sections and tables; and
+ * tracked table cells. Matched whatever namespace prefix the file uses.
+ */
+const TRACKED_CHANGE = new RegExp(
+  '<(?:[A-Za-z_][\\w.-]*:)?(?:ins|del|moveFrom|moveTo|cellIns|cellDel|cellMerge|numberingChange|' +
+    '(?:rPr|pPr|sectPr|tblPr|tblPrEx|tcPr|trPr|tblGrid)Change|' +
+    'customXml(?:Ins|Del|MoveFrom|MoveTo)RangeStart)[\\s/>]',
+);
+
+export function hasTrackedChanges(partXml: string): boolean {
+  return TRACKED_CHANGE.test(partXml);
 }

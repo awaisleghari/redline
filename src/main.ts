@@ -33,6 +33,21 @@ const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.doc
 const producer = new CompareClient();
 const checker = new CheckerClient();
 const urls: string[] = [];
+/** True while a comparison is running: the files cannot be changed and no second run can start. */
+let running = false;
+
+/**
+ * The redline as a web page for the viewer, made inert: links in the document
+ * cannot be followed (a click would otherwise send a request to wherever the
+ * document's author chose), and the page may load nothing from anywhere.
+ */
+function inert(html: string): string {
+  const withoutLinks = html.replace(/\s(?:href|action|formaction|ping)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+  const policy =
+    '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; img-src data:; font-src data:">' +
+    '<style>a{pointer-events:none;cursor:text;}</style>';
+  return /<head[^>]*>/i.test(withoutLinks) ? withoutLinks.replace(/<head[^>]*>/i, (head) => head + policy) : policy + withoutLinks;
+}
 
 function say(state: string, text: string): void {
   status.dataset.state = state;
@@ -40,9 +55,20 @@ function say(state: string, text: string): void {
 }
 
 function choose(role: 'original' | 'modified', file: File | undefined): void {
+  if (running) return;
   chosen[role] = file;
   element(`name-${role}`).textContent = file ? displayName(file.name) : '';
   compareButton.disabled = !(chosen.original && chosen.modified);
+  // Results on screen belong to the files they were made from: a new choice clears them.
+  reset();
+  say('', '');
+}
+
+function setRunning(now: boolean): void {
+  running = now;
+  inputs.original.disabled = now;
+  inputs.modified.disabled = now;
+  compareButton.disabled = now || !(chosen.original && chosen.modified);
 }
 
 for (const role of ['original', 'modified'] as const) {
@@ -58,7 +84,7 @@ for (const role of ['original', 'modified'] as const) {
     event.preventDefault();
     zone.classList.remove('over');
     const file = event.dataTransfer?.files[0];
-    if (file) {
+    if (file && !running) {
       input.value = '';
       choose(role, file);
     }
@@ -151,7 +177,7 @@ async function show(result: FlowResult, names: { originalName: string; modifiedN
   // The viewer shows the static redline, and only if the Checker passed it.
   if (result.staticRedline.file) {
     try {
-      viewer.srcdoc = await producer.renderHtml(result.staticRedline.file);
+      viewer.srcdoc = inert(await producer.renderHtml(result.staticRedline.file));
       viewer.hidden = false;
     } catch {
       viewerMessage.textContent = 'The redline passed its checks but could not be displayed here. You can still download it.';
@@ -166,8 +192,8 @@ async function show(result: FlowResult, names: { originalName: string; modifiedN
 
 compareButton.addEventListener('click', async () => {
   const { original, modified } = chosen;
-  if (!original || !modified) return;
-  compareButton.disabled = true;
+  if (!original || !modified || running) return;
+  setRunning(true);
   reset();
   progressText.textContent = 'Reading the documents…';
   progress.hidden = false;
@@ -202,6 +228,6 @@ compareButton.addEventListener('click', async () => {
     say('error', error instanceof ProducerError ? `The documents could not be compared. (${message})` : `Something went wrong. (${message})`);
   } finally {
     progress.hidden = true;
-    compareButton.disabled = !(chosen.original && chosen.modified);
+    setRunning(false);
   }
 });

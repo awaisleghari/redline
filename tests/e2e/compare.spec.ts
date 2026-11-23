@@ -108,6 +108,47 @@ test('each kind of tracked change has its own author, so Word colours them diffe
   expect(xml2).toMatch(/<w:del [^>]*w:author="Redline \(deleted\)"/);
 });
 
+test('a link inside a document cannot be followed from the viewer, and the page requests nothing from outside', async ({ page }) => {
+  const outside: string[] = [];
+  page.on('request', (request) => {
+    if (!request.url().startsWith('http://localhost:4173/') && !request.url().startsWith('blob:') && !request.url().startsWith('data:') && !request.url().startsWith('about:')) outside.push(request.url());
+  });
+  const pair = await buildPair(pairById('hyperlink-address-change'));
+  await compare(page, pair.original, pair.modified);
+  const viewer = page.frameLocator('#viewer');
+  await expect(viewer.getByText('our website').first()).toBeVisible();
+  // The link's words are shown, but there is nowhere for a click to go.
+  expect(await viewer.locator('a[href]').count()).toBe(0);
+  await viewer.getByText('our website').first().click({ force: true });
+  await expect(viewer.getByText('Comparison of documents')).toBeVisible();
+  expect(outside).toEqual([]);
+});
+
+test('files cannot be changed while a comparison runs, and choosing a new file clears the old results', async ({ page }) => {
+  const pair = await buildPair(PAIR_SPECS[0]!);
+  await page.goto('/');
+  await chooseFiles(page, pair.original, pair.modified);
+  await page.getByRole('button', { name: 'Compare' }).click();
+  // While it runs: both file inputs and the button are disabled.
+  await expect(page.locator('#original')).toBeDisabled();
+  await expect(page.locator('#modified')).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Compare' })).toBeDisabled();
+  await expect(page.locator('#status')).toHaveAttribute('data-state', 'done', { timeout: 60_000 });
+  await expect(page.locator('#results')).toBeVisible();
+  // Choosing a different file afterwards: the previous results, links and status go.
+  await page.locator('#original').setInputFiles({ name: 'another.docx', mimeType: DOCX_MIME, buffer: Buffer.from(pair.modified) });
+  await expect(page.locator('#results')).toBeHidden();
+  await expect(page.locator('#status')).toHaveText('');
+  expect(await page.locator('#download-tracked').getAttribute('href')).toBeNull();
+  expect(await page.locator('#viewer').getAttribute('srcdoc')).toBeNull();
+});
+
+test('the page fits a narrow phone screen without scrolling sideways', async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 800 });
+  await page.goto('/');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
 test('the check report reads in plain English and can be downloaded as a text file', async ({ page }) => {
   const pair = await buildPair(PAIR_SPECS[0]!);
   await compare(page, pair.original, pair.modified);
