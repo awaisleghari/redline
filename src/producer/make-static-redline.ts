@@ -77,7 +77,7 @@ function firstDescendant(root: Element, name: string): Element | undefined {
  * Put the cover page in front of the document, in a section of its own, and
  * make sure the document still starts on a fresh page numbered as before.
  */
-function addCoverPage(documentXml: string, content: CoverPageContent): string {
+function addCoverPage(documentXml: string, content: CoverPageContent, facingPages: boolean): string {
   const parser = new DOMParser();
   const document = parser.parseFromString(documentXml, 'application/xml');
   const root = document.documentElement as unknown as Element;
@@ -117,8 +117,10 @@ function addCoverPage(documentXml: string, content: CoverPageContent): string {
     if (!numbering.getAttributeNS(W, 'start')) numbering.setAttributeNS(W, `${prefix}:start`, '1');
     // The cover takes the number just before it, so that the numbers run on without a jump. (A jump from one
     // odd number to another makes LibreOffice count a hidden blank page, and "Page 1 of 3" prints as "of 4".)
+    // Not in a document laid out in facing pages (odd and even headers, mirrored margins): there the jump is
+    // what keeps page 1 a right-hand page, with the odd-page header, as in Word.
     const start = Number(numbering.getAttributeNS(W, 'start'));
-    if (Number.isInteger(start) && start >= 1) pageSetup += `<w:pgNumType w:start="${start - 1}"/>`;
+    if (!facingPages && Number.isInteger(start) && start >= 1) pageSetup += `<w:pgNumType w:start="${start - 1}"/>`;
   }
 
   const fragment = parser.parseFromString(`<w:body xmlns:w="${W}">${coverPageXml(content, pageSetup)}</w:body>`, 'application/xml');
@@ -169,7 +171,9 @@ export async function makeStaticRedline(trackedChanges: Uint8Array, original: Ui
   }
 
   const content: CoverPageContent = { originalName: options.originalName, modifiedName: options.modifiedName, comparedAt: options.comparedAt, ...counts };
-  converted.set(main, addCoverPage(converted.get(main)!, content));
+  const settingsPart = [...files.keys()].find((name) => /(^|\/)settings\.xml$/.test(name));
+  const facingPages = settingsPart !== undefined && /<w:(evenAndOddHeaders|mirrorMargins)(?![^>]*w:val="(0|false|off)")[^>]*>/.test(decoder.decode(files.get(settingsPart)!));
+  converted.set(main, addCoverPage(converted.get(main)!, content, facingPages));
   for (const [part, xml] of converted) files.set(part, encoder.encode(xml));
   files.set(styles, encoder.encode(addCoverStyles(decoder.decode(files.get(styles)!))));
 

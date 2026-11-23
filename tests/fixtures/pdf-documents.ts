@@ -17,6 +17,7 @@ import {
   Packer,
   PageNumber,
   Paragraph,
+  SectionType,
   SymbolRun,
   Table,
   TableCell,
@@ -73,6 +74,15 @@ const pair = (id: string, description: string, make: (changed: boolean) => { bod
 const CLAUSE = 'The Supplier shall provide the Services with reasonable skill and care, in accordance with good industry practice and all applicable laws.';
 const word = (changed: boolean): string => (changed ? 'exceptional' : 'reasonable');
 const sentence = (changed: boolean): Paragraph => text(`The Supplier shall provide the Services with ${word(changed)} skill and care.`);
+
+/** A pair built from whole documents (several sections, first-page and even-page headers). */
+const custom = (id: string, description: string, make: (changed: boolean) => Document): PdfDocumentPair => ({
+  id,
+  description,
+  build: async () => ({ original: new Uint8Array(await Packer.toBuffer(make(false))), modified: new Uint8Array(await Packer.toBuffer(make(true))) }),
+});
+const newPage = (value: string): Paragraph => new Paragraph({ pageBreakBefore: true, children: [new TextRun(value)] });
+const pageNumber = (): Paragraph => new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ children: [PageNumber.CURRENT] })] });
 
 export const PDF_DOCUMENT_PAIRS: PdfDocumentPair[] = [
   pair('tab-leaders', 'A signature line and a contents-style line, each drawn with a tab leader.', (changed) => ({
@@ -182,6 +192,57 @@ export const PDF_DOCUMENT_PAIRS: PdfDocumentPair[] = [
   })),
   pair('numbered-clause-inserted', 'A numbered clause is added between two others.', (changed) => ({
     body: [text('The parties agree:'), numbered('the Fees are payable monthly;'), ...(changed ? [numbered('interest accrues on late payment;')] : []), numbered('either party may terminate on notice.'), text('End.')],
+  })),
+  // ----- found by the third Stage 5 review: headers and footers that do not belong on every page -----
+  custom('first-page-without-footer', 'A title page with no footer; every other page has a footer that is only the page number. Pages end in figures.', (changed) =>
+    new Document({
+      sections: [
+        {
+          properties: { titlePage: true },
+          footers: { default: new Footer({ children: [pageNumber()] }) },
+          children: [text('Share Purchase Agreement'), sentence(changed), text('Draft: Version 1'), newPage('The Customer shall pay USD 7'), newPage('The deposit is USD 3'), text('End.')],
+        },
+      ],
+    }),
+  ),
+  custom('two-sections-with-their-own-footers', 'An agreement and a schedule, each a section with its own page-number footer. Pages end in figures.', (changed) =>
+    new Document({
+      sections: [
+        { footers: { default: new Footer({ children: [pageNumber()] }) }, children: [sentence(changed), text('The fee is GBP 1')] },
+        { properties: { type: SectionType.NEXT_PAGE }, footers: { default: new Footer({ children: [pageNumber()] }) }, children: [text('Schedule 1'), text('Number of Shares: 2')] },
+      ],
+    }),
+  ),
+  custom('first-page-and-default-headers', 'A first-page header and footer, and a different header on the other pages; the document begins with the words of that other header.', (changed) =>
+    new Document({
+      sections: [
+        {
+          properties: { titlePage: true },
+          headers: { first: new Header({ children: [text('Subject to contract')] }), default: new Header({ children: [text('Share Purchase Agreement')] }) },
+          footers: { first: new Footer({ children: [text('Not for release')] }) },
+          children: [text('Share Purchase Agreement'), sentence(changed), newPage('The offer made by the Buyer is binding.'), text('This press announcement is approved.')],
+        },
+      ],
+    }),
+  ),
+  custom('odd-and-even-headers', 'Different headers on odd and even pages, with a page-number footer.', (changed) =>
+    new Document({
+      evenAndOddHeaderAndFooters: true,
+      sections: [
+        {
+          headers: { default: new Header({ children: [text('Alpha Holdings Limited')] }), even: new Header({ children: [text('Share Purchase Agreement')] }) },
+          footers: { default: new Footer({ children: [pageNumber()] }), even: new Footer({ children: [pageNumber()] }) },
+          children: [sentence(changed), newPage('Second page.'), newPage('Third page.')],
+        },
+      ],
+    }),
+  ),
+  pair('footnote-begins-like-the-next-page', 'A footnote that begins with the same words as the paragraph at the top of the next page.', (changed) => ({
+    body: [
+      new Paragraph({ children: [new TextRun('The Supplier'), new FootnoteReferenceRun(1), new TextRun(` shall deliver the ${changed ? 'Goods and Services' : 'Goods'}.`)] }),
+      newPage('The Supplier means to perform this Agreement in full and on time.'),
+    ],
+    extras: { footnotes: { 1: 'The Supplier means Alpha Holdings Limited.' } },
   })),
 ];
 

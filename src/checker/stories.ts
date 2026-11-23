@@ -69,6 +69,8 @@ export interface Para {
   listed: boolean;
   /** The bullet character of a bulleted item ('' otherwise). */
   bullet: string;
+  /** True when a tab in the paragraph may draw a leader (dots, a line): one of its tab stops has one. */
+  leader?: boolean;
   /** In a static redline: the kind of change the paragraph's own mark shows (its number or bullet is printed the same way). */
   markKind?: StaticKind;
 }
@@ -108,6 +110,8 @@ export interface StoryReading {
   links: string[];
   /** The text of each table row marked to repeat at the top of every page the table runs onto. */
   repeatRows: string[];
+  /** How the pages are set up: sections, their headers and footers, page numbering, note numbering. */
+  layout: Layout;
   /** In a static redline: the text of each line of the cover page, in order. */
   cover: string[];
   /** For each cover line, how its text is formatted: 'plain', a change kind, 'shaded', with ':hidden' if it would not be shown. */
@@ -115,6 +119,33 @@ export interface StoryReading {
 }
 
 /** Markers standing in for things that are not characters but must not vanish unnoticed. */
+export type PageKind = 'default' | 'first' | 'even';
+
+/** One section of the main text, as far as the printed page depends on it. */
+export interface SectionLayout {
+  /** How many entries of the main text's `details` belong to this section and those before it. */
+  end: number;
+  /** The section begins on a new page (anything but a "continuous" break). */
+  newPage: boolean;
+  /** Its first page has a header and footer of its own. */
+  titlePage: boolean;
+  /** The page number its first page is given, when it says. */
+  start: number | undefined;
+  /** The page-number format (Word's name for it: 'decimal', 'lowerRoman', ...). */
+  format: string;
+  /** The story key of each header and footer the section itself names. */
+  header: Partial<Record<PageKind, string>>;
+  footer: Partial<Record<PageKind, string>>;
+}
+
+export interface Layout {
+  sections: SectionLayout[];
+  /** Even pages have headers and footers of their own. */
+  evenAndOdd: boolean;
+  /** How footnotes and endnotes are numbered (Word's names). */
+  noteFormat: { footnote: string; endnote: string };
+}
+
 export const MARK = {
   footnote: '⟦footnote⟧',
   endnote: '⟦endnote⟧',
@@ -234,6 +265,8 @@ interface Context {
   notes: NoteRef[];
   /** Section properties met, in order (for headers and footers). */
   sections: XmlElement[];
+  /** For each of `sections`: how many paragraphs had been read when it ended. */
+  sectionEnds: number[];
   /** Things found that make the text impossible to verify. Shared by every nested context. */
   problems: string[];
   /** The package and the part being read, for following links to pictures, charts and the like. */
@@ -252,7 +285,7 @@ interface Source {
 }
 
 function newContext(view: View, problems: string[], source: Source): Context {
-  return { view, paragraphs: [], pending: '', meta: '', code: 0, paragraphStyle: undefined, oldNumber: '', lastMarkRemoved: false, textBoxes: [], notes: [], sections: [], problems, source };
+  return { view, paragraphs: [], pending: '', meta: '', code: 0, paragraphStyle: undefined, oldNumber: '', lastMarkRemoved: false, textBoxes: [], notes: [], sections: [], sectionEnds: [], problems, source };
 }
 
 /** Record text being emitted, with the current character code, and hand it back. */
@@ -345,7 +378,10 @@ function linkedContent(node: XmlElement, context: Context): string {
 /** Fold a nested reading (a cell, a text box) back into the one that contains it. */
 function absorb(outer: Context, inner: Context): void {
   outer.notes.push(...inner.notes);
-  outer.sections.push(...inner.sections);
+  for (const section of inner.sections) {
+    outer.sections.push(section);
+    outer.sectionEnds.push(outer.paragraphs.length);
+  }
 }
 
 /**
@@ -548,8 +584,12 @@ function readParagraph(paragraph: XmlElement, context: Context): void {
   context.lastMarkRemoved = markRemoved;
   if (markRemoved) return; // this paragraph joins the next one in this view
   closeParagraph(context, number, removed, listed, numbering.bulletOf(numPr), markKind);
+  if (styles.hasLeaderTab(properties)) context.paragraphs[context.paragraphs.length - 1]!.leader = true;
   const section = properties && child(properties, W, 'sectPr');
-  if (section) context.sections.push(section);
+  if (section) {
+    context.sections.push(section);
+    context.sectionEnds.push(context.paragraphs.length);
+  }
 }
 
 /** Read block-level content (paragraphs, tables, containers) of a body, cell, note, header or text box. */
@@ -610,6 +650,7 @@ function readBlocks(container: XmlElement, context: Context): void {
       }
       case 'sectPr':
         context.sections.push(node);
+        context.sectionEnds.push(context.paragraphs.length);
         break;
       default:
         break;
@@ -696,6 +737,7 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
   const cover: string[] = [];
   const coverLooks: string[] = [];
   const repeatRows: string[] = [];
+  const layout: Layout = { sections: [], evenAndOdd: false, noteFormat: { footnote: 'decimal', endnote: 'lowerRoman' } };
   const add = (key: string, kind: StoryKind, label: string, details: Para[]): void => {
     if (!isBlank(details)) stories.push(storyOf(key, kind, label, details));
   };
@@ -704,7 +746,7 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
   let body = child(pkg.xml(main), W, 'body');
   if (!body) {
     problems.push('The main document has no body.');
-    return { stories, partsRead, noteIdsRead, problems, links, cover, coverLooks, repeatRows };
+    return { stories, partsRead, noteIdsRead, problems, links, cover, coverLooks, repeatRows, layout };
   }
   partsRead.add(main);
   const shared = { pkg, partsRead, links, markup, styles: new Styles(pkg, main), numbering: new Numbering(pkg, main), repeatRows };
@@ -755,6 +797,20 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
   // Headers and footers, through each section's references.
   const mainRels = pkg.relationships(main);
   bodyContext.sections.forEach((section, sectionIndex) => {
+    const numbers = child(section, W, 'pgNumType');
+    const start = Number(numbers ? (attribute(numbers, W, 'start') ?? NaN) : NaN);
+    const breakType = child(section, W, 'type');
+    const titlePage = child(section, W, 'titlePg');
+    const sectionLayout: SectionLayout = {
+      end: bodyContext.sectionEnds[sectionIndex] ?? bodyContext.paragraphs.length,
+      newPage: (breakType && attribute(breakType, W, 'val')) !== 'continuous',
+      titlePage: !!titlePage && !['0', 'false', 'off'].includes(attribute(titlePage, W, 'val') ?? '1'),
+      start: Number.isInteger(start) ? start : undefined,
+      format: (numbers && attribute(numbers, W, 'fmt')) ?? 'decimal',
+      header: {},
+      footer: {},
+    };
+    layout.sections.push(sectionLayout);
     for (const reference of section.children) {
       const kind = w(reference, 'headerReference') ? 'header' : w(reference, 'footerReference') ? 'footer' : undefined;
       if (!kind) continue;
@@ -770,6 +826,7 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
       const context = newContext(view, problems, { ...shared, part: rel.partName });
       readBlocks(pkg.xml(rel.partName), context);
       const key = `${kind}/${sectionIndex + 1}/${type}`;
+      if (type === 'default' || type === 'first' || type === 'even') sectionLayout[kind][type] = key;
       add(key, kind, label, context.paragraphs);
       add(`${key}/text boxes`, 'text box', `text boxes in the ${label}`, context.textBoxes);
       notes.push(...context.notes);
@@ -820,5 +877,26 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
     });
   }
 
-  return { stories, partsRead, noteIdsRead, problems, links, cover, coverLooks, repeatRows };
+  // Settings that change what a page prints.
+  const settingsPart = pkg.relationshipsOfType(main, 'settings')[0]?.partName;
+  if (settingsPart && pkg.has(settingsPart)) {
+    const settings = pkg.xml(settingsPart);
+    const flag = child(settings, W, 'evenAndOddHeaders');
+    layout.evenAndOdd = !!flag && !['0', 'false', 'off'].includes(attribute(flag, W, 'val') ?? '1');
+    for (const kind of ['footnote', 'endnote'] as const) {
+      const properties = child(settings, W, `${kind}Pr`);
+      const format = properties && child(properties, W, 'numFmt');
+      if (format) layout.noteFormat[kind] = attribute(format, W, 'val') ?? layout.noteFormat[kind];
+    }
+  }
+  // A section may set its own note numbering; the Checker does not follow that, and says so.
+  for (const section of bodyContext.sections) {
+    for (const kind of ['footnote', 'endnote'] as const) {
+      const properties = child(section, W, `${kind}Pr`);
+      const format = properties && child(properties, W, 'numFmt');
+      if (format && attribute(format, W, 'val') !== layout.noteFormat[kind]) layout.noteFormat[kind] = 'mixed';
+    }
+  }
+
+  return { stories, partsRead, noteIdsRead, problems, links, cover, coverLooks, repeatRows, layout };
 }

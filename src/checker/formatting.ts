@@ -67,6 +67,14 @@ interface Style {
   basedOn?: string;
   stated: Stated;
   numbering?: XmlElement;
+  /** Whether the style sets a tab stop that draws a leader (dots, a line). */
+  leader: boolean;
+}
+
+/** Whether paragraph properties set a tab stop that draws a leader. */
+function setsLeader(pPr: XmlElement | undefined): boolean {
+  const tabs = pPr && child(pPr, W, 'tabs');
+  return !!tabs && tabs.children.some((tab) => is(tab, W, 'tab') && !['none', undefined].includes(attribute(tab, W, 'leader')));
 }
 
 export class Styles {
@@ -91,6 +99,7 @@ export class Styles {
           basedOn: basedOn && attribute(basedOn, W, 'val'),
           stated: stated(child(node, W, 'rPr')),
           numbering: pPr && child(pPr, W, 'numPr'),
+          leader: setsLeader(pPr),
         });
         const isDefault = attribute(node, W, 'default');
         if (type === 'paragraph' && isDefault !== undefined && !['0', 'false', 'off'].includes(isDefault)) this.defaultParagraphStyle = id;
@@ -141,6 +150,13 @@ export class Styles {
     const style = paragraphProperties && child(paragraphProperties, W, 'pStyle');
     for (const s of this.chain((style && attribute(style, W, 'val')) ?? this.defaultParagraphStyle)) if (s.numbering) return s.numbering;
     return undefined;
+  }
+
+  /** Whether a tab in this paragraph may draw a leader: one of its own tab stops, or one of its style's, has a leader. */
+  hasLeaderTab(paragraphProperties: XmlElement | undefined): boolean {
+    if (setsLeader(paragraphProperties)) return true;
+    const style = paragraphProperties && child(paragraphProperties, W, 'pStyle');
+    return this.chain((style && attribute(style, W, 'val')) ?? this.defaultParagraphStyle).some((s) => s.leader);
   }
 }
 

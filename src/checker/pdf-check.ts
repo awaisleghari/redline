@@ -30,7 +30,7 @@
 import { FORMAT, type StaticKind } from './formatting';
 import { isBlank, type PdfChar, type PdfReading } from './pdf';
 import type { CheckFailure } from './report';
-import { CHAR, isStructureMark, kindOfCode, MARK, type Story, type StoryReading } from './stories';
+import { CHAR, isStructureMark, kindOfCode, MARK, type Layout, type PageKind, type Story, type StoryReading } from './stories';
 
 /** The colour each kind of change must be printed in (the style spec in PLAN.md). */
 const COLOUR: Record<StaticKind, string> = { inserted: '0000FF', deleted: 'FF0000', movedFrom: '008000', movedTo: '008000' };
@@ -38,7 +38,7 @@ const KIND_NAME: Record<StaticKind, string> = { inserted: 'inserted', deleted: '
 
 /** Something a page prints at a point in the text without the document spelling it out. */
 type Token =
-  | { t: 'note'; kind: 'footnote' | 'endnote'; n: number }
+  | { t: 'note'; kind: 'footnote' | 'endnote'; n: number; format: string }
   | { t: 'symbol'; code: number }
   | { t: 'tab' }
   | { t: 'page-number'; field: 'PAGE' | 'NUMPAGES' | 'SECTIONPAGES' }
@@ -57,6 +57,8 @@ interface Expected {
   paragraph: number;
   /** Which table the character is in (0 when it is in none). */
   table: number;
+  /** Which section of the document the character is in (main text only). */
+  section: number;
   /** What a page prints immediately before this character. */
   before: Token[];
   /** What a page prints immediately after this character (used for the last character of a story). */
@@ -74,8 +76,20 @@ function roman(n: number): string {
   return out;
 }
 const escape = (text: string): string => text.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
-const numerals = (numbers: number[]): string =>
-  `(?:${[...new Set(numbers.filter((n) => n >= 1).flatMap((n) => [String(n), roman(n), roman(n).toUpperCase()]))].sort((a, b) => b.length - a.length).join('|') || '(?!)'})`;
+/** A number as a page or a note prints it in one of Word's number formats; undefined for a format the Checker does not work out. */
+function numeral(n: number | undefined, format: string): string | undefined {
+  if (n === undefined || !Number.isInteger(n) || n < 0) return undefined;
+  if (format === 'decimal') return String(n);
+  if (n >= 1 && format === 'lowerRoman') return roman(n);
+  if (n >= 1 && format === 'upperRoman') return roman(n).toUpperCase();
+  if (n >= 1 && n <= 26 && format === 'lowerLetter') return String.fromCharCode(96 + n);
+  if (n >= 1 && n <= 26 && format === 'upperLetter') return String.fromCharCode(64 + n);
+  return undefined;
+}
+const oneOf = (texts: (string | undefined)[]): string => {
+  const known = [...new Set(texts.filter((text): text is string => text !== undefined))].sort((x, y) => y.length - x.length);
+  return known.length === 0 ? '(?!)' : `(?:${known.map(escape).join('|')})`;
+};
 
 /**
  * The characters a symbol-font glyph may be reported as. Symbol fonts keep
@@ -90,10 +104,16 @@ function glyph(code: number): string {
   return `(?:${[...forms].map((form) => escape([...String.fromCodePoint(form).normalize('NFKC')].map(canon).join(''))).join('|')})`;
 }
 
-/** Where on the PDF a token is being looked for (a page number depends on the page). */
+/** The page a token is being looked for on (a page number depends on the page). */
 interface Where {
-  page: number;
+  /** The number this page is given (undefined when it cannot be worked out). */
+  number: number | undefined;
+  /** The page-number format of the page's section. */
+  format: string;
+  /** How many pages the PDF has. */
   pages: number;
+  /** How many pages the page's section has. */
+  sectionPages: number;
 }
 
 /** The dots or line of a tab leader: nothing, or at least three of the same leader character. */
@@ -103,15 +123,17 @@ const LEADER = '(?:\\.{3,}|_{3,}|-{3,}|–{3,}|—{3,}|·{3,})?';
 function pattern(token: Token, where: Where): string {
   switch (token.t) {
     case 'note':
-      // A note is numbered in order: as a number, or (Word's default for endnotes) a roman numeral, or the usual symbols.
-      return `(?:${token.n}|${roman(token.n)}|${roman(token.n).toUpperCase()}|[*†‡§]{1,4})`;
+      // A note is numbered in order, in the format the document sets (symbols count up as *, †, ‡, §, **, ...).
+      return token.format === 'chicago' ? escape(['*', '†', '‡', '§'][(token.n - 1) % 4]!.repeat(Math.floor((token.n - 1) / 4) + 1)) : oneOf([numeral(token.n, token.format)]);
     case 'symbol':
       return glyph(token.code);
     case 'tab':
       return LEADER;
-    case 'page-number':
-      // The number of the page it is printed on (the cover page comes before page 1), or the number of pages.
-      return token.field === 'PAGE' ? numerals([where.page, where.page - 1]) : token.field === 'NUMPAGES' ? numerals([where.pages]) : numerals([where.pages, where.pages - 1]);
+    case 'page-number': {
+      // The number of the page it is printed on, or the number of pages: in figures, or in the section's own format.
+      const n = token.field === 'PAGE' ? where.number : token.field === 'NUMPAGES' ? where.pages : where.sectionPages;
+      return token.field === 'PAGE' ? oneOf([numeral(n, where.format)]) : oneOf([numeral(n, 'decimal'), numeral(n, where.format)]);
+    }
     case 'label':
       return escape(token.text);
     case 'bullet':
@@ -129,13 +151,15 @@ interface NoteCounters {
 const spelled = (text: string): string => [...text.normalize('NFKC')].filter((c) => !isBlank(c)).map(canon).join('');
 
 /** The characters a story prints, without white space, with what a page adds around them. */
-function expectedChars(story: Story, counters: NoteCounters): { stream: Expected[]; trailing: Token[] } {
+function expectedChars(story: Story, counters: NoteCounters, layout: Layout): { stream: Expected[]; trailing: Token[] } {
   const out: Expected[] = [];
   let pending: Token[] = []; // tokens waiting for the next character
   let paragraphNumber = 0;
   let depth = 0;
   let tables = 0;
-  for (const paragraph of story.details) {
+  let section = 0;
+  for (const [index, paragraph] of story.details.entries()) {
+    while (story.key === 'body' && section < layout.sections.length - 1 && index >= layout.sections[section]!.end) section++;
     if (paragraph.text === MARK.table && depth++ === 0) tables++;
     if (paragraph.text === MARK.tableEnd) depth = Math.max(0, depth - 1);
     if (isStructureMark(paragraph.text)) continue;
@@ -156,10 +180,10 @@ function expectedChars(story: Story, counters: NoteCounters): { stream: Expected
         // A marker: not a character of the text, but it may stand for something a page prints.
         const at = (mark: string): boolean => text.startsWith(mark, i);
         if (at(MARK.footnote)) {
-          pending.push({ t: 'note', kind: 'footnote', n: ++counters.footnote });
+          pending.push({ t: 'note', kind: 'footnote', n: ++counters.footnote, format: layout.noteFormat.footnote });
           i += MARK.footnote.length;
         } else if (at(MARK.endnote)) {
-          pending.push({ t: 'note', kind: 'endnote', n: ++counters.endnote });
+          pending.push({ t: 'note', kind: 'endnote', n: ++counters.endnote, format: layout.noteFormat.endnote });
           i += MARK.endnote.length;
         } else if (at('⟦symbol ')) {
           const close = text.indexOf('⟧', i);
@@ -183,8 +207,8 @@ function expectedChars(story: Story, counters: NoteCounters): { stream: Expected
           i += MARK.fieldEnd.length;
         } else {
           if (field && !field.inResult) field.code += text[i];
-          else if (text[i] === '\t') pending.push({ t: 'tab' });
-          else if (text[i] === '‑' && !(code & FORMAT.hidden)) out.push({ c: '-', fold: false, kind: kindOfCode(code), toParagraphEnd: 0, paragraph: paragraphNumber, table, before: pending.splice(0), after: [] });
+          else if (text[i] === '\t' && paragraph.leader) pending.push({ t: 'tab' });
+          else if (text[i] === '‑' && !(code & FORMAT.hidden)) out.push({ c: '-', fold: false, kind: kindOfCode(code), toParagraphEnd: 0, paragraph: paragraphNumber, table, section, before: pending.splice(0), after: [] });
           i++;
         }
         continue;
@@ -193,12 +217,12 @@ function expectedChars(story: Story, counters: NoteCounters): { stream: Expected
       if (code & FORMAT.hidden) continue; // hidden text is not printed
       if (field?.pageNumber && field.inResult) continue; // the stored page number is not what the page prints
       const fold = (code & (FORMAT.caps | FORMAT.smallCaps)) !== 0;
-      // A tab typed in the text prints its leader (dots, a line) if the paragraph's tab stop has one.
-      if (text[i - 1] === '\t') pending.push({ t: 'tab' });
+      // A tab typed in the text prints its leader (dots, a line) if one of the paragraph's tab stops has one.
+      if (text[i - 1] === '\t' && paragraph.leader) pending.push({ t: 'tab' });
       for (const raw of text[i - 1]!.normalize('NFKC')) {
         if (isBlank(raw)) continue;
         const c = canon(raw);
-        out.push({ c: fold ? c.toLowerCase() : c, fold, kind: kindOfCode(code), toParagraphEnd: 0, paragraph: paragraphNumber, table, before: pending.splice(0), after: [] });
+        out.push({ c: fold ? c.toLowerCase() : c, fold, kind: kindOfCode(code), toParagraphEnd: 0, paragraph: paragraphNumber, table, section, before: pending.splice(0), after: [] });
       }
     }
     for (let k = start; k < out.length; k++) out[k]!.toParagraphEnd = out.length - 1 - k;
@@ -253,6 +277,19 @@ function find(stream: Expected[], source: Source, as: 'body' | 'other'): Match {
     }
     return true;
   };
+  /** How many characters agree in a row from here (up to `cap`), where the last of them is, and what comes next. */
+  const agreement = (from: number, position: number, cap: number): { length: number; last: number; next: number } => {
+    let j = position;
+    let length = 0;
+    let last = position;
+    for (; length < cap; length++) {
+      while (j < chars.length && owner[j]) j++;
+      if (j >= chars.length || !same(chars[j]!.c, stream[from + length]!)) break;
+      last = j++;
+    }
+    while (j < chars.length && owner[j]) j++;
+    return { length, last, next: j };
+  };
   const nearest = (from: number, start: number, end: number): number => {
     for (let j = start; j < end; j++) if (!owner[j] && agreesAhead(from, j)) return j;
     return -1;
@@ -262,6 +299,18 @@ function find(stream: Expected[], source: Source, as: 'body' | 'other'): Match {
     const k = at.length;
     const expected = stream[k]!;
     if (same(chars[j]!.c, expected) && (inRun || agreesAhead(k, j))) {
+      if (!inRun) {
+        // Picking the text up again after a gap. If it agrees here for a while and then stops, on the same
+        // page and before anything else is due, and it agrees for longer further on, this is not the place:
+        // it is something else that begins with the same words (a footnote, say).
+        const cap = Math.min(64, runway[k]!);
+        const here = agreement(k, j, cap);
+        if (here.length < cap && here.next < chars.length && chars[here.next]!.page === chars[here.last]!.page) {
+          let better = false;
+          for (let later = j + 1, end = Math.min(chars.length, j + 1 + SCAN); later < end && !better; later++) better = !owner[later] && same(chars[later]!.c, expected) && agreement(k, later, cap).length > here.length;
+          if (better) continue;
+        }
+      }
       if (inRun && runway[k]! >= RUN) {
         // The run breaks right here: the text carries on with the next character, but the PDF does not.
         // Either this character is the text's and something else follows it (the turn of a page), or this
@@ -400,45 +449,89 @@ export function comparePdf(printed: StoryReading, pdf: PdfReading): PdfCheckResu
   const accept = (positions: number[]): void => positions.forEach((j) => void (owner[j] = 'accepted'));
 
   // The body is read first so that its notes are numbered first, as on the page.
+  const layout = printed.layout;
   const body = printed.stories.find((s) => s.key === 'body');
-  const bodyStream = body ? expectedChars(body, counters).stream : [];
-  const others = printed.stories.filter((s) => s.key !== 'body' && !repeating(s)).map((story) => ({ story, stream: expectedChars(story, counters).stream }));
+  const bodyStream = body ? expectedChars(body, counters, layout).stream : [];
+  const others = printed.stories.filter((s) => s.key !== 'body' && !repeating(s)).map((story) => ({ story, stream: expectedChars(story, counters, layout).stream }));
 
-  // ---- 1. Headers and footers, page by page. ----
-  // A page prints its header first and its footer last. Each is matched whole, at exactly that place, with the
-  // page number that belongs on that page. (Matched before the main text, so that nothing at the edge of a page
-  // is ever left to be explained away afterwards.)
-  interface Repeating {
-    story: Story;
-    pieces: Piece[];
-    literals: number;
-    /** The same text and fields as another header or footer (a document often stores one header several times). */
-    signature: string;
-    span: number;
-    printedOn: Set<number>;
-  }
-  const repeats: Repeating[] = [];
-  for (const story of printed.stories) {
-    if (!repeating(story)) continue;
-    const { stream, trailing } = expectedChars(story, counters);
-    const pieces: Piece[] = [];
-    for (const expected of stream) pieces.push(...expected.before.map((tok) => ({ tok })), { lit: expected });
-    pieces.push(...trailing.map((tok) => ({ tok })));
-    const literals = stream.length;
-    // Something that may print nothing at all (an empty header, a lone tab) has nothing to be matched.
-    if (literals === 0 && !pieces.some((piece) => 'tok' in piece && piece.tok.t === 'page-number')) continue;
-    const signature = pieces.map((piece) => ('lit' in piece ? piece.lit.c : `\u0000${piece.tok.t}${piece.tok.t === 'page-number' ? piece.tok.field : ''}\u0000`)).join('');
-    const span = pieces.reduce((sum, piece) => sum + ('lit' in piece ? 1 : longest(piece.tok)), 0);
-    repeats.push({ story, pieces, literals, signature, span, printedOn: new Set() });
-  }
-  repeats.sort((a, b) => b.pieces.length - a.pieces.length); // the fullest first, so that a bare page number does not take a digit of "Page 1 of 3"
+  // ---- 1. Which page belongs to which section, and so which header, footer and page number it must print. ----
+  // The main text is found once, provisionally, only to learn which page each part of it falls on.
   const pageStart: number[] = [];
   const pageEnd: number[] = [];
   chars.forEach((x, j) => {
     pageStart[x.page] ??= j;
     pageEnd[x.page] = j + 1;
   });
-  const claim = (repeat: Repeating, page: number, found: { lits: number[]; end: number }, start: number): void => {
+  const sectionStartPage: (number | undefined)[] = layout.sections.map(() => undefined);
+  if (body) {
+    const provisional = find(bodyStream, { chars, owner: new Array<Owner>(chars.length).fill(undefined) }, 'body');
+    if (provisional.at.length < bodyStream.length) return missing(body, bodyStream, provisional);
+    // A section begins on the page its first few characters are on (the later page, should the very first
+    // character have been mistaken for one at the foot of the page before).
+    const seen: number[] = layout.sections.map(() => 0);
+    bodyStream.forEach((expected, k) => {
+      if (seen[expected.section]! >= 8) return;
+      seen[expected.section]!++;
+      sectionStartPage[expected.section] = Math.max(sectionStartPage[expected.section] ?? 0, chars[provisional.at[k]!]!.page);
+    });
+  }
+  interface PageInfo {
+    where: Where;
+    section: number;
+    kind: PageKind;
+  }
+  const pageInfo: PageInfo[] = [];
+  {
+    const withText = layout.sections.map((_, index) => index).filter((index) => sectionStartPage[index] !== undefined);
+    /** The page a section's own first page is, if it starts a page of its own. */
+    const firstPageOf = (index: number): number | undefined => (index === withText[0] || layout.sections[index]!.newPage ? sectionStartPage[index] : undefined);
+    let number: number | undefined;
+    const sectionOf: number[] = [];
+    for (let page = 1; page <= pdf.pages; page++) {
+      // The section a page belongs to is the one its top is in.
+      let section = withText[0] ?? 0;
+      for (const index of withText) if (sectionStartPage[index]! < page || firstPageOf(index) === page) section = index;
+      sectionOf[page] = section;
+      const starting = withText.find((index) => firstPageOf(index) === page && layout.sections[index]!.start !== undefined);
+      number = starting !== undefined ? layout.sections[starting]!.start : page === 1 ? 1 : number === undefined ? undefined : number + 1;
+      const first = firstPageOf(section) === page && layout.sections[section]?.titlePage;
+      const kind: PageKind = first ? 'first' : layout.evenAndOdd && number !== undefined && number % 2 === 0 ? 'even' : 'default';
+      pageInfo[page] = { where: { number, format: layout.sections[section]?.format ?? 'decimal', pages: pdf.pages, sectionPages: 0 }, section, kind };
+    }
+    for (let page = 1; page <= pdf.pages; page++) pageInfo[page]!.where.sectionPages = sectionOf.filter((section) => section === sectionOf[page]).length;
+  }
+
+  // ---- 2. Headers and footers, page by page. ----
+  // A page prints its header first and its footer last. Each page's own header and footer (and no other) is
+  // matched whole, at exactly that place, with the number that page must print. This is done before the main
+  // text is matched, so that nothing at the edge of a page is ever left to be explained away afterwards.
+  interface Repeating {
+    story: Story;
+    pieces: Piece[];
+    literals: number;
+    span: number;
+  }
+  const repeats = new Map<string, Repeating>();
+  for (const story of printed.stories) {
+    if (!repeating(story)) continue;
+    const { stream, trailing } = expectedChars(story, counters, layout);
+    const pieces: Piece[] = [];
+    for (const expected of stream) pieces.push(...expected.before.map((tok) => ({ tok })), { lit: expected });
+    pieces.push(...trailing.map((tok) => ({ tok })));
+    // Something that may print nothing at all (an empty header, a lone tab) has nothing to be matched.
+    if (stream.length === 0 && !pieces.some((piece) => 'tok' in piece && piece.tok.t === 'page-number')) continue;
+    repeats.set(story.key, { story, pieces, literals: stream.length, span: pieces.reduce((sum, piece) => sum + ('lit' in piece ? 1 : longest(piece.tok)), 0) });
+  }
+  /** The header or footer a page must print: its section's, or failing that the nearest earlier section's. */
+  const due = (page: number, part: 'header' | 'footer'): Repeating | undefined => {
+    const info = pageInfo[page]!;
+    for (let index = info.section; index >= 0; index--) {
+      const key = layout.sections[index]?.[part][info.kind];
+      if (key !== undefined) return repeats.get(key);
+    }
+    return undefined;
+  };
+  const claim = (repeat: Repeating, found: { lits: number[]; end: number }, start: number): void => {
     for (let j = start; j < found.end; j++) owner[j] = 'accepted';
     let n = 0;
     for (const piece of repeat.pieces) {
@@ -447,42 +540,33 @@ export function comparePdf(printed: StoryReading, pdf: PdfReading): PdfCheckResu
       owner[j] = 'other';
       if (piece.lit.kind && chars[j]!.color !== COLOUR[piece.lit.kind]) wrongColour(repeat.story, piece.lit, chars[j]!.color);
     }
-    repeat.printedOn.add(page);
   };
-  // The cover page is a section of its own, with no header or footer.
-  const firstPage = printed.cover.length > 0 ? 2 : 1;
-  for (let page = firstPage; page <= pdf.pages; page++) {
+  const unprinted: { page: number; repeat: Repeating }[] = [];
+  for (let page = 1; page <= pdf.pages; page++) {
     if (pageStart[page] === undefined) continue;
-    const where: Where = { page, pages: pdf.pages };
-    const limit = pageEnd[page]!;
-    for (let progress = true; progress; ) {
-      progress = false;
-      for (const repeat of repeats) {
-        if (repeat.printedOn.has(page)) continue;
-        let first = pageStart[page]!;
-        while (first < limit && owner[first]) first++;
-        let last = limit;
-        while (last > first && owner[last - 1]) last--;
-        if (first >= last) break;
-        // A header stands at the top of the page (after anything already matched there), a footer at the bottom.
-        let start = first;
-        let found: ReturnType<typeof matchPieces>;
-        if (repeat.story.key.startsWith('header/')) {
-          found = matchPieces(repeat.pieces, source, start, last, undefined, where);
-        } else {
-          for (start = Math.max(first, last - repeat.span); start < last; start++) {
-            found = matchPieces(repeat.pieces, source, start, last, last, where);
-            if (found) break;
-          }
-        }
-        if (!found) continue;
-        claim(repeat, page, found, start);
-        progress = true;
-      }
+    const where = pageInfo[page]!.where;
+    const first = pageStart[page]!;
+    const last = pageEnd[page]!;
+    const header = due(page, 'header');
+    let top = first;
+    if (header) {
+      const found = matchPieces(header.pieces, source, first, last, undefined, where);
+      if (found) {
+        claim(header, found, first);
+        top = found.end;
+      } else unprinted.push({ page, repeat: header });
+    }
+    const footer = due(page, 'footer');
+    if (footer) {
+      let found: ReturnType<typeof matchPieces>;
+      let start = Math.max(top, last - footer.span);
+      for (; start < last; start++) if ((found = matchPieces(footer.pieces, source, start, last, last, where))) break;
+      if (found) claim(footer, found, start);
+      else unprinted.push({ page, repeat: footer });
     }
   }
 
-  // ---- 2. The main text, then every note and text box: complete and in order. ----
+  // ---- 3. The main text, then every note and text box: complete and in order. ----
   interface Found {
     story: Story;
     stream: Expected[];
@@ -504,28 +588,27 @@ export function comparePdf(printed: StoryReading, pdf: PdfReading): PdfCheckResu
     found.push({ story, stream, match });
   }
 
-  // A header or footer that a page prints somewhere other than first or last (beside a text box, say): accepted
-  // where it stands whole and unbroken, if it has enough text of its own to be told from anything else.
-  for (let page = firstPage; page <= pdf.pages; page++) {
-    if (pageStart[page] === undefined) continue;
-    const where: Where = { page, pages: pdf.pages };
-    for (const repeat of repeats) {
-      if (repeat.printedOn.has(page) || repeat.literals < 4) continue;
-      for (let start = pageStart[page]!; start < pageEnd[page]!; start++) {
-        if (owner[start]) continue;
-        const match = matchPieces(repeat.pieces, source, start, pageEnd[page]!, undefined, where);
-        if (!match) continue;
-        claim(repeat, page, match, start);
-        break;
-      }
+  // A page's header or footer that is printed somewhere other than first or last on the page (beside a text
+  // box, say) is accepted where it stands whole and unbroken, if it has enough text of its own to be told
+  // from anything else. One that is not there at all fails.
+  for (const { page, repeat } of unprinted) {
+    let match: ReturnType<typeof matchPieces>;
+    let start = pageStart[page]!;
+    if (repeat.literals >= 4) for (; start < pageEnd[page]!; start++) if (!owner[start] && (match = matchPieces(repeat.pieces, source, start, pageEnd[page]!, undefined, pageInfo[page]!.where))) break;
+    if (match) {
+      claim(repeat, match, start);
+      continue;
     }
-  }
-  // The ordinary header or footer of a section must be printed at least once.
-  for (const repeat of repeats) {
-    if (!repeat.story.key.endsWith('/default') || repeat.literals === 0) continue;
-    if (repeats.some((other) => other.signature === repeat.signature && other.printedOn.size > 0)) continue;
-    const stream = repeat.pieces.flatMap((piece) => ('lit' in piece ? [piece.lit] : []));
-    return missing(repeat.story, stream, { at: [] });
+    const expected = repeat.pieces.flatMap((piece) => ('lit' in piece ? [piece.lit.c] : piece.tok.t === 'page-number' ? [`[${piece.tok.field === 'PAGE' ? 'page number' : 'number of pages'}]`] : [])).join('');
+    return {
+      text: {
+        message: `The PDF does not show the ${repeat.story.label} of the redline on page ${page}, whole and with the right page number.`,
+        where: `page ${page}`,
+        expected: `…${expected.slice(0, 80)}…`,
+        found: `top of the page: …${excerpt(chars, pageStart[page]!, 40)}…; foot of the page: …${excerpt(chars, pageEnd[page]! - 40, 40)}… (white space is not compared)`,
+      },
+      note,
+    };
   }
 
   // On a page, the notes are printed below the main text. Main text that comes after a note on the same
@@ -545,7 +628,7 @@ export function comparePdf(printed: StoryReading, pdf: PdfReading): PdfCheckResu
     }
   }
 
-  // ---- 3. Everything else in the PDF must be exactly what a page adds, exactly where it adds it. ----
+  // ---- 4. Everything else in the PDF must be exactly what a page adds, exactly where it adds it. ----
   /** The unaccounted-for characters strictly between two positions. */
   const between = (from: number, to: number): number[] => {
     const free: number[] = [];
@@ -553,7 +636,7 @@ export function comparePdf(printed: StoryReading, pdf: PdfReading): PdfCheckResu
     return free;
   };
   const textOf = (positions: number[]): string => positions.map((j) => chars[j]!.c).join('');
-  const whereOf = (j: number): Where => ({ page: chars[Math.max(0, Math.min(j, chars.length - 1))]!.page, pages: pdf.pages });
+  const whereOf = (j: number): Where => pageInfo[chars[Math.max(0, Math.min(j, chars.length - 1))]!.page]!.where;
   const fits = (text: string, tokens: Token[], where: Where, middle = ''): boolean => whole(tokens.map((token) => pattern(token, where)).join('') + middle).test(text);
   const describe = (tokens: Token[]): string =>
     tokens.length === 0
@@ -576,7 +659,7 @@ export function comparePdf(printed: StoryReading, pdf: PdfReading): PdfCheckResu
     }
   };
 
-  // 3a. Inside the notes and text boxes.
+  // 4a. Inside the notes and text boxes.
   for (const { story, stream, match } of found) {
     for (let i = 1; i < stream.length; i++) {
       const free = between(match.at[i - 1]!, match.at[i]!);
@@ -589,7 +672,7 @@ export function comparePdf(printed: StoryReading, pdf: PdfReading): PdfCheckResu
     const first = match.at[0]!;
     const lead: number[] = [];
     for (let j = first - 1; j >= 0 && owner[j] === undefined && lead.length < 12; j--) lead.unshift(j);
-    const number = isNote(story) ? [{ t: 'note', kind: story.kind as 'footnote' | 'endnote', n: Number(story.key.split('/')[1]) } satisfies Token] : [];
+    const number = isNote(story) ? [{ t: 'note', kind: story.kind as 'footnote' | 'endnote', n: Number(story.key.split('/')[1]), format: layout.noteFormat[story.kind as 'footnote' | 'endnote'] } satisfies Token] : [];
     const tokens: Token[] = [...number, ...stream[0]!.before];
     // Take the longest stretch right before the story that fits (other things may precede it on the page).
     let taken = false;
@@ -617,7 +700,7 @@ export function comparePdf(printed: StoryReading, pdf: PdfReading): PdfCheckResu
     }
   }
 
-  // 3b. Along the main text: between each character and the next, and before the first and after the last.
+  // 4b. Along the main text: between each character and the next, and before the first and after the last.
   // Where a table runs onto a new page, its heading rows are printed again at the top of that page.
   const rows = printed.repeatRows.map(spelled).filter((row) => row !== '');
   const repeatedRows = rows.map((row) => `(?:${escape(row)})?`).join('');
@@ -643,7 +726,7 @@ export function comparePdf(printed: StoryReading, pdf: PdfReading): PdfCheckResu
       accept(free);
     }
   }
-  // 4. Nothing may be left over.
+  // 5. Nothing may be left over.
   const stray = owner.findIndex((o) => o === undefined);
   if (stray >= 0) return extra(stray, 'it contains text that is not in the redline');
   return { colours, note };
