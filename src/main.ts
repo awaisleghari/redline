@@ -42,7 +42,8 @@ let running = false;
  * document's author chose), and the page may load nothing from anywhere.
  */
 function inert(html: string): string {
-  const withoutLinks = html.replace(/\s(?:href|action|formaction|ping)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+  // Only attributes inside tags are removed; the document's words are never touched.
+  const withoutLinks = html.replace(/<[a-zA-Z][^<>]*>/g, (tag) => tag.replace(/\s(?:href|action|formaction|ping)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, ''));
   const policy =
     '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; img-src data:; font-src data:">' +
     '<style>a{pointer-events:none;cursor:text;}</style>';

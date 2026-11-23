@@ -12,7 +12,7 @@ import { makeStaticRedline } from '../../src/producer/make-static-redline';
 import { produceTrackedChanges } from '../../src/producer/produce';
 import { BROKEN_CASES, breakOutput, expectedFailures } from '../fixtures/broken';
 import { BROKEN_STATIC_CASES, expectedStaticFailures } from '../fixtures/broken-static';
-import { ALL_PAIR_SPECS, PAIR_SPECS, buildPair, pairById } from '../fixtures/pairs';
+import { ALL_PAIR_SPECS, PAIR_SPECS, buildDocx, buildPair, pairById } from '../fixtures/pairs';
 import { fullExpectation, readTrackedChanges } from '../helpers/tracked-changes';
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
@@ -122,6 +122,18 @@ test('a link inside a document cannot be followed from the viewer, and the page 
   await viewer.getByText('our website').first().click({ force: true });
   await expect(viewer.getByText('Comparison of documents')).toBeVisible();
   expect(outside).toEqual([]);
+});
+
+test('making the viewer inert never changes the words shown', async ({ page }) => {
+  // Words that look like link attributes must survive untouched in the viewer.
+  const sentence = 'The corrective action = termination; set href="none" and ping=5 within thirty days.';
+  const block = (text: string) => ({ blocks: [{ kind: 'p' as const, text: 'Schedule of remedies.' }, { kind: 'p' as const, text }] });
+  const original = await buildDocx(block(sentence));
+  const modified = await buildDocx(block(sentence.replace('thirty', 'sixty')));
+  await compare(page, original, modified);
+  const viewer = page.frameLocator('#viewer');
+  await expect(viewer.getByText('The corrective action = termination; set href="none" and ping=5 within')).toBeVisible();
+  await expect(viewer.getByText('sixty')).toBeVisible();
 });
 
 test('files cannot be changed while a comparison runs, and choosing a new file clears the old results', async ({ page }) => {
