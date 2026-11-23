@@ -889,13 +889,20 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
       if (format) layout.noteFormat[kind] = attribute(format, W, 'val') ?? layout.noteFormat[kind];
     }
   }
-  // A section may set its own note numbering; the Checker does not follow that, and says so.
-  for (const section of bodyContext.sections) {
-    for (const kind of ['footnote', 'endnote'] as const) {
+  // A section's own note numbering comes before the document's. Where the sections disagree, or the numbers
+  // start again on each page or section, the Checker does not work the numbers out ('mixed' matches nothing).
+  for (const kind of ['footnote', 'endnote'] as const) {
+    const stated = new Set<string>();
+    let restarts = false;
+    for (const section of bodyContext.sections) {
       const properties = child(section, W, `${kind}Pr`);
       const format = properties && child(properties, W, 'numFmt');
-      if (format && attribute(format, W, 'val') !== layout.noteFormat[kind]) layout.noteFormat[kind] = 'mixed';
+      if (format) stated.add(attribute(format, W, 'val') ?? '');
+      const restart = properties && child(properties, W, 'numRestart');
+      if (restart && attribute(restart, W, 'val') !== 'continuous') restarts = true;
     }
+    if (stated.size === 1) layout.noteFormat[kind] = [...stated][0]!;
+    if (stated.size > 1 || restarts) layout.noteFormat[kind] = 'mixed';
   }
 
   return { stories, partsRead, noteIdsRead, problems, links, cover, coverLooks, repeatRows, layout };

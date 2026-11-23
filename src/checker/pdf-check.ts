@@ -462,9 +462,49 @@ export function comparePdf(printed: StoryReading, pdf: PdfReading): PdfCheckResu
     pageStart[x.page] ??= j;
     pageEnd[x.page] = j + 1;
   });
+  interface Repeating {
+    story: Story;
+    pieces: Piece[];
+    literals: number;
+    span: number;
+  }
+  const repeats = new Map<string, Repeating>();
+  for (const story of printed.stories) {
+    if (!repeating(story)) continue;
+    const { stream, trailing } = expectedChars(story, counters, layout);
+    const pieces: Piece[] = [];
+    for (const expected of stream) pieces.push(...expected.before.map((tok) => ({ tok })), { lit: expected });
+    pieces.push(...trailing.map((tok) => ({ tok })));
+    // Something that may print nothing at all (an empty header, a lone tab) has nothing to be matched.
+    if (stream.length === 0 && !pieces.some((piece) => 'tok' in piece && piece.tok.t === 'page-number')) continue;
+    repeats.set(story.key, { story, pieces, literals: stream.length, span: pieces.reduce((sum, piece) => sum + ('lit' in piece ? 1 : longest(piece.tok)), 0) });
+  }
   const sectionStartPage: (number | undefined)[] = layout.sections.map(() => undefined);
   if (body) {
-    const provisional = find(bodyStream, { chars, owner: new Array<Owner>(chars.length).fill(undefined) }, 'body');
+    // First with everything that could be a header or footer set aside at the top and foot of every page, so
+    // that a section which begins with the words of the footer before it is not placed a page early. If the
+    // main text cannot be found that way (the set-aside took some of it), then with nothing set aside.
+    const scratch: Source = { chars, owner: new Array<Owner>(chars.length).fill(undefined) };
+    for (let page = 1; page <= pdf.pages; page++) {
+      if (pageStart[page] === undefined) continue;
+      const first = pageStart[page]!;
+      const last = pageEnd[page]!;
+      const guesses: Where[] = [page, page - 1].flatMap((number) => ['decimal', 'lowerRoman', 'upperRoman'].map((format) => ({ number, format, pages: pdf.pages, sectionPages: pdf.pages })));
+      for (const [key, repeat] of repeats) {
+        if (key.endsWith('/text boxes')) continue;
+        for (const where of guesses) {
+          let start = key.startsWith('header/') ? first : Math.max(first, last - repeat.span);
+          let match: ReturnType<typeof matchPieces>;
+          if (key.startsWith('header/')) match = matchPieces(repeat.pieces, scratch, start, last, undefined, where);
+          else for (; start < last; start++) if ((match = matchPieces(repeat.pieces, scratch, start, last, last, where))) break;
+          if (!match) continue;
+          for (let j = start; j < match.end; j++) scratch.owner[j] = 'accepted';
+          break;
+        }
+      }
+    }
+    let provisional = find(bodyStream, scratch, 'body');
+    if (provisional.at.length < bodyStream.length) provisional = find(bodyStream, { chars, owner: new Array<Owner>(chars.length).fill(undefined) }, 'body');
     if (provisional.at.length < bodyStream.length) return missing(body, bodyStream, provisional);
     // A section begins on the page its first few characters are on (the later page, should the very first
     // character have been mistaken for one at the foot of the page before).
@@ -505,29 +545,12 @@ export function comparePdf(printed: StoryReading, pdf: PdfReading): PdfCheckResu
   // A page prints its header first and its footer last. Each page's own header and footer (and no other) is
   // matched whole, at exactly that place, with the number that page must print. This is done before the main
   // text is matched, so that nothing at the edge of a page is ever left to be explained away afterwards.
-  interface Repeating {
-    story: Story;
-    pieces: Piece[];
-    literals: number;
-    span: number;
-  }
-  const repeats = new Map<string, Repeating>();
-  for (const story of printed.stories) {
-    if (!repeating(story)) continue;
-    const { stream, trailing } = expectedChars(story, counters, layout);
-    const pieces: Piece[] = [];
-    for (const expected of stream) pieces.push(...expected.before.map((tok) => ({ tok })), { lit: expected });
-    pieces.push(...trailing.map((tok) => ({ tok })));
-    // Something that may print nothing at all (an empty header, a lone tab) has nothing to be matched.
-    if (stream.length === 0 && !pieces.some((piece) => 'tok' in piece && piece.tok.t === 'page-number')) continue;
-    repeats.set(story.key, { story, pieces, literals: stream.length, span: pieces.reduce((sum, piece) => sum + ('lit' in piece ? 1 : longest(piece.tok)), 0) });
-  }
   /** The header or footer a page must print: its section's, or failing that the nearest earlier section's. */
-  const due = (page: number, part: 'header' | 'footer'): Repeating | undefined => {
+  const dueKey = (page: number, part: 'header' | 'footer'): string | undefined => {
     const info = pageInfo[page]!;
     for (let index = info.section; index >= 0; index--) {
       const key = layout.sections[index]?.[part][info.kind];
-      if (key !== undefined) return repeats.get(key);
+      if (key !== undefined) return key;
     }
     return undefined;
   };
@@ -547,7 +570,14 @@ export function comparePdf(printed: StoryReading, pdf: PdfReading): PdfCheckResu
     const where = pageInfo[page]!.where;
     const first = pageStart[page]!;
     const last = pageEnd[page]!;
-    const header = due(page, 'header');
+    const headerKey = dueKey(page, 'header');
+    const footerKey = dueKey(page, 'footer');
+    // Text boxes anchored in the page's header or footer are printed with it, wherever on the page they sit.
+    for (const key of [headerKey, footerKey]) {
+      const boxes = key === undefined ? undefined : repeats.get(`${key}/text boxes`);
+      if (boxes) unprinted.push({ page, repeat: boxes });
+    }
+    const header = headerKey === undefined ? undefined : repeats.get(headerKey);
     let top = first;
     if (header) {
       const found = matchPieces(header.pieces, source, first, last, undefined, where);
@@ -556,7 +586,7 @@ export function comparePdf(printed: StoryReading, pdf: PdfReading): PdfCheckResu
         top = found.end;
       } else unprinted.push({ page, repeat: header });
     }
-    const footer = due(page, 'footer');
+    const footer = footerKey === undefined ? undefined : repeats.get(footerKey);
     if (footer) {
       let found: ReturnType<typeof matchPieces>;
       let start = Math.max(top, last - footer.span);
@@ -588,13 +618,21 @@ export function comparePdf(printed: StoryReading, pdf: PdfReading): PdfCheckResu
     found.push({ story, stream, match });
   }
 
-  // A page's header or footer that is printed somewhere other than first or last on the page (beside a text
-  // box, say) is accepted where it stands whole and unbroken, if it has enough text of its own to be told
-  // from anything else. One that is not there at all fails.
+  // A page's header or footer that is not the very first or last thing on the page (it has a text box beside
+  // it, say) is accepted only whole and unbroken, and only clear of the main text: a header before the first
+  // of the page's main text, a footer after the last of it. One that is not there fails.
+  const bodyFirst: number[] = [];
+  const bodyLast: number[] = [];
+  for (const j of bodyFound?.match.at ?? []) {
+    bodyFirst[chars[j]!.page] ??= j;
+    bodyLast[chars[j]!.page] = j;
+  }
   for (const { page, repeat } of unprinted) {
     let match: ReturnType<typeof matchPieces>;
-    let start = pageStart[page]!;
-    if (repeat.literals >= 4) for (; start < pageEnd[page]!; start++) if (!owner[start] && (match = matchPieces(repeat.pieces, source, start, pageEnd[page]!, undefined, pageInfo[page]!.where))) break;
+    const isHeader = repeat.story.key.startsWith('header/');
+    let start = isHeader ? pageStart[page]! : (bodyLast[page] ?? pageStart[page]! - 1) + 1;
+    const end = isHeader ? (bodyFirst[page] ?? pageEnd[page]!) : pageEnd[page]!;
+    for (; start < end; start++) if (!owner[start] && (match = matchPieces(repeat.pieces, source, start, end, undefined, pageInfo[page]!.where))) break;
     if (match) {
       claim(repeat, match, start);
       continue;

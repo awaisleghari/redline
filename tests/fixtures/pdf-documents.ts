@@ -26,6 +26,7 @@ import {
   TextRun,
   WidthType,
 } from 'docx';
+import { unzip, zip } from '../../src/common/zip';
 
 export interface PdfDocumentPair {
   id: string;
@@ -74,6 +75,22 @@ const pair = (id: string, description: string, make: (changed: boolean) => { bod
 const CLAUSE = 'The Supplier shall provide the Services with reasonable skill and care, in accordance with good industry practice and all applicable laws.';
 const word = (changed: boolean): string => (changed ? 'exceptional' : 'reasonable');
 const sentence = (changed: boolean): Paragraph => text(`The Supplier shall provide the Services with ${word(changed)} skill and care.`);
+
+/** The same pair with the same edit made to the XML of both files (for what the document library cannot write itself). */
+const edited = (pairToEdit: PdfDocumentPair, change: (part: string, xml: string) => string): PdfDocumentPair => ({
+  ...pairToEdit,
+  build: async () => {
+    const apply = async (bytes: Uint8Array): Promise<Uint8Array> => {
+      const files = await unzip(bytes);
+      for (const [part, content] of files) if (part.endsWith('.xml')) files.set(part, new TextEncoder().encode(change(part, new TextDecoder().decode(content))));
+      return zip(files);
+    };
+    const built = await pairToEdit.build();
+    return { original: await apply(built.original), modified: await apply(built.modified) };
+  },
+});
+const HEADER_TEXT_BOX =
+  '<w:r><w:pict><v:shape xmlns:v="urn:schemas-microsoft-com:vml" style="position:absolute;margin-left:300pt;margin-top:0;width:150pt;height:30pt" type="#_x0000_t202"><v:textbox><w:txbxContent><w:p><w:r><w:t>Privileged</w:t></w:r></w:p></w:txbxContent></v:textbox></v:shape></w:pict></w:r>';
 
 /** A pair built from whole documents (several sections, first-page and even-page headers). */
 const custom = (id: string, description: string, make: (changed: boolean) => Document): PdfDocumentPair => ({
@@ -243,6 +260,40 @@ export const PDF_DOCUMENT_PAIRS: PdfDocumentPair[] = [
       newPage('The Supplier means to perform this Agreement in full and on time.'),
     ],
     extras: { footnotes: { 1: 'The Supplier means Alpha Holdings Limited.' } },
+  })),
+  // ----- found by the fourth Stage 5 review -----
+  edited(
+    custom('header-with-text-box', 'A header with a text box beside its text, and a page-number footer.', (changed) =>
+      new Document({ sections: [{ headers: { default: new Header({ children: [text('Alpha LLP')] }) }, footers: { default: new Footer({ children: [pageNumber()] }) }, children: [sentence(changed), newPage('Second page.')] }] }),
+    ),
+    (part, xml) => (/word\/header\d+\.xml$/.test(part) ? xml.replace('</w:p>', `${HEADER_TEXT_BOX}</w:p>`) : xml),
+  ),
+  custom('section-begins-with-the-footer-before-it', "The footer is the party's name, and the schedule (a new section with its own header) begins with the same words.", (changed) =>
+    new Document({
+      sections: [
+        { footers: { default: new Footer({ children: [text('Alpha Holdings Limited')] }) }, children: [sentence(changed), text('The parties have signed this Agreement.')] },
+        {
+          properties: { type: SectionType.NEXT_PAGE },
+          headers: { default: new Header({ children: [text('Schedule 1')] }) },
+          footers: { default: new Footer({ children: [text('Alpha Holdings Limited')] }) },
+          children: [text('Alpha Holdings Limited'), text('Disclosure Letter')],
+        },
+      ],
+    }),
+  ),
+  edited(
+    pair('section-footnotes-in-roman', 'Footnotes numbered i, ii by the section.', (changed) => ({
+      body: [
+        new Paragraph({ children: [new TextRun('The Customer shall pay the Fees within thirty days.'), new FootnoteReferenceRun(1)] }),
+        new Paragraph({ children: [new TextRun('See Schedule I'), new FootnoteReferenceRun(2), new TextRun(' for details.')] }),
+      ],
+      extras: { footnotes: { 1: 'Fees are stated exclusive of value added tax.', 2: `The Schedule ${changed ? 'forms' : 'does not form'} part of this Agreement.` } },
+    })),
+    (part, xml) => (part === 'word/document.xml' ? xml.replace('<w:pgSz', '<w:footnotePr><w:numFmt w:val="lowerRoman"/></w:footnotePr><w:pgSz') : xml),
+  ),
+  pair('one-page-with-header', 'One page with a header.', (changed) => ({
+    body: [sentence(changed), text('This offer is binding on the Buyer.'), text('End.')],
+    extras: { header: [text('Subject to contract')] },
   })),
 ];
 
