@@ -28,6 +28,14 @@ beforeAll(async () => {
   await initialize();
 });
 
+describe('before any PDF has been asked for', () => {
+  it('no converter is running, and asking for the state report does not start one', async () => {
+    for (let ask = 0; ask < 5; ask++) expect(await converterState()).toEqual(['asleep']);
+    await fetch(`${WORKER_URL}/`);
+    expect(converterContainers()).toEqual([]);
+  });
+});
+
 describe('the site, as Cloudflare serves it', () => {
   it('serves the page with its security headers, and the engine files', async () => {
     const page = await fetch(`${WORKER_URL}/`);
@@ -93,7 +101,8 @@ describe('the PDF route, through the Worker to the converter', () => {
 describe('the converter keeps nothing and says nothing, as seen through the Worker', () => {
   it('the state report gives counts only, and after all the conversions above: no file, no process', async () => {
     const states = await converterState();
-    expect(states).toHaveLength(2);
+    expect(states).toHaveLength(1);
+    expect(states[0]).not.toBe('asleep');
     let conversions = 0;
     for (const line of states) {
       if (line === 'asleep') continue;
@@ -112,7 +121,7 @@ describe('the converter keeps nothing and says nothing, as seen through the Work
 
   it('the report agrees with a direct search of each converter as root, and the converters have logged nothing', () => {
     const names = converterContainers();
-    expect(names.length).toBeGreaterThan(0);
+    expect(names).toHaveLength(1);
     for (const name of names) {
       // Everything changed on the container's disk since it started, anywhere, searched as root.
       const changed = execFileSync('docker', ['diff', name], { encoding: 'utf8' }).split('\n').filter(Boolean);

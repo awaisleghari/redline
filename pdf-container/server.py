@@ -40,9 +40,20 @@ DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 # LibreOffice is heavy; convert at most two documents at a time.
 SLOTS = threading.BoundedSemaphore(2)
 
-# For GET /state: every place this account can write, and what was there when the
-# server started (so only what has appeared since is counted).
-SCRATCH = [tempfile.gettempdir(), os.path.expanduser("~"), "/var/tmp", "/dev/shm"]
+# For GET /state: every folder this account can write to, found by looking (not
+# assumed) when the server starts, and what was in them then, so that only what
+# has appeared since is counted.
+def writable_roots() -> list:
+    roots = []
+    for folder, folders, _files in os.walk("/"):
+        folders[:] = [name for name in folders if os.path.join(folder, name) not in ("/proc", "/sys")]
+        if os.access(folder, os.W_OK):
+            roots.append(folder)
+            folders[:] = []  # everything beneath is walked by scratch_paths()
+    return roots
+
+
+SCRATCH = writable_roots()
 ATTEMPTS = 0
 ATTEMPTS_LOCK = threading.Lock()
 

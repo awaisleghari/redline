@@ -108,8 +108,8 @@ result((await askForPdf(new TextEncoder().encode('not a document'))).status === 
 const after = await state();
 console.log(`INFO  converter state after:  ${JSON.stringify(after)}`);
 const awake = after.filter((line) => line !== 'asleep');
-result(after.length === 2 && awake.length > 0 && awake.every((line) => COUNTS.test(line)), 'the state report gives counts only');
-result(conversionsIn(after) - conversionsIn(before) >= made, `the copies of the converter now awake are the ones that did these ${made} conversions`, `${conversionsIn(after) - conversionsIn(before)} more counted than before`);
+result(after.length === 1 && awake.length === 1 && awake.every((line) => COUNTS.test(line)), 'the state report gives counts only');
+result(conversionsIn(after) - conversionsIn(before) >= made, `the converter now awake is the one that did these ${made} conversions`, `${conversionsIn(after) - conversionsIn(before)} more counted than before`);
 result(awake.every((line) => COUNTS.exec(line)?.[2] === '0'), 'after converting, the converter holds no file that was not there when it started');
 result(awake.every((line) => COUNTS.exec(line)?.[3] === '0'), 'after converting, no LibreOffice process is left running');
 

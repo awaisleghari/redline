@@ -12,7 +12,7 @@ import { Container } from '@cloudflare/containers';
 import { DOCX_TYPE, handlePdfRequest, PDF_PATH } from './pdf-route';
 import { handleStateRequest, STATE_PATH } from './state-route';
 
-// The containers library needs this exported to enforce "no internet access".
+// The containers library looks for this export when it controls a container's outgoing connections.
 export { ContainerProxy } from '@cloudflare/containers';
 
 const CONVERTER_PORT = 8080;
@@ -41,8 +41,12 @@ interface Env {
   ASSETS: Fetcher;
 }
 
-/** How many copies of the converter requests are spread over (wrangler.jsonc allows no more than this to run). */
-const INSTANCES = 2;
+/**
+ * How many copies of the converter there are (wrangler.jsonc allows no more than this to run).
+ * One: it converts two documents at a time and queues the rest, and a single copy means a
+ * visitor making several PDFs never waits for, or pays for, a second machine to start.
+ */
+const INSTANCES = 1;
 const converter = (env: Env, index: number): DurableObjectStub<PdfConverter> => env.PDF_CONVERTER.get(env.PDF_CONVERTER.idFromName(`instance-${index}`));
 
 export default {
@@ -50,7 +54,7 @@ export default {
     const path = new URL(request.url).pathname;
     if (path === PDF_PATH) {
       return handlePdfRequest(request, (docx) =>
-        converter(env, Math.floor(Math.random() * INSTANCES)).fetch(
+        converter(env, 0).fetch(
           new Request('http://converter/convert', { method: 'POST', headers: { 'Content-Type': DOCX_TYPE, 'Content-Length': String(docx.byteLength) }, body: docx }),
         ),
       );

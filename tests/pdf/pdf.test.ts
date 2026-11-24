@@ -176,8 +176,10 @@ print("done")`;
   });
 
   it('the state report does count a file that is left behind (so a clean report means something)', async () => {
+    // A converter with an ordinary writable disk, as on Cloudflare (the other tests use a read-only one).
     const name = 'redline-pdf-state';
-    startExtraContainer(name, 8793, {});
+    execFileSync('docker', ['rm', '-f', name], { stdio: 'ignore' });
+    execFileSync('docker', ['run', '-d', '--name', name, '-p', '127.0.0.1:8793:8080', 'redline-pdf'], { stdio: 'ignore' });
     try {
       const state = async (): Promise<string> => (await fetch('http://127.0.0.1:8793/state')).text();
       for (let attempt = 0; attempt < 60; attempt++) {
@@ -189,9 +191,22 @@ print("done")`;
         }
       }
       expect(await state()).toBe('conversions=0 files=0 office_processes=0');
-      // Planted as the converter's own account, where a conversion works (the only place that account can write here).
-      execFileSync('docker', ['exec', name, 'sh', '-c', 'mkdir /tmp/c-left && touch /tmp/c-left/in.docx']);
-      expect(await state()).toBe('conversions=0 files=2 office_processes=0');
+      // Every folder the converter's account can write to anywhere on the disk, found independently of the server.
+      const writable = execFileSync('docker', ['exec', name, 'sh', '-c', 'find / -path /proc -prune -o -path /sys -prune -o -type d -writable -print 2>/dev/null; true'], { encoding: 'utf8' }).split('\n').filter(Boolean);
+      expect(writable).toEqual(expect.arrayContaining(['/tmp', '/home/converter', '/run/lock']));
+      // A file planted in each one, as the converter's own account, is counted.
+      let planted = 0;
+      for (const folder of writable) {
+        execFileSync('docker', ['exec', name, 'sh', '-c', `touch "${folder}/left.docx"`]);
+        planted++;
+        expect(await state(), folder).toBe(`conversions=0 files=${planted} office_processes=0`);
+      }
+      // And a real conversion on a writable disk leaves the count where it was.
+      const pair = await buildPair(pairById('one-word-change'));
+      const reply = await fetch('http://127.0.0.1:8793/convert', { method: 'POST', headers: { 'Content-Type': DOCX_TYPE }, body: new Blob([pair.modified.slice().buffer]) });
+      expect(reply.status).toBe(200);
+      await reply.arrayBuffer();
+      expect(await state()).toBe(`conversions=1 files=${planted} office_processes=0`);
     } finally {
       removeContainer(name);
     }

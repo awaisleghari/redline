@@ -3,7 +3,13 @@
 #
 # Ubuntu base on purpose: the build environment can reach Ubuntu's package
 # mirrors but not Debian's (see PLAN.md, "Container base image").
-FROM ubuntu:24.04
+#
+# Pinned to an exact image, so every build starts from the same files and a
+# rebuild does not have to ask Docker Hub what "24.04" currently means. To take
+# a newer base: docker buildx imagetools inspect ubuntu:24.04, and put its
+# Digest here. (Packages are still installed fresh, with current security
+# updates, each time the image is really rebuilt.)
+FROM ubuntu:24.04@sha256:562111b88caa79c71391c0c4d3c2114a7d5c35915c20561fd893cb1e07929e6b
 
 ENV DEBIAN_FRONTEND=noninteractive
 # LibreOffice Writer without its desktop interface, Python for the server, and

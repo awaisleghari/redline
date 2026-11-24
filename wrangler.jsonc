@@ -27,15 +27,15 @@
     "traces": { "enabled": false }
   },
 
-  // The PDF converter: the image in pdf-container/, at most two copies running at once.
-  // A copy starts when a PDF is asked for and is shut down after five idle minutes
+  // The PDF converter: the image in pdf-container/, one copy at most.
+  // It starts when a PDF is asked for and is shut down after five idle minutes
   // (worker/index.ts), which also wipes its disk.
   "containers": [
     {
       "class_name": "PdfConverter",
       "image": "./pdf-container/Dockerfile",
       "instance_type": "standard-1",
-      "max_instances": 2,
+      "max_instances": 1,
       "observability": { "logs": { "enabled": false } }
     }
   ],

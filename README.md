@@ -106,8 +106,8 @@ What gets set up on Cloudflare:
   Cloudflare serves the built site (`dist/`) directly. The Worker's own code
   (`worker/`) answers two addresses only: `/api/pdf` (the PDF step) and
   `/api/converter-state` (below).
-- **The PDF converter**: the image in `pdf-container/`, at most two copies. A
-  copy starts when a PDF is asked for and is shut down after five idle minutes,
+- **The PDF converter**: the image in `pdf-container/`, one copy at most. It
+  starts when a PDF is asked for and is shut down after five idle minutes,
   which also discards its disk. It has no access to the internet.
 - **No storage of any kind** (no database, no file store) and **no logs**:
   Cloudflare's request logs are switched off for the Worker and the converter.
@@ -124,9 +124,25 @@ them. To set that up once, in the Cloudflare dashboard: **Workers & Pages**,
 |---|---|
 | Project name | `redline` (must match `name` in `wrangler.jsonc`) |
 | Production branch | `main` |
-| Build command | `npm run build` |
+| Build command | `npm test && npm run build` (the unit and Checker tests must pass before anything is published) |
 | Deploy command | `npx wrangler deploy` |
 | Preview builds for other branches | off |
+
+Those five settings live in the Cloudflare dashboard, not in this repository.
+Merging to `main` is what publishes, so `main` should only ever receive work
+whose full test suite (`npm run test:all`) has passed.
+
+Things to know:
+
+- **A deployment is not all-or-nothing.** Cloudflare publishes the new site
+  first and then builds and rolls out the converter image. If the image build
+  fails, the site is live with the previous converter (or, the very first
+  time, none: "Make PDF" then reports that the converter could not be reached).
+  Use **Retry build** in the dashboard.
+- **The first deployment needs a few minutes** after it finishes before the
+  converter answers.
+- **Set a billing alert.** Cloudflare has no spending cap. In the dashboard:
+  **Manage Account**, **Billing**, **Billable usage**, **Create budget alert**.
 
 ### Deploying by hand
 
@@ -147,7 +163,8 @@ npm run test:live -- https://redline.<your-account>.workers.dev
 ```
 
 makes real PDFs through the live converter, runs the Checker on each, and
-confirms the refusals and the security headers.
+confirms the refusals and the security headers. It needs `curl`; behind a
+proxy, set `NODE_USE_ENV_PROXY=1`.
 
 ```bash
 REDLINE_URL=https://redline.<your-account>.workers.dev npm run test:e2e
@@ -156,11 +173,12 @@ REDLINE_URL=https://redline.<your-account>.workers.dev npm run test:e2e
 runs the whole browser suite against the live site (Docker is still needed
 locally: a few tests make deliberately wrong PDFs to prove they are withheld).
 
-`/api/converter-state` is a public, read-only report: for each copy of the
-converter, either `asleep` or three counts (conversions attempted since it
+`/api/converter-state` is a public, read-only report on the converter: either
+`asleep` or three counts (conversions attempted since it
 started, files it holds that were not there when it started, LibreOffice
 processes running). Between conversions the last two must be 0. It never
-reports a name, a size or any content.
+reports a name, a size or any content, and asking never starts the converter
+or keeps it awake.
 
 ## How it is built
 
