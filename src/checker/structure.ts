@@ -52,6 +52,8 @@ function contentTypeProblems(pkg: DocxPackage): string[] {
   };
   for (const partName of pkg.partNames) {
     if (partName === '[Content_Types].xml') continue;
+    // Word sometimes leaves discarded items in a "[trash]" folder. The file format says these are not parts of the document.
+    if (partName.startsWith('[trash]/')) continue;
     if (typeOf(partName) === undefined) problems.push(`The part "${partName}" has no declared content type.`);
   }
   for (const partName of overrides.keys()) {

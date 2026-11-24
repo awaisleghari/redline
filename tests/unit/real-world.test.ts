@@ -412,3 +412,33 @@ describe('a surviving paragraph must carry the modified document\'s properties',
     expect(decoder.decode((await unzip(tracked)).get('word/document.xml')!)).toContain('<w:pStyle w:val="Clause"/>');
   });
 });
+
+/** Found on real contracts (Stage 7): things inside a Word file that Word itself accepts and the Checker refused. */
+describe('files as other programs write them', () => {
+  it('a link that names a part with different capitals (as a document-management system writes it) is accepted; a link to a part that is not there is still refused', async () => {
+    const pair = await buildPair(pairById('several-changes'));
+    const { tracked } = await bothPass(pair.original, pair.modified);
+    // A custom data part, linked from the main text with different capitals in the folder name.
+    const withData = async (target: string): Promise<Uint8Array> => {
+      const files = await unzip(tracked);
+      files.set('customXml/item1.xml', encoder.encode('<data/>'));
+      const rels = decoder.decode(files.get('word/_rels/document.xml.rels')!);
+      files.set('word/_rels/document.xml.rels', encoder.encode(rels.replace('</Relationships>', `<Relationship Id="rIdData" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml" Target="${target}"/></Relationships>`)));
+      return zip(files);
+    };
+    expect(await failed(checkTrackedChanges({ original: pair.original, modified: pair.modified, output: await withData('/customXML/item1.xml') }))).toEqual([]);
+    expect(await failed(checkTrackedChanges({ original: pair.original, modified: pair.modified, output: await withData('/customXML/item9.xml') }))).toContain('structure');
+  });
+
+  it("an item left by Word in its \"[trash]\" folder is not a part of the document; any other undeclared part is still refused", async () => {
+    const pair = await buildPair(pairById('several-changes'));
+    const { tracked } = await bothPass(pair.original, pair.modified);
+    const withExtra = async (name: string): Promise<Uint8Array> => {
+      const files = await unzip(tracked);
+      files.set(name, new Uint8Array([1, 2, 3]));
+      return zip(files);
+    };
+    expect(await failed(checkTrackedChanges({ original: pair.original, modified: pair.modified, output: await withExtra('[trash]/0000.dat') }))).toEqual([]);
+    expect(await failed(checkTrackedChanges({ original: pair.original, modified: pair.modified, output: await withExtra('word/0000.dat') }))).toContain('structure');
+  });
+});

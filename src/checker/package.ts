@@ -65,8 +65,16 @@ export class DocxPackage {
     return [...this.entries.keys()].sort();
   }
 
+  /**
+   * Whether the package holds this part. Part names are compared without regard to capitals, as the file format
+   * requires (a document-management system may write "/customXML/item2.xml" for the part "customXml/item2.xml",
+   * and Word opens it).
+   */
   has(partName: string): boolean {
-    return this.entries.has(partName);
+    if (this.entries.has(partName)) return true;
+    const wanted = partName.toLowerCase();
+    for (const name of this.entries.keys()) if (name.toLowerCase() === wanted) return true;
+    return false;
   }
 
   /** Parsed XML of a part. Throws PackageError if the part is missing or not well-formed. */
