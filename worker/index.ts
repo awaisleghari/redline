@@ -24,11 +24,11 @@ export class PdfConverter extends Container {
   enableInternet = false;
 
   /** The converter's three counts, or "asleep" when it is not running. Asking never starts it or keeps it awake. */
-  async converterState(): Promise<string> {
+  async converterState(detail = false): Promise<string> {
     const container = this.ctx.container;
     if (!container?.running) return 'asleep';
     try {
-      const reply = await container.getTcpPort(CONVERTER_PORT).fetch('http://converter/state', { signal: AbortSignal.timeout(5000) });
+      const reply = await container.getTcpPort(CONVERTER_PORT).fetch(detail ? 'http://converter/state-detail' : 'http://converter/state', { signal: AbortSignal.timeout(5000) });
       return reply.ok ? await reply.text() : 'unavailable';
     } catch {
       return 'unavailable';
@@ -60,7 +60,7 @@ export default {
       );
     }
     if (path === STATE_PATH) {
-      return handleStateRequest(request, () => Promise.all(Array.from({ length: INSTANCES }, (_, index) => converter(env, index).converterState())));
+      return handleStateRequest(request, (detail) => Promise.all(Array.from({ length: INSTANCES }, (_, index) => converter(env, index).converterState(detail))));
     }
     return env.ASSETS.fetch(request);
   },

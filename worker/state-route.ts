@@ -10,9 +10,11 @@
 export const STATE_PATH = '/api/converter-state';
 
 /** One line per copy of the converter. */
-export type StateReader = () => Promise<string[]>;
+export type StateReader = (detail: boolean) => Promise<string[]>;
 
 const SHAPE = /^(asleep|unavailable|conversions=\d+ files=\d+ office_processes=\d+)$/;
+/** With ?detail: where the counted files are, as a count per system folder (never a file's name). */
+const DETAIL_SHAPE = /^(asleep|unavailable|before_first=(none|\d+) since_first=\d+ where=(\/[a-z/]*:\d+,?)*)$/;
 
 /** The reply to a request for STATE_PATH. Never throws. */
 export async function handleStateRequest(request: Request, read: StateReader): Promise<Response> {
@@ -21,7 +23,8 @@ export async function handleStateRequest(request: Request, read: StateReader): P
   let converters: string[];
   try {
     // Only the three counts can pass: whatever else a converter might say is not repeated.
-    converters = (await read()).map((line) => (SHAPE.test(line) ? line : 'unavailable'));
+    const detail = new URL(request.url).searchParams.has('detail');
+    converters = (await read(detail)).map((line) => ((detail ? DETAIL_SHAPE : SHAPE).test(line) ? line : 'unavailable'));
   } catch {
     converters = [];
   }
