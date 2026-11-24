@@ -43,16 +43,37 @@ SLOTS = threading.BoundedSemaphore(2)
 # For GET /state: every folder this account can write to, found by looking (not
 # assumed) when the server starts, and what was in them then, so that only what
 # has appeared since is counted.
+# Kinds of mount that are live views of the running system (its processes, their
+# open connections, devices), not places where a file can be kept.
+SYSTEM_VIEWS = {"proc", "sysfs", "cgroup", "cgroup2", "devpts", "securityfs", "debugfs", "tracefs", "pstore", "bpf"}
+
+
+def system_views() -> set:
+    """Where such views are mounted. A hosting platform may mount a second one anywhere (Cloudflare does)."""
+    found = {"/proc", "/sys"}
+    try:
+        with open("/proc/self/mounts", encoding="utf-8") as handle:
+            for line in handle:
+                parts = line.split()
+                if len(parts) >= 3 and parts[2] in SYSTEM_VIEWS:
+                    found.add(parts[1].replace("\\040", " "))
+    except OSError:
+        pass
+    return found
+
+
 def writable_roots() -> list:
+    views = system_views()
     roots = []
     for folder, folders, _files in os.walk("/"):
-        folders[:] = [name for name in folders if os.path.join(folder, name) not in ("/proc", "/sys")]
+        folders[:] = [name for name in folders if os.path.join(folder, name) not in views]
         if os.access(folder, os.W_OK):
             roots.append(folder)
             folders[:] = []  # everything beneath is walked by scratch_paths()
     return roots
 
 
+VIEWS = system_views()
 SCRATCH = writable_roots()
 ATTEMPTS = 0
 ATTEMPTS_LOCK = threading.Lock()
@@ -62,6 +83,7 @@ def scratch_paths() -> set:
     found = set()
     for root in SCRATCH:
         for folder, folders, files in os.walk(root):
+            folders[:] = [name for name in folders if os.path.join(folder, name) not in VIEWS]
             found.update(os.path.join(folder, name) for name in folders + files)
     return found
 
