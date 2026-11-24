@@ -88,10 +88,27 @@ def state() -> str:
     return f"conversions={ATTEMPTS} files={len(scratch_paths() - BASELINE)} office_processes={office}"
 
 
+# What had already appeared, since the server started, at the moment the first
+# conversion began (None until then): it tells files a conversion left behind
+# apart from files the hosting platform put there while starting the machine.
+BEFORE_FIRST = None
+
+
+def state_detail() -> str:
+    """Where the counted files are: a count per writable system folder. Still no names of files."""
+    new = scratch_paths() - BASELINE
+    where = ",".join(f"{root}:{sum(1 for path in new if path.startswith(root.rstrip('/') + '/'))}" for root in SCRATCH)
+    before = "none" if BEFORE_FIRST is None else len(BEFORE_FIRST)
+    lasting = len(new - (BEFORE_FIRST or set()))
+    return f"before_first={before} since_first={lasting} where={where}"
+
+
 def convert(docx: bytes) -> bytes:
     """Convert in a private temporary folder and delete it afterwards, always."""
-    global ATTEMPTS
+    global ATTEMPTS, BEFORE_FIRST
     with ATTEMPTS_LOCK:
+        if ATTEMPTS == 0:
+            BEFORE_FIRST = scratch_paths() - BASELINE
         ATTEMPTS += 1
     folder = tempfile.mkdtemp(prefix="c-")
     process = None
@@ -209,6 +226,8 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(200, b"ok", "text/plain; charset=utf-8")
         elif self.path == "/state":
             self.reply(200, state().encode(), "text/plain; charset=utf-8")
+        elif self.path == "/state-detail":
+            self.reply(200, state_detail().encode(), "text/plain; charset=utf-8")
         else:
             self.refuse(404, "Not found.")
 

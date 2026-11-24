@@ -114,6 +114,11 @@ describe('the converter keeps nothing and says nothing, as seen through the Work
     }
     // 3 good + 1 unconvertible + 4 at once reached a converter; the refusals before that never did.
     expect(conversions).toBe(8);
+    // The detailed form: nothing had appeared before the first conversion, nothing has since, and every folder reads 0.
+    const detail = ((await (await fetch(`${WORKER_URL}/api/converter-state?detail`)).json()) as { converters: string[] }).converters;
+    expect(detail).toHaveLength(1);
+    expect(detail[0]).toMatch(/^before_first=0 since_first=0 where=(\/[a-z/]+:0,?)+$/);
+    expect(detail[0]).toContain('/tmp:0');
     const reply = await fetch(`${WORKER_URL}/api/converter-state`);
     expect(reply.headers.get('Cache-Control')).toBe('no-store');
     expect((await fetch(`${WORKER_URL}/api/converter-state`, { method: 'POST' })).status).toBe(405);
