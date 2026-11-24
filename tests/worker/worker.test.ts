@@ -46,6 +46,9 @@ describe('the site, as Cloudflare serves it', () => {
     expect(page.headers.get('Referrer-Policy')).toBe('no-referrer');
     const html = await page.text();
     expect(html).toContain('Content-Security-Policy');
+    // The built page's policy allows this site only: the development server's live-reload allowance is gone.
+    expect(html).not.toContain('ws://');
+    expect(html).toContain("connect-src 'self';");
     const script = /src="(\/assets\/[^"]+\.js)"/.exec(html)![1]!;
     const asset = await fetch(WORKER_URL + script);
     expect(asset.status).toBe(200);

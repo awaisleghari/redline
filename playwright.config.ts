@@ -22,6 +22,8 @@ export default defineConfig({
   use: {
     baseURL: target ?? 'http://localhost:4173',
     trace: 'off',
+    // Where this machine reaches the internet through a proxy, the browser must be told (it does not read HTTPS_PROXY).
+    proxy: target && !/\/\/(localhost|127\.0\.0\.1)[:/]?/.test(target) && process.env.HTTPS_PROXY ? { server: process.env.HTTPS_PROXY } : undefined,
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: target

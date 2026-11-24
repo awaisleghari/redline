@@ -34,6 +34,17 @@ describe('converter state route', () => {
     expect(asked).toEqual([true, false]);
   });
 
+  it('cannot be used to carry data out: long numbers, long lines and long lists are not passed on', async () => {
+    const plain = await handleStateRequest(ask(), async () => ['conversions=1234567890 files=0 office_processes=0', `conversions=1 files=${'9'.repeat(40)} office_processes=0`]);
+    expect(await plain.json()).toEqual({ converters: ['unavailable', 'unavailable'] });
+    const detail = await handleStateRequest(new Request(`https://redline.example${STATE_PATH}?detail`), async () => [
+      `before_first=0 since_first=0 where=/${'a'.repeat(200)}:0`,
+      `before_first=0 since_first=0 where=${Array.from({ length: 30 }, (_, i) => `/tmp/x${i}:0`).join(',')}`,
+      'before_first=0 since_first=0 where=/tmp:12345678901',
+    ]);
+    expect(await detail.json()).toEqual({ converters: ['unavailable', 'unavailable', 'unavailable'] });
+  });
+
   it('never throws, and answers only GET', async () => {
     const failed = await handleStateRequest(ask(), async () => {
       throw new Error('converter /tmp/c-abc/in.docx failed');

@@ -31,8 +31,24 @@ function localPdfRoute(): Plugin {
   };
 }
 
+/**
+ * The page's content-security policy lets the development server's live-reload
+ * connection through (ws://localhost). The built site must not carry that.
+ */
+function productionPolicy(): Plugin {
+  return {
+    name: 'redline-production-policy',
+    apply: 'build',
+    transformIndexHtml(html) {
+      const built = html.replace(" ws://localhost:* ws://127.0.0.1:*", '');
+      if (built === html || built.includes('ws://')) throw new Error('index.html: the development-only part of the content-security policy was not found to remove');
+      return built;
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [localPdfRoute()],
+  plugins: [localPdfRoute(), productionPolicy()],
   server: { port: 5173, strictPort: true },
   preview: { port: 4173, strictPort: true },
   worker: { format: 'es' },

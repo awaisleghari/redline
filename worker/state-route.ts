@@ -12,13 +12,16 @@ export const STATE_PATH = '/api/converter-state';
 /** One line per copy of the converter. */
 export type StateReader = (detail: boolean) => Promise<string[]>;
 
-const SHAPE = /^(asleep|unavailable|conversions=\d+ files=\d+ office_processes=\d+)$/;
+// Numbers are kept short and lines bounded: this route is the only way anything from inside the converter
+// reaches the outside, so it must not be able to carry more than a few counts.
+const SHAPE = /^(asleep|unavailable|conversions=\d{1,9} files=\d{1,9} office_processes=\d{1,9})$/;
+const MAX_DETAIL_LENGTH = 600;
 /**
  * With ?detail: where the counted files are, as a count per system folder (never a file's name).
  * The folders are the ones the converter found writable when it started, before any document arrived,
  * so their names cannot come from a document.
  */
-const DETAIL_SHAPE = /^(asleep|unavailable|before_first=(none|\d+) since_first=\d+ where=(\/[A-Za-z0-9._\/-]*:\d+,?)*)$/;
+const DETAIL_SHAPE = /^(asleep|unavailable|before_first=(none|\d{1,9}) since_first=\d{1,9} where=(\/[A-Za-z0-9._\/-]{0,80}:\d{1,9},?){0,12})$/;
 
 /** The reply to a request for STATE_PATH. Never throws. */
 export async function handleStateRequest(request: Request, read: StateReader): Promise<Response> {
@@ -28,7 +31,7 @@ export async function handleStateRequest(request: Request, read: StateReader): P
   try {
     // Only the three counts can pass: whatever else a converter might say is not repeated.
     const detail = new URL(request.url).searchParams.has('detail');
-    converters = (await read(detail)).map((line) => ((detail ? DETAIL_SHAPE : SHAPE).test(line) ? line : 'unavailable'));
+    converters = (await read(detail)).map((line) => (line.length <= MAX_DETAIL_LENGTH && (detail ? DETAIL_SHAPE : SHAPE).test(line) ? line : 'unavailable'));
   } catch {
     converters = [];
   }

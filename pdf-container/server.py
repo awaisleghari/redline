@@ -43,59 +43,97 @@ SLOTS = threading.BoundedSemaphore(2)
 # For GET /state: every folder this account can write to, found by looking (not
 # assumed) when the server starts, and what was in them then, so that only what
 # has appeared since is counted.
-# Kinds of mount that are live views of the running system (its processes, their
-# open connections, devices), not places where a file can be kept.
-SYSTEM_VIEWS = {"proc", "sysfs", "cgroup", "cgroup2", "devpts", "securityfs", "debugfs", "tracefs", "pstore", "bpf"}
+# Kinds of mount that are live views of the running system (its processes and
+# their open connections, kernel settings, terminals) and cannot keep a file.
+# Deliberately short: anything else, whatever it is called, is searched.
+SYSTEM_VIEWS = {"proc", "sysfs", "devpts"}
 
 
-def system_views() -> set:
-    """Where such views are mounted. A hosting platform may mount a second one anywhere (Cloudflare does)."""
-    found = {"/proc", "/sys"}
+def mounts() -> list:
+    """(mount point, kind) for everything mounted. A hosting platform may mount a second process list anywhere (Cloudflare does)."""
+    found = []
     try:
         with open("/proc/self/mounts", encoding="utf-8") as handle:
             for line in handle:
                 parts = line.split()
-                if len(parts) >= 3 and parts[2] in SYSTEM_VIEWS:
-                    found.add(parts[1].replace("\\040", " "))
+                if len(parts) >= 3:
+                    found.append((parts[1].replace("\\040", " "), parts[2]))
     except OSError:
         pass
     return found
 
 
+MOUNTS = mounts()
+VIEWS = {"/proc", "/sys"} | {point for point, kind in MOUNTS if kind in SYSTEM_VIEWS}
+
+
 def writable_roots() -> list:
-    views = system_views()
     roots = []
-    for folder, folders, _files in os.walk("/"):
-        folders[:] = [name for name in folders if os.path.join(folder, name) not in views]
-        if os.access(folder, os.W_OK):
-            roots.append(folder)
-            folders[:] = []  # everything beneath is walked by scratch_paths()
+
+    def search(top: str) -> None:
+        for folder, folders, _files in os.walk(top):
+            folders[:] = [name for name in folders if os.path.join(folder, name) not in VIEWS]
+            if os.access(folder, os.W_OK):
+                if not any(folder == root or folder.startswith(root.rstrip("/") + "/") for root in roots):
+                    roots.append(folder)
+                folders[:] = []  # everything beneath is walked by scratch_paths()
+
+    search("/")
+    # A real file system mounted inside a system view (which the search above steps over) is searched too.
+    for point, kind in MOUNTS:
+        if kind not in SYSTEM_VIEWS and any(point.startswith(view.rstrip("/") + "/") for view in VIEWS):
+            search(point)
     return roots
 
 
-VIEWS = system_views()
 SCRATCH = writable_roots()
 ATTEMPTS = 0
 ATTEMPTS_LOCK = threading.Lock()
 
 
-def scratch_paths() -> set:
-    found = set()
+def scratch_paths() -> dict:
+    """Everything in the writable folders: each path, with a file's size and time of last change."""
+    found = {}
     for root in SCRATCH:
         for folder, folders, files in os.walk(root):
             folders[:] = [name for name in folders if os.path.join(folder, name) not in VIEWS]
-            found.update(os.path.join(folder, name) for name in folders + files)
+            for name in folders:
+                found[os.path.join(folder, name)] = None
+            for name in files:
+                path = os.path.join(folder, name)
+                try:
+                    info = os.lstat(path)
+                    found[path] = (info.st_size, info.st_mtime_ns)
+                except OSError:
+                    found[path] = None
     return found
 
 
+def shared_memory() -> int:
+    """Blocks of shared memory in existence: a place to keep data that is not a file."""
+    try:
+        with open("/proc/sysvipc/shm", encoding="utf-8") as handle:
+            return max(0, len(handle.readlines()) - 1)
+    except OSError:
+        return 0
+
+
 BASELINE = scratch_paths()
+BASELINE_MEMORY = shared_memory()
+
+
+def held(now: dict = None) -> set:
+    """Paths that have appeared, or files whose content has changed, since the server started."""
+    now = scratch_paths() if now is None else now
+    return {path for path, signature in now.items() if path not in BASELINE or BASELINE[path] != signature}
 
 
 def state() -> str:
     """
     Three numbers and nothing else: how many conversions this copy of the
     converter has attempted since it started, how many files or folders it is
-    holding that were not there when it started, and how many LibreOffice
+    holding that were not there when it started (or whose content has changed
+    since; shared memory counts too), and how many LibreOffice
     processes are running. Between conversions the last two must be 0. No name,
     size or content of anything is reported.
     """
@@ -107,7 +145,8 @@ def state() -> str:
                     office += b"soffice" in handle.read()
             except OSError:
                 pass
-    return f"conversions={ATTEMPTS} files={len(scratch_paths() - BASELINE)} office_processes={office}"
+    files = len(held()) + max(0, shared_memory() - BASELINE_MEMORY)
+    return f"conversions={ATTEMPTS} files={files} office_processes={office}"
 
 
 # What had already appeared, since the server started, at the moment the first
@@ -118,7 +157,7 @@ BEFORE_FIRST = None
 
 def state_detail() -> str:
     """Where the counted files are: a count per writable system folder. Still no names of files."""
-    new = scratch_paths() - BASELINE
+    new = held()
     where = ",".join(f"{root}:{sum(1 for path in new if path.startswith(root.rstrip('/') + '/'))}" for root in SCRATCH)
     before = "none" if BEFORE_FIRST is None else len(BEFORE_FIRST)
     lasting = len(new - (BEFORE_FIRST or set()))
@@ -130,7 +169,7 @@ def convert(docx: bytes) -> bytes:
     global ATTEMPTS, BEFORE_FIRST
     with ATTEMPTS_LOCK:
         if ATTEMPTS == 0:
-            BEFORE_FIRST = scratch_paths() - BASELINE
+            BEFORE_FIRST = held()
         ATTEMPTS += 1
     folder = tempfile.mkdtemp(prefix="c-")
     process = None

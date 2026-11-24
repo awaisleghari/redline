@@ -27,7 +27,9 @@ RUN apt-get update \
  && fc-cache -f
 
 # An unprivileged account: the converter never runs as root.
-RUN useradd --system --create-home --home-dir /home/converter --shell /usr/sbin/nologin converter
+# Its home folder starts empty (no start-up files copied in): nothing there for a document to alter.
+RUN useradd --system --no-create-home --home-dir /home/converter --shell /usr/sbin/nologin converter \
+ && mkdir /home/converter && chown converter:converter /home/converter
 COPY --chown=root:root server.py /opt/converter/server.py
 USER converter
 WORKDIR /home/converter

@@ -96,9 +96,9 @@ Worker that does the same job in production.
 ## How to deploy
 
 The site runs on Cloudflare. It needs the Workers Paid plan, because the PDF
-converter is a Cloudflare Container. `wrangler.jsonc` holds every deployment
-setting; no setting lives only in the Cloudflare dashboard, and the repository
-holds no password, token or key.
+converter is a Cloudflare Container. `wrangler.jsonc` holds the deployment
+settings, apart from the handful in the Cloudflare dashboard listed below, and
+the repository holds no password, token or key.
 
 What gets set up on Cloudflare:
 
@@ -127,8 +127,9 @@ them. To set that up once, in the Cloudflare dashboard: **Workers & Pages**,
 | Build command | `npm test && npm run build` (the unit and Checker tests must pass before anything is published) |
 | Deploy command | `npx wrangler deploy` |
 | Preview builds for other branches | off |
+| Protect with Cloudflare Access | off (the site is public; switching it on puts a login in front of the whole site) |
 
-Those five settings live in the Cloudflare dashboard, not in this repository.
+Those six settings live in the Cloudflare dashboard, not in this repository.
 Merging to `main` is what publishes, so `main` should only ever receive work
 whose full test suite (`npm run test:all`) has passed.
 
@@ -141,6 +142,12 @@ Things to know:
   Use **Retry build** in the dashboard.
 - **The first deployment needs a few minutes** after it finishes before the
   converter answers.
+- **What Cloudflare itself adds.** On a `workers.dev` address Cloudflare attaches
+  its own network-error reporting headers (`report-to`, `nel`) to every reply,
+  so a visitor's browser may tell Cloudflare when a request to the site fails
+  (the address, the time, the visitor's IP address; never a document). It also
+  serves its own `/robots.txt`, and keeps its own counts and timings of
+  requests. None of this can be switched off from this repository.
 - **Set a billing alert.** Cloudflare has no spending cap. In the dashboard:
   **Manage Account**, **Billing**, **Billable usage**, **Create budget alert**.
 
@@ -175,7 +182,8 @@ locally: a few tests make deliberately wrong PDFs to prove they are withheld).
 
 `/api/converter-state` is a public, read-only report on the converter: either
 `asleep` or three counts (conversions attempted since it
-started, files it holds that were not there when it started, LibreOffice
+started, files it holds that were not there when it started (a file changed
+since then, or a block of shared memory, counts too), LibreOffice
 processes running). Between conversions the last two must be 0. It never
 reports a name, a size or any content, and asking never starts the converter
 or keeps it awake. `/api/converter-state?detail` adds where any counted
