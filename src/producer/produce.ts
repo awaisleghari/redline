@@ -1,15 +1,18 @@
 /**
- * Producer: make the tracked-changes Word file. Runs the engine, then gives
+ * Producer: make the tracked-changes Word file. Prepares the uploads for the
+ * engine (explicit-spaces.ts), runs it, then gives
  * each kind of change its own author name (see label-authors.ts).
  */
 import { compareDocuments } from 'docxodus/core';
 import { unzip, zip } from '../common/zip';
+import { makeSpacesExplicit } from './explicit-spaces';
 import { labelAuthors } from './label-authors';
 import { REVISION_AUTHOR } from './protocol';
 
 /** The engine must already be initialised. */
 export async function produceTrackedChanges(original: Uint8Array, modified: Uint8Array): Promise<Uint8Array> {
-  const result = await compareDocuments(original, modified, { authorName: REVISION_AUTHOR });
+  // The engine loses a document-wide "keep white space" setting; write it onto each piece of text first (explicit-spaces.ts).
+  const result = await compareDocuments(await makeSpacesExplicit(original), await makeSpacesExplicit(modified), { authorName: REVISION_AUTHOR });
   const files = await unzip(result);
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();

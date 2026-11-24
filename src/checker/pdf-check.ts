@@ -403,7 +403,10 @@ const CHANGE_COLOURS = new Set(Object.values(COLOUR));
  * Compare a PDF with the static redline it was made from. `printed` is the
  * static redline read with `readStories(pkg, 'all', 'static')`.
  */
-export function comparePdf(printed: StoryReading, pdf: PdfReading): PdfCheckResult {
+export function comparePdf(reading: StoryReading, pdf: PdfReading): PdfCheckResult {
+  // Which header and footer each page prints is worked out below from the sections themselves, so the
+  // readings of a header or footer carried over into a later section are left out here.
+  const printed: StoryReading = { ...reading, stories: reading.stories.filter((story) => !story.carriedOver) };
   const chars = pdf.chars.map((x) => ({ ...x, c: canon(x.c) }));
   const source: Source = { chars, owner: new Array<Owner>(chars.length).fill(undefined) };
   const { owner } = source;

@@ -125,6 +125,18 @@ function markupProblems(pkg: DocxPackage, partName: string, root: XmlElement, co
   };
   misplaced(root, false);
 
+  // Whether spaces are kept must be stated on each piece of text itself. An output that left it to a
+  // setting on some outer element would read differently to any program that does not apply such a
+  // setting to everything inside, so it is refused. (Uploads may be written that way; outputs may not.)
+  const MATH = 'http://schemas.openxmlformats.org/officeDocument/2006/math';
+  const carriesText = (e: XmlElement): boolean => (e.ns === W && ['t', 'delText', 'instrText', 'delInstrText'].includes(e.name)) || (e.ns === MATH && e.name === 't');
+  for (const node of [root, ...descendants(root)]) {
+    if (node.attributes.has('http://www.w3.org/XML/1998/namespace|space') && !carriesText(node)) {
+      problems.push(`"${partName}" sets how white space is treated on something other than a piece of text.`);
+      break;
+    }
+  }
+
   for (const node of descendants(root)) {
     // Every relationship id used in the markup must exist.
     for (const [key, value] of node.attributes) {

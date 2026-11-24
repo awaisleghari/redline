@@ -15,6 +15,12 @@ export interface XmlElement {
   children: XmlElement[];
   /** Text directly inside this element (all text nodes joined). */
   text: string;
+  /**
+   * Whether white space here is to be kept: the nearest xml:space setting on this element or on any
+   * element around it, as the XML standard defines it. Some programs set it once, on the document's
+   * outermost element, instead of on every piece of text.
+   */
+  preserveSpace: boolean;
 }
 
 export class XmlError extends Error {}
@@ -43,10 +49,11 @@ export function parseXml(source: string | Uint8Array): XmlElement {
     failure ??= error;
   });
   parser.on('opentag', (tag) => {
-    const element: XmlElement = { ns: tag.uri, name: tag.local, attributes: new Map(), children: [], text: '' };
+    const element: XmlElement = { ns: tag.uri, name: tag.local, attributes: new Map(), children: [], text: '', preserveSpace: stack[stack.length - 1]?.preserveSpace ?? false };
     for (const attribute of Object.values(tag.attributes)) {
       if (attribute.prefix === 'xmlns' || (attribute.prefix === '' && attribute.local === 'xmlns')) continue;
       element.attributes.set(`${attribute.uri}|${attribute.local}`, attribute.value);
+      if (attribute.uri === 'http://www.w3.org/XML/1998/namespace' && attribute.local === 'space') element.preserveSpace = attribute.value === 'preserve';
     }
     const parent = stack[stack.length - 1];
     if (parent) parent.children.push(element);

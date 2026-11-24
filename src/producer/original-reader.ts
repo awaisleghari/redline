@@ -116,7 +116,19 @@ export class StyleSheet {
 /** A text element's characters as Word shows them (outer whitespace dropped unless preserved). */
 export function shownText(element: El): string {
   const raw = element.textContent ?? '';
-  return element.getAttributeNS(XML_NS, 'space') === 'preserve' ? raw : raw.replace(/^[ \t\r\n]+|[ \t\r\n]+$/g, '');
+  return keepsSpace(element) ? raw : raw.replace(/^[ \t\r\n]+|[ \t\r\n]+$/g, '');
+}
+
+/**
+ * Whether white space in an element is kept: xml:space on the element itself or, failing that, on the
+ * nearest element around it that sets it (some programs set it once for the whole document).
+ */
+export function keepsSpace(element: El): boolean {
+  for (let node: El | null = element; node && node.nodeType === 1; node = node.parentNode as El | null) {
+    const setting = node.getAttributeNS(XML_NS, 'space');
+    if (setting) return setting === 'preserve';
+  }
+  return false;
 }
 
 function nearestParagraph(node: El): El | undefined {
