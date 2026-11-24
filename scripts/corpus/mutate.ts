@@ -235,11 +235,21 @@ export async function mutate(original: Uint8Array, seed: number, wanted = 160): 
     return n as El | null;
   };
 
+  /** A table row it is safe to remove or copy: plain paragraphs only (no note marks, bookmarks, pictures, fields, nested or merged cells). */
+  const plainRow = (row: El): boolean => {
+    if (row.getElementsByTagNameNS(W, 'tbl').length > 0 || row.getElementsByTagNameNS(W, 'vMerge').length > 0) return false;
+    for (const tag of ['footnoteReference', 'endnoteReference', 'bookmarkStart', 'commentRangeStart', 'drawing', 'pict', 'fldChar', 'fldSimple', 'sdt', 'hyperlink']) if (row.getElementsByTagNameNS(W, tag).length > 0) return false;
+    const inside = row.getElementsByTagNameNS(W, 'p');
+    for (let i = 0; i < inside.length; i++) if (!simple(inside.item(i) as El) || used.has(inside.item(i) as El)) return false;
+    return true;
+  };
+
   const structural: Record<string, () => boolean> = {
     'clause added': () => {
       const after = pick(free(40));
       if (!after) return false;
       const fresh = after.cloneNode(true) as El;
+      for (const k of kids(fresh)) if (isW(k, 'bookmarkStart') || isW(k, 'bookmarkEnd') || isW(k, 'proofErr')) fresh.removeChild(k); // a bookmark must not exist twice
       const runs = kids(fresh, 'r');
       runs.slice(1).forEach((r) => fresh.removeChild(r));
       const words = textOfParagraph(after).split(' ').filter((w) => /^[A-Za-z]{4,}$/.test(w));
@@ -314,9 +324,7 @@ export async function mutate(original: Uint8Array, seed: number, wanted = 160): 
       if (!table) return false;
       const rows = kids(table, 'tr');
       const row = rows[1 + Math.floor(random() * (rows.length - 2))]!;
-      if (row.getElementsByTagNameNS(W, 'tbl').length > 0 || row.getElementsByTagNameNS(W, 'vMerge').length > 0) return false;
-      const inside = row.getElementsByTagNameNS(W, 'p');
-      for (let i = 0; i < inside.length; i++) if (used.has(inside.item(i) as El)) return false;
+      if (!plainRow(row)) return false;
       note('table row deleted', mainName, row.textContent ?? '');
       table.removeChild(row);
       return true;
@@ -326,7 +334,7 @@ export async function mutate(original: Uint8Array, seed: number, wanted = 160): 
       if (!table) return false;
       const rows = kids(table, 'tr');
       const row = rows[Math.floor(random() * rows.length)]!;
-      if (row.getElementsByTagNameNS(W, 'tbl').length > 0 || row.getElementsByTagNameNS(W, 'vMerge').length > 0) return false;
+      if (!plainRow(row)) return false;
       const fresh = row.cloneNode(true) as El;
       const texts = fresh.getElementsByTagNameNS(W, 't');
       if (texts.length === 0) return false;
