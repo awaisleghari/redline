@@ -98,8 +98,8 @@ function removeRunProperty(rPr: Element, name: string): void {
 }
 
 /** Apply a change's formatting to a set of run properties (of a run, or of a paragraph mark). */
-function applyChangeStyle(rPr: Element, kind: ChangeKind): void {
-  const style = CHANGE_STYLE[kind];
+function applyChangeStyle(rPr: Element, kind: ChangeKind, insertedColor: string): void {
+  const style = kind === 'inserted' ? { ...CHANGE_STYLE.inserted, color: insertedColor } : CHANGE_STYLE[kind];
   setRunProperty(rPr, 'color', { val: style.color });
   if (style.underline) setRunProperty(rPr, 'u', { val: style.underline });
   if (style.strike) {
@@ -164,9 +164,35 @@ export interface StaticRedlineStyleOptions {
   showOldNumbers: boolean;
   /** Shade unchanged text whose bold, italic, underline, capitals or hidden-text setting changed. */
   markFormattingChanges: boolean;
+  /** The colour of inserted text: the standard blue, or the alternative where a document itself uses blue double underline. */
+  insertedColor: string;
 }
 
-export const DEFAULT_STYLE_OPTIONS: StaticRedlineStyleOptions = { deletionBeforeInsertion: true, unnumberRemovedParagraphs: true, showOldNumbers: true, markFormattingChanges: true };
+/**
+ * Inserted text is blue unless one of the two documents itself contains text (or a paragraph mark) formatted
+ * blue with a double underline, which a reader could not tell from an insertion. Then insertions are shown in
+ * a dark magenta, and the legend says so (owner's decision, 2026-11-24).
+ */
+export const INSERTED_COLOR = { standard: '0000FF', alternative: 'AA00AA' } as const;
+
+/** Whether a part's own runs or paragraph marks are formatted blue with a double underline (stated on the run or mark itself). */
+export function usesInsertionLook(xml: string): boolean {
+  if (!/w:val="0000FF"/i.test(xml) || !/<w:u\b[^>]*w:val="double"/.test(xml)) return false;
+  const root = new DOMParser().parseFromString(xml, 'application/xml').documentElement as unknown as Element;
+  for (const name of ['r', 'pPr']) {
+    const owners = root.getElementsByTagNameNS(W, name);
+    for (let i = 0; i < owners.length; i++) {
+      const rPr = elementChildren(owners.item(i) as unknown as Element).find((c) => isW(c, 'rPr'));
+      if (!rPr) continue;
+      const color = elementChildren(rPr).find((c) => isW(c, 'color'));
+      const underline = elementChildren(rPr).find((c) => isW(c, 'u'));
+      if (color && !color.getAttributeNS(W, 'themeColor') && color.getAttributeNS(W, 'val')?.toUpperCase() === INSERTED_COLOR.standard && underline?.getAttributeNS(W, 'val') === 'double') return true;
+    }
+  }
+  return false;
+}
+
+export const DEFAULT_STYLE_OPTIONS: StaticRedlineStyleOptions = { deletionBeforeInsertion: true, unnumberRemovedParagraphs: true, showOldNumbers: true, markFormattingChanges: true, insertedColor: INSERTED_COLOR.standard };
 
 const hasFlag = (properties: Element | undefined, names: string[]): boolean => !!properties && kids(properties).some((c) => isWord(c) && names.includes(c.localName!));
 
@@ -357,7 +383,7 @@ class PartConverter {
     style.setAttributeNS(W, `${prefix}:val`, OLD_NUMBER_STYLE);
     rPr.appendChild(style);
     run.appendChild(rPr);
-    applyChangeStyle(rPr, kind);
+    applyChangeStyle(rPr, kind, this.options.insertedColor);
     const text = make('t');
     text.setAttribute('xml:space', 'preserve');
     text.appendChild(doc.createTextNode(label));
@@ -476,7 +502,7 @@ class PartConverter {
       if (child.localName === 'delText') rename(child, 't');
       else if (child.localName === 'delInstrText') rename(child, 'instrText');
     }
-    if (kind) applyChangeStyle(runProperties(run), kind);
+    if (kind) applyChangeStyle(runProperties(run), kind, this.options.insertedColor);
     if (hasContent) this.tokens.push(kind ?? 'unchanged');
     // Text boxes and other nested content inside the run.
     for (const child of elementChildren(run)) if (!isW(child, 'rPr')) this.convert(child, kind);
@@ -515,7 +541,7 @@ class PartConverter {
         const previous = before[before.length - 2];
         const index = previous && isWord(previous, 'p') ? this.markToken.get(previous) : undefined;
         if (previous && index !== undefined && this.tokens[index] === 'unchanged') {
-          applyChangeStyle(markProperties(previous), markKind);
+          applyChangeStyle(markProperties(previous), markKind, this.options.insertedColor);
           this.tokens[index] = markKind;
         }
         markKind = undefined;
@@ -527,7 +553,7 @@ class PartConverter {
     if (this.options.deletionBeforeInsertion) this.putDeletionsFirst(paragraph);
     for (const child of elementChildren(paragraph)) if (!isW(child, 'pPr')) this.visit(child, kind);
 
-    if (markKind) applyChangeStyle(markProperties(paragraph), markKind);
+    if (markKind) applyChangeStyle(markProperties(paragraph), markKind, this.options.insertedColor);
     if (markKind === 'deleted' || markKind === 'movedFrom') {
       const label = this.oldNumberOf.get(paragraph);
       if (this.options.showOldNumbers && label) this.addOldNumber(paragraph, label, markKind);

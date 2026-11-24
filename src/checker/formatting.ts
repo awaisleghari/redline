@@ -163,10 +163,33 @@ export class Styles {
 export type StaticKind = 'inserted' | 'deleted' | 'movedFrom' | 'movedTo';
 
 /**
+ * The colour of inserted text. Blue, unless one of the two documents itself contains text formatted
+ * blue with a double underline: a reader could not then tell the document's own text from an insertion,
+ * so the redline must use the alternative (a dark magenta) and say so in its legend (owner's decision,
+ * 2026-11-24).
+ */
+export const INSERTED_COLOUR = { standard: '0000FF', alternative: 'AA00AA' } as const;
+
+/** Whether a document's own text or paragraph marks carry the standard look of an insertion. */
+export function usesInsertionLook(root: XmlElement): boolean {
+  for (const node of [root, ...descendantsOf(root)]) {
+    if (node.ns !== W || (node.name !== 'r' && node.name !== 'pPr')) continue;
+    if (staticKindOf(child(node, W, 'rPr'), INSERTED_COLOUR.standard) === 'inserted') return true;
+  }
+  return false;
+}
+function* descendantsOf(element: XmlElement): Generator<XmlElement> {
+  for (const c of element.children) {
+    yield c;
+    yield* descendantsOf(c);
+  }
+}
+
+/**
  * Which change, if any, a set of run properties marks in a static redline,
  * per the style spec in PLAN.md. Read from the formatting alone.
  */
-export function staticKindOf(rPr: XmlElement | undefined): StaticKind | undefined {
+export function staticKindOf(rPr: XmlElement | undefined, insertedColour: string = INSERTED_COLOUR.standard): StaticKind | undefined {
   if (!rPr) return undefined;
   const colorElement = child(rPr, W, 'color');
   // A theme colour takes precedence over the stated one in Word, so the text would not show in the change colour.
@@ -180,7 +203,7 @@ export function staticKindOf(rPr: XmlElement | undefined): StaticKind | undefine
   const doubleUnderline = !!underline && attribute(underline, W, 'val') === 'double';
   if (color === 'FF0000' && on('strike')) return 'deleted';
   if (color === '008000' && on('dstrike')) return 'movedFrom';
-  if (color === '0000FF' && doubleUnderline) return 'inserted';
+  if (color === insertedColour && doubleUnderline) return 'inserted';
   if (color === '008000' && doubleUnderline) return 'movedTo';
   return undefined;
 }

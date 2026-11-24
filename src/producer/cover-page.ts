@@ -6,7 +6,7 @@
  * The cover page sits in a section of its own, before the document, so the
  * document's headers, footers and page numbering are untouched by it.
  */
-import { CHANGE_STYLE, FORMAT_CHANGE_FILL, OLD_NUMBER_STYLE, type ChangeKind } from './static-redline';
+import { CHANGE_STYLE, FORMAT_CHANGE_FILL, INSERTED_COLOR, OLD_NUMBER_STYLE, type ChangeKind } from './static-redline';
 
 
 export interface CoverPageContent {
@@ -20,7 +20,12 @@ export interface CoverPageContent {
   formattingChanges: number;
   /** Which uploads contained tracked changes of their own (compared as if accepted); undefined when neither did. */
   trackedChangesIn?: 'original' | 'modified' | 'both';
+  /** Set when insertions are shown in the alternative colour, because a document itself uses blue double underline. */
+  alternativeInsertionColor?: boolean;
 }
+
+/** The legend's line for inserted text when insertions are not in the usual blue. */
+export const INSERTED_LEGEND_ALTERNATIVE = 'Inserted text (shown in magenta, because this document itself contains blue double-underlined text)';
 
 /** Style ids of the cover page. The Checker recognises the cover page by these. */
 export const COVER_STYLE = { title: 'RedlineCoverTitle', heading: 'RedlineCoverHeading', text: 'RedlineCoverText' } as const;
@@ -38,8 +43,8 @@ function paragraph(style: string, text: string, runProperties = ''): string {
   return `<w:p><w:pPr><w:pStyle w:val="${style}"/></w:pPr><w:r>${runProperties}<w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`;
 }
 
-function changeRunProperties(kind: ChangeKind): string {
-  const style = CHANGE_STYLE[kind];
+function changeRunProperties(kind: ChangeKind, alternativeInsertion: boolean): string {
+  const style = kind === 'inserted' && alternativeInsertion ? { ...CHANGE_STYLE.inserted, color: INSERTED_COLOR.alternative } : CHANGE_STYLE[kind];
   const strike = style.strike === 'single' ? '<w:strike/>' : style.strike === 'double' ? '<w:dstrike/>' : '';
   const underline = style.underline ? `<w:u w:val="${style.underline}"/>` : '';
   return `<w:rPr>${strike}<w:color w:val="${style.color}"/>${underline}</w:rPr>`;
@@ -61,7 +66,7 @@ export function coverLines(content: CoverPageContent): { style: string; text: st
     { style: COVER_STYLE.text, text: `Compared: ${content.comparedAt}` },
     ...(content.trackedChangesIn ? [{ style: COVER_STYLE.text, text: ACCEPTED_NOTE[content.trackedChangesIn] }] : []),
     { style: COVER_STYLE.heading, text: 'Legend' },
-    ...(Object.keys(LEGEND) as ChangeKind[]).map((kind) => ({ style: COVER_STYLE.text, text: LEGEND[kind], kind })),
+    ...(Object.keys(LEGEND) as ChangeKind[]).map((kind) => ({ style: COVER_STYLE.text, text: kind === 'inserted' && content.alternativeInsertionColor ? INSERTED_LEGEND_ALTERNATIVE : LEGEND[kind], kind })),
     { style: COVER_STYLE.text, text: 'Text whose formatting changed', shaded: true },
     { style: COVER_STYLE.heading, text: 'Changes' },
     { style: COVER_STYLE.text, text: `Insertions: ${content.insertions}` },
@@ -78,7 +83,7 @@ export function coverLines(content: CoverPageContent): { style: string; text: st
  */
 export function coverPageXml(content: CoverPageContent, pageSetup: string): string {
   const body = coverLines(content)
-    .map((line) => paragraph(line.style, line.text, line.kind ? changeRunProperties(line.kind) : line.shaded ? `<w:rPr><w:shd w:val="clear" w:color="auto" w:fill="${FORMAT_CHANGE_FILL}"/></w:rPr>` : ''))
+    .map((line) => paragraph(line.style, line.text, line.kind ? changeRunProperties(line.kind, !!content.alternativeInsertionColor) : line.shaded ? `<w:rPr><w:shd w:val="clear" w:color="auto" w:fill="${FORMAT_CHANGE_FILL}"/></w:rPr>` : ''))
     .join('');
   const sectionEnd = `<w:p><w:pPr><w:pStyle w:val="${COVER_STYLE.text}"/><w:sectPr>${pageSetup}</w:sectPr></w:pPr></w:p>`;
   return body + sectionEnd;

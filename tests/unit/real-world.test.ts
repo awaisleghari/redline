@@ -14,7 +14,7 @@ import { produceTrackedChanges } from '../../src/producer/produce';
 import { buildPair, pairById } from '../fixtures/pairs';
 import { compareDocuments } from 'docxodus/core';
 import { repairNotes } from '../../src/producer/repair-notes';
-import { withClauseStyle, withDocumentWideSpaces, withNoteInTable, withSections } from '../fixtures/real-world';
+import { withBlueDoubleUnderline, withClauseStyle, withDocumentWideSpaces, withNoteInTable, withSections } from '../fixtures/real-world';
 
 const COVER = { originalName: 'original.docx', modifiedName: 'modified.docx', comparedAt: '24 November 2026 at 10:00 (UTC+00:00)' };
 const decoder = new TextDecoder();
@@ -278,5 +278,61 @@ describe('a footnote hanging off a table in which something else changes', () =>
     const parts = new Map<string, string>();
     for (const [name, bytes] of await unzip(clean)) if (/^word\/[^/]+\.xml$/.test(name)) parts.set(name, decoder.decode(bytes));
     expect(repairNotes(parts).size).toBe(0);
+  });
+});
+
+/**
+ * Found on real contracts (Stage 7: 19 model leases): a document whose own text, or just a paragraph mark,
+ * is formatted blue with a double underline, which is how the redline shows insertions. Owner's decision:
+ * such a redline shows its insertions in magenta and says so in the legend; any other redline stays blue.
+ */
+describe('a document that itself uses blue double underline', () => {
+  const ALT_LEGEND = 'Inserted text (shown in magenta, because this document itself contains blue double-underlined text)';
+  const bodyOf = async (docx: Uint8Array): Promise<string> => decoder.decode((await unzip(docx)).get('word/document.xml')!);
+  const insertedIn = (xml: string, colour: string): number => (xml.match(new RegExp(`<w:color w:val="${colour}"/><w:u w:val="double"/>`, 'g')) ?? []).length;
+
+  for (const [which, shape] of [
+    ['a stretch of text in the modified document', { original: undefined, modified: 'text' }],
+    ['a stretch of text in the original only', { original: 'text', modified: undefined }],
+    ['only a paragraph mark, in both documents (as in the leases)', { original: 'paragraph mark', modified: 'paragraph mark' }],
+  ] as const) {
+    it(`${which}: insertions are magenta, the legend says why, and both Word files pass`, async () => {
+      const pair = await buildPair(pairById('several-changes'));
+      const original = shape.original ? await withBlueDoubleUnderline(pair.original, shape.original) : pair.original;
+      const modified = shape.modified ? await withBlueDoubleUnderline(pair.modified, shape.modified) : pair.modified;
+      const { staticRedline, counts } = await bothPass(original, modified);
+      const xml = await bodyOf(staticRedline);
+      expect(xml).toContain(ALT_LEGEND);
+      expect(insertedIn(xml, 'AA00AA')).toBeGreaterThan(1); // the legend sample and the insertions
+      expect(counts.insertions).toBeGreaterThan(0);
+      // The document's own blue text is still there, untouched, where the modified document has it.
+      if (shape.modified) expect(insertedIn(xml, '0000FF')).toBeGreaterThan(0);
+    });
+  }
+
+  it('an ordinary pair stays blue, with the ordinary legend', async () => {
+    const pair = await buildPair(pairById('several-changes'));
+    const { staticRedline } = await bothPass(pair.original, pair.modified);
+    const xml = await bodyOf(staticRedline);
+    expect(xml).not.toContain('magenta');
+    expect(insertedIn(xml, 'AA00AA')).toBe(0);
+    expect(insertedIn(xml, '0000FF')).toBeGreaterThan(1);
+  });
+
+  it('the wrong colour either way, or a legend that does not match, is caught', async () => {
+    const pair = await buildPair(pairById('several-changes'));
+    const blueModified = await withBlueDoubleUnderline(pair.modified);
+    // A redline that should be magenta, made as if nothing were unusual (blue): the document's own blue text reads as an insertion.
+    const tracked = await produceTrackedChanges(pair.original, blueModified);
+    const madeBlue = await makeStaticRedline(tracked, pair.original, { ...COVER, style: { insertedColor: '0000FF' } });
+    expect(await failed(checkStaticRedline({ original: pair.original, modified: blueModified, output: madeBlue.docx, ...COVER }))).not.toEqual([]);
+    // A redline in magenta where nothing calls for it.
+    const plainTracked = await produceTrackedChanges(pair.original, pair.modified);
+    const madeMagenta = await makeStaticRedline(plainTracked, pair.original, { ...COVER, style: { insertedColor: 'AA00AA' } });
+    expect(await failed(checkStaticRedline({ original: pair.original, modified: pair.modified, output: madeMagenta.docx, ...COVER }))).not.toEqual([]);
+    // The right colour but the ordinary legend text.
+    const { staticRedline } = await bothPass(pair.original, blueModified);
+    const wrongLegend = await editPart(staticRedline, /^word\/document\.xml$/, (xml) => xml.replace(ALT_LEGEND, 'Inserted text'));
+    expect(await failed(checkStaticRedline({ original: pair.original, modified: blueModified, output: wrongLegend, ...COVER }))).toContain('cover-page');
   });
 });

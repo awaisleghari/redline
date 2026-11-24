@@ -15,7 +15,7 @@
  * (spaces, punctuation, digits, tabs, line breaks) is kept.
  */
 import { NS } from '../common/namespaces';
-import { FORMAT, staticKindOf, Styles, type StaticKind } from './formatting';
+import { FORMAT, INSERTED_COLOUR, staticKindOf, Styles, type StaticKind } from './formatting';
 import { Numbering } from './numbering';
 import { DocxPackage } from './package';
 import { attribute, child, is, type XmlElement } from './xml';
@@ -97,6 +97,8 @@ export interface Story {
 
 export interface StoryReading {
   stories: Story[];
+  /** The colour in which a static redline shows insertions (only meaningful for a static redline's reading). */
+  insertedColour: string;
   /** Every part of the package this reading took text from. */
   partsRead: Set<string>;
   /** Footnote / endnote ids that were reached through a reference, per notes part. */
@@ -293,6 +295,8 @@ interface Source {
   styles: Styles;
   numbering: Numbering;
   repeatRows: string[];
+  /** The colour in which a static redline shows insertions. */
+  insertedColour: string;
 }
 
 function newContext(view: View, problems: string[], source: Source): Context {
@@ -317,7 +321,7 @@ function readRun(run: XmlElement, context: Context): string {
   const { markup, styles } = context.source;
   let code = styles.formatOf(rPr, context.paragraphStyle) | (context.code & CHAR.changed);
   if (markup === 'static') {
-    const kind = staticKindOf(rPr);
+    const kind = staticKindOf(rPr, context.source.insertedColour);
     const styleElement = rPr && child(rPr, W, 'rStyle');
     if (styleElement && attribute(styleElement, W, 'val') === STATIC_STYLE.oldNumber && context.view !== 'all') {
       // The old number of a removed clause: shown struck through, and not part of either document's text.
@@ -333,7 +337,7 @@ function readRun(run: XmlElement, context: Context): string {
       // Everything inside a dropped run (a text box, say) must be marked the same way, or a reader would see it as ordinary text.
       const inner = (element: XmlElement): void => {
         for (const c of element.children) {
-          if (w(c, 'r') && c.children.some((x) => !w(x, 'rPr')) && staticKindOf(child(c, W, 'rPr')) !== kind) {
+          if (w(c, 'r') && c.children.some((x) => !w(x, 'rPr')) && staticKindOf(child(c, W, 'rPr'), context.source.insertedColour) !== kind) {
             context.problems.push('Text inside a deleted or inserted object is not itself marked as deleted or inserted.');
           }
           inner(c);
@@ -587,7 +591,7 @@ function readParagraph(paragraph: XmlElement, context: Context): void {
   context.paragraphStyle = undefined;
 
   const markProperties = properties && child(properties, W, 'rPr');
-  const markKind = markup === 'static' ? staticKindOf(markProperties) : undefined;
+  const markKind = markup === 'static' ? staticKindOf(markProperties, context.source.insertedColour) : undefined;
   const markRemoved =
     markup === 'static' ? staticDropped(markKind, context.view) : removedIn(markProperties, context.view, ['ins', 'moveTo'], ['del', 'moveFrom']);
   // Is the paragraph itself removed by the changes (whatever this view shows)?
@@ -749,7 +753,7 @@ const storyOf = (key: string, kind: StoryKind, label: string, details: Para[]): 
  * Stories with no text at all are left out, so "a header that exists but is
  * empty" and "no header" compare as equal.
  */
-export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'tracked'): StoryReading {
+export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'tracked', insertedColour: string = INSERTED_COLOUR.standard): StoryReading {
   const stories: Story[] = [];
   const partsRead = new Set<string>();
   const noteIdsRead = new Map<string, Set<string>>();
@@ -767,10 +771,10 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
   let body = child(pkg.xml(main), W, 'body');
   if (!body) {
     problems.push('The main document has no body.');
-    return { stories, partsRead, noteIdsRead, problems, links, cover, coverLooks, repeatRows, layout };
+    return { stories, partsRead, noteIdsRead, problems, links, cover, coverLooks, repeatRows, layout, insertedColour };
   }
   partsRead.add(main);
-  const shared = { pkg, partsRead, links, markup, styles: new Styles(pkg, main), numbering: new Numbering(pkg, main), repeatRows };
+  const shared = { pkg, partsRead, links, markup, styles: new Styles(pkg, main), numbering: new Numbering(pkg, main), repeatRows, insertedColour };
 
   if (markup === 'static' && view !== 'all') {
     // The cover page: the leading paragraphs in the cover styles. It is the
@@ -796,7 +800,7 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
             const shading = rPr && child(rPr, W, 'shd');
             const shaded = !!shading && attribute(shading, W, 'fill')?.toUpperCase() === STATIC_STYLE.shadeFill;
             const hidden = (shared.styles.formatOf(rPr, styleElement && attribute(styleElement, W, 'val')) & FORMAT.hidden) !== 0;
-            looks.add(`${staticKindOf(rPr) ?? (shaded ? 'shaded' : 'plain')}${hidden ? ':hidden' : ''}`);
+            looks.add(`${staticKindOf(rPr, insertedColour) ?? (shaded ? 'shaded' : 'plain')}${hidden ? ':hidden' : ''}`);
           } else look(c);
         }
       };
@@ -942,5 +946,5 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
     if (stated.size > 1 || restarts) layout.noteFormat[kind] = 'mixed';
   }
 
-  return { stories, partsRead, noteIdsRead, problems, links, cover, coverLooks, repeatRows, layout };
+  return { stories, partsRead, noteIdsRead, problems, links, cover, coverLooks, repeatRows, layout, insertedColour };
 }
