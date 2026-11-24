@@ -15,7 +15,7 @@ import { buildPair, pairById } from '../fixtures/pairs';
 import { compareDocuments } from 'docxodus/core';
 import { repairNotes } from '../../src/producer/repair-notes';
 import { repairParagraphProperties } from '../../src/producer/repair-paragraphs';
-import { withBlueDoubleUnderline, withClauseStyle, withNumberedClausesInCell, withDocumentWideSpaces, withNoteInTable, withSections } from '../fixtures/real-world';
+import { withBlueDoubleUnderline, withCellsInContentControls, withClauseStyle, withNumberedClausesInCell, withDocumentWideSpaces, withNoteInTable, withSections } from '../fixtures/real-world';
 
 const COVER = { originalName: 'original.docx', modifiedName: 'modified.docx', comparedAt: '24 November 2026 at 10:00 (UTC+00:00)' };
 const decoder = new TextDecoder();
@@ -440,5 +440,18 @@ describe('files as other programs write them', () => {
     };
     expect(await failed(checkTrackedChanges({ original: pair.original, modified: pair.modified, output: await withExtra('[trash]/0000.dat') }))).toEqual([]);
     expect(await failed(checkTrackedChanges({ original: pair.original, modified: pair.modified, output: await withExtra('word/0000.dat') }))).toContain('structure');
+  });
+});
+
+/**
+ * Found on real contracts (Stage 7): a table whose cells sit in content controls (tick-box cells in forms and
+ * schedules). When such a row was deleted or added, the static redline left that cell's own mark unmarked,
+ * so the row did not read as removed.
+ */
+describe('table rows whose cells sit in content controls', () => {
+  it.each(['table-row-deleted', 'table-row-added', 'table-cell-change'])('%s: both Word files pass', async (id) => {
+    const pair = await buildPair(pairById(id));
+    const { counts } = await bothPass(await withCellsInContentControls(pair.original), await withCellsInContentControls(pair.modified));
+    expect(counts.insertions + counts.deletions).toBeGreaterThan(0);
   });
 });
