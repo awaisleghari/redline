@@ -29,11 +29,25 @@ const FLAG_PARENTS = new Set(['rPr', 'trPr', 'tcPr', 'numPr', 'tblPrEx']);
 const BETWEEN_PARAGRAPHS = /^(bookmarkStart|bookmarkEnd|proofErr|permStart|permEnd|commentRangeStart|commentRangeEnd|(moveFrom|moveTo)Range(Start|End)|customXml(Ins|Del|MoveFrom|MoveTo)Range(Start|End))$/;
 
 /** Any tracked-change markup, whatever the namespace prefix. */
-const TRACKED = /<(?:[A-Za-z_][\w.-]*:)?(?:ins|del|moveFrom|moveTo|delText|delInstrText|cellIns|cellDel|cellMerge|numberingChange|(?:rPr|pPr|sectPr|tblPr|tblPrEx|tcPr|trPr|tblGrid)Change|customXml(?:Ins|Del|MoveFrom|MoveTo)Range(?:Start|End)|move(?:From|To)Range(?:Start|End))[\s/>]/;
+const TRACKED_NAMES = '(?:ins|del|moveFrom|moveTo|delText|delInstrText|cellIns|cellDel|cellMerge|numberingChange|(?:rPr|pPr|sectPr|tblPr|tblPrEx|tcPr|trPr|tblGrid)Change|customXml(?:Ins|Del|MoveFrom|MoveTo)Range(?:Start|End)|move(?:From|To)Range(?:Start|End))';
+/** Word's own markup namespace, in its usual and its "strict" form. */
+const WORD_NAMESPACE = /xmlns(?::([A-Za-z_][\w.-]*))?\s*=\s*["'](?:http:\/\/schemas\.openxmlformats\.org\/wordprocessingml\/2006\/main|http:\/\/purl\.oclc\.org\/ooxml\/wordprocessingml\/main)["']/g;
 /** Markup inside a comment or a CDATA section is not markup. */
 const withoutAsides = (xml: string): string => xml.replace(/<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>/g, '');
-/** Whether one part holds tracked-change markup. The page uses this same test. */
-export const partHasTrackedChanges = (xml: string): boolean => TRACKED.test(withoutAsides(xml));
+/**
+ * Whether one part holds tracked-change markup. The page uses this same test.
+ * Only elements of Word's own markup count, whatever prefix the file gives it: a drawing has elements of
+ * the same names that mean something else (a freeform shape's outline is drawn with "moveTo").
+ */
+export function partHasTrackedChanges(xml: string): boolean {
+  const text = withoutAsides(xml);
+  const prefixes = new Set<string>();
+  for (const declaration of text.matchAll(WORD_NAMESPACE)) prefixes.add(declaration[1] ?? '');
+  if (prefixes.size === 0) return false;
+  const named = [...prefixes].filter((prefix) => prefix !== '').map((prefix) => prefix.replace(/[.\-]/g, '\\$&'));
+  const alternatives = [...(named.length > 0 ? [`(?:${named.join('|')}):`] : []), ...(prefixes.has('') ? [''] : [])];
+  return new RegExp(`<(?:${alternatives.join('|')})${TRACKED_NAMES}[\\s/>]`).test(text);
+}
 /** The parts looked at: everything under word/, including a template's building blocks. */
 const WORD_PART = /^word\/.+\.xml$/;
 

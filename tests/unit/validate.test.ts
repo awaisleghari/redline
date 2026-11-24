@@ -50,6 +50,15 @@ describe('uploads: what is refused, and what is recognised', () => {
     expect(await containsTrackedChanges(await docx('<w:p><w:r><w:t>Insert and delete are just words here: ins del.</w:t></w:r></w:p>'))).toBe(false);
   });
 
+  it('does not mistake a drawing for a tracked change (a freeform shape is drawn with "moveTo"; found on real contracts)', async () => {
+    const shape = '<w:p><w:r><w:drawing><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:custGeom><a:pathLst><a:path><a:moveTo><a:pt x="0" y="0"/></a:moveTo><a:lnTo><a:pt x="5" y="5"/></a:lnTo></a:path></a:pathLst></a:custGeom></a:graphic></w:drawing></w:r></w:p>';
+    expect(await containsTrackedChanges(await docx(shape))).toBe(false);
+    expect(hasTrackedChanges(`<w:document ${NS}><w:body>${shape}</w:body></w:document>`)).toBe(false);
+    // The same name in Word's own markup still counts, and so does Word's markup as the default namespace.
+    expect(await containsTrackedChanges(await docx(`${shape}<w:p><w:moveTo w:id="1"><w:r><w:t>x</w:t></w:r></w:moveTo></w:p>`))).toBe(true);
+    expect(hasTrackedChanges('<document xmlns="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><body><p><ins id="1"><r><t>y</t></r></ins></p></body></document>')).toBe(true);
+  });
+
   it('refuses old, foreign, oversized, empty and unreadable files in plain words, without reading an oversized file', async () => {
     const never = { bytes: async (): Promise<Uint8Array> => { throw new Error('must not be read'); } };
     expect(await refusalFor({ name: 'old.doc', size: 10, ...never }, 'original')).toMatch(/old-format Word file \(\.doc\)/);

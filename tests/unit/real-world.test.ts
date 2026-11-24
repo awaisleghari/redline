@@ -12,7 +12,9 @@ import { makeSpacesExplicit, makeSpacesExplicitInPart } from '../../src/producer
 import { makeStaticRedline } from '../../src/producer/make-static-redline';
 import { produceTrackedChanges } from '../../src/producer/produce';
 import { buildPair, pairById } from '../fixtures/pairs';
-import { withClauseStyle, withDocumentWideSpaces, withSections } from '../fixtures/real-world';
+import { compareDocuments } from 'docxodus/core';
+import { repairNotes } from '../../src/producer/repair-notes';
+import { withClauseStyle, withDocumentWideSpaces, withNoteInTable, withSections } from '../fixtures/real-world';
 
 const COVER = { originalName: 'original.docx', modifiedName: 'modified.docx', comparedAt: '24 November 2026 at 10:00 (UTC+00:00)' };
 const decoder = new TextDecoder();
@@ -219,5 +221,62 @@ describe('a header and footer carried over from one section into the next', () =
     files.set('word/document.xml', encoder.encode(`${body.slice(0, at)}<w:sectPr><w:footerReference w:type="default" r:id="rIdOther"/>${body.slice(at + '<w:sectPr>'.length)}`));
     const different = await zip(files);
     expect(await failed(checkTrackedChanges({ original: pair.original, modified: different, output: tracked }))).toEqual(expect.arrayContaining(['accept-all']));
+  });
+});
+
+/**
+ * Found on real contracts (Stage 7, 39 of 161 documents): a change anywhere in a table makes the engine
+ * re-issue every footnote referred to from that table as deleted and re-inserted, leaving the deleted
+ * copy with nothing referring to it.
+ */
+describe('a footnote hanging off a table in which something else changes', () => {
+  const notesOf = async (docx: Uint8Array): Promise<string> => decoder.decode((await unzip(docx)).get('word/footnotes.xml')!);
+  const noteIds = (xml: string): string[] => [...xml.matchAll(/<w:footnote\b(?![^>]*w:type=)[^>]*w:id="(\d+)"/g)].map((m) => m[1]!);
+
+  it('the engine does go wrong here; the repair puts it right, and both Word files pass with only the real change marked', async () => {
+    const base = (await buildPair(pairById('footnote-change'))).original;
+    const original = await withNoteInTable(base, 'The fee is payable monthly in arrear.');
+    const modified = await withNoteInTable(base, 'The fee is payable quarterly in arrear.');
+    // The fault is real: straight from the engine, the unchanged footnote is marked up and a stray copy exists.
+    const raw = await compareDocuments(original, modified, { authorName: 'Redline' });
+    const rawNotes = await notesOf(raw);
+    expect(noteIds(rawNotes).length).toBeGreaterThan(noteIds(await notesOf(original)).length);
+    expect(rawNotes).toMatch(/<w:ins /);
+    // The repair alone removes it...
+    const parts = new Map<string, string>();
+    for (const [name, bytes] of await unzip(raw)) if (/^word\/[^/]+\.xml$/.test(name)) parts.set(name, decoder.decode(bytes));
+    const repaired = repairNotes(parts).get('word/footnotes.xml')!;
+    expect(noteIds(repaired)).toEqual(noteIds(await notesOf(original)));
+    expect(repaired).not.toMatch(/<w:(ins|del) /);
+    // ...and the product's own output passes every check, marking one word replaced and nothing in the footnote.
+    const { tracked, counts } = await bothPass(original, modified);
+    expect(await notesOf(tracked)).not.toMatch(/<w:(ins|del) /);
+    expect(counts).toEqual({ insertions: 1, deletions: 1, moves: 0, formattingChanges: 0 });
+  });
+
+  it('when the footnote itself was edited as well, the note shows its old and new text, and both Word files pass', async () => {
+    const pair = await buildPair(pairById('footnote-change'));
+    const original = await withNoteInTable(pair.original, 'The fee is payable monthly in arrear.');
+    const modified = await withNoteInTable(pair.modified, 'The fee is payable quarterly in arrear.');
+    const { tracked } = await bothPass(original, modified);
+    const notes = await notesOf(tracked);
+    expect(noteIds(notes)).toEqual(noteIds(await notesOf(original)));
+    expect(notes).toMatch(/<w:ins /);
+    expect(notes).toMatch(/<w:del /);
+  });
+
+  it('a note that the engine rightly left with nothing referring to it is not touched, and an output with a stray note is still caught', async () => {
+    const base = (await buildPair(pairById('footnote-change'))).original;
+    const original = await withNoteInTable(base, 'The fee is payable monthly in arrear.');
+    const modified = await withNoteInTable(base, 'The fee is payable quarterly in arrear.');
+    const raw = await compareDocuments(original, modified, { authorName: 'Redline' });
+    // The engine's unrepaired output must still fail the Checker: the repair is what makes it pass, not a looser check.
+    const report = await checkTrackedChanges({ original, modified, output: raw });
+    expect(report.checks.filter((c) => !c.passed).map((c) => c.id)).toEqual(expect.arrayContaining(['reject-all']));
+    // Parts with no stray note come back unchanged.
+    const clean = await produceTrackedChanges(base, (await buildPair(pairById('footnote-change'))).modified);
+    const parts = new Map<string, string>();
+    for (const [name, bytes] of await unzip(clean)) if (/^word\/[^/]+\.xml$/.test(name)) parts.set(name, decoder.decode(bytes));
+    expect(repairNotes(parts).size).toBe(0);
   });
 });

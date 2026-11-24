@@ -270,6 +270,32 @@ describe('notes, headers and text boxes', () => {
     expect(readStories(await pkg(mark), 'accepted').problems.join(' ')).toContain('does not know');
   });
 
+  it('accepts drawing settings it does not know that can hold no text, and still refuses unknown wrappers round drawing or equation text', async () => {
+    // Found on real contracts (Stage 7, 18 of 161): Word writes "hidden fill" and "hidden line" settings on pictures and shapes.
+    const A = 'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"';
+    const A14 = 'xmlns:a14="http://schemas.microsoft.com/office/drawing/2010/main"';
+    const settings = p(`${r('Before.')}<x:shape xmlns:x="urn:example:unknown" ${A} ${A14}><a14:hiddenFill><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a14:hiddenFill><a14:hiddenLine w="9525"><a:solidFill><a:srgbClr val="000000"/></a:solidFill><a:miter lim="800000"/></a14:hiddenLine></x:shape>${r(' After.')}`);
+    const reading = readStories(await pkg(settings), 'accepted');
+    expect(reading.problems).toEqual([]);
+    expect(reading.stories[0]!.paragraphs).toEqual(['Before. After.']);
+    // Text in a drawing, an equation or a legacy text box, wrapped in something unknown, is still refused.
+    for (const inner of [`<a:p ${A}><a:r><a:t>drawn words</a:t></a:r></a:p>`, '<m:r xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"><m:t>x=1</m:t></m:r>', '<v:textbox xmlns:v="urn:schemas-microsoft-com:vml"/>']) {
+      const wrapped = p(`<x:wrapper xmlns:x="urn:example:unknown">${inner}</x:wrapper>`);
+      expect(readStories(await pkg(wrapped), 'accepted').problems.join(' '), inner).toContain('does not know');
+    }
+  });
+
+  it('a drawing saved as shapes with an empty text box, and as a flat picture for older programs, reads the same either way', async () => {
+    // Found on real contracts (Stage 7): a logo in a header, stored both ways. An empty text box shows no text.
+    const MC = 'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"';
+    const WPS = 'xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"';
+    const box = (content: string): string => `<w:drawing><wps:wsp ${WPS}><wps:txbx><w:txbxContent>${content}</w:txbxContent></wps:txbx></wps:wsp></w:drawing>`;
+    const both = (choice: string): string => p(`${r('Logo: ')}<w:r><mc:AlternateContent ${MC}><mc:Choice Requires="wps">${choice}</mc:Choice><mc:Fallback><w:drawing/></mc:Fallback></mc:AlternateContent></w:r>`);
+    expect(readStories(await pkg(both(box('<w:p/><w:p/>'))), 'accepted').problems).toEqual([]);
+    // A text box with words in it, absent from the other form, is still refused.
+    expect(readStories(await pkg(both(box(p(r('Words only one form has'))))), 'accepted').problems.join(' ')).toContain('alternative forms whose text differs');
+  });
+
   it('refuses a document that pulls in another file', async () => {
     const reading = readStories(await pkg(p(r('Body')) + '<w:altChunk r:id="rId9"/>'), 'accepted');
     expect(reading.problems.join(' ')).toContain('another file');
