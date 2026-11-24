@@ -91,6 +91,8 @@ export interface Story {
   paragraphs: string[];
   /** The same entries as `paragraphs`, with per-character detail. */
   details: Para[];
+  /** A header or footer the section does not name itself but carries over from the section before. */
+  carriedOver?: boolean;
 }
 
 export interface StoryReading {
@@ -168,7 +170,6 @@ const STRUCTURE_MARKS: ReadonlySet<string> = new Set([MARK.table, MARK.row, MARK
 /** Is this story entry a table-structure marker rather than a paragraph? */
 export const isStructureMark = (entry: string): boolean => STRUCTURE_MARKS.has(entry);
 
-const XML_NS = 'http://www.w3.org/XML/1998/namespace';
 /**
  * Namespaces whose elements may sit between a paragraph and its text: Word's
  * own, and those of drawings, shapes and text boxes. Text reached only through
@@ -215,9 +216,12 @@ function allText(element: XmlElement, into: string[]): void {
   for (const c of element.children) allText(c, into);
 }
 
-/** The text of a w:t or w:delText as Word shows it: outer whitespace is dropped unless the element says to preserve it. */
+/**
+ * The text of a w:t or w:delText as Word shows it: outer whitespace is dropped unless the element, or
+ * the nearest element around it that says anything on the matter, says to preserve it.
+ */
 function textOf(node: XmlElement): string {
-  if (attribute(node, XML_NS, 'space') === 'preserve') return node.text;
+  if (node.preserveSpace) return node.text;
   return node.text.replace(/^[ \t\r\n]+|[ \t\r\n]+$/g, '');
 }
 
@@ -796,6 +800,8 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
 
   // Headers and footers, through each section's references.
   const mainRels = pkg.relationships(main);
+  /** The header or footer part in force for each kind and page type, as the sections go by. */
+  const inForce = new Map<string, string>();
   bodyContext.sections.forEach((section, sectionIndex) => {
     const numbers = child(section, W, 'pgNumType');
     const start = Number(numbers ? (attribute(numbers, W, 'start') ?? NaN) : NaN);
@@ -811,6 +817,8 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
       footer: {},
     };
     layout.sections.push(sectionLayout);
+    // What this section names itself.
+    const named = new Set<string>();
     for (const reference of section.children) {
       const kind = w(reference, 'headerReference') ? 'header' : w(reference, 'footerReference') ? 'footer' : undefined;
       if (!kind) continue;
@@ -822,14 +830,26 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
         problems.push(`The ${label} points to a part that does not exist.`);
         continue;
       }
-      partsRead.add(rel.partName);
-      const context = newContext(view, problems, { ...shared, part: rel.partName });
-      readBlocks(pkg.xml(rel.partName), context);
+      named.add(`${kind}/${type}`);
+      inForce.set(`${kind}/${type}`, rel.partName);
+      if (type === 'default' || type === 'first' || type === 'even') sectionLayout[kind][type] = `${kind}/${sectionIndex + 1}/${type}`;
+    }
+    // What the section shows: a header or footer it does not name is the one in force from the section
+    // before ("same as previous"), so each section is read with the header and footer it really carries.
+    // A file that names it again in every section and a file that leaves it to carry over then read alike.
+    for (const [slot, partName] of inForce) {
+      const [kind, type] = slot.split('/') as ['header' | 'footer', string];
+      const label = `${kind} (section ${sectionIndex + 1}${type === 'default' ? '' : `, ${type} page`})`;
+      const firstReading = !partsRead.has(partName);
+      partsRead.add(partName);
+      const context = newContext(view, problems, { ...shared, part: partName });
+      readBlocks(pkg.xml(partName), context);
       const key = `${kind}/${sectionIndex + 1}/${type}`;
-      if (type === 'default' || type === 'first' || type === 'even') sectionLayout[kind][type] = key;
+      const before = stories.length;
       add(key, kind, label, context.paragraphs);
       add(`${key}/text boxes`, 'text box', `text boxes in the ${label}`, context.textBoxes);
-      notes.push(...context.notes);
+      if (!named.has(slot)) for (const story of stories.slice(before)) story.carriedOver = true;
+      if (firstReading) notes.push(...context.notes);
     }
   });
 

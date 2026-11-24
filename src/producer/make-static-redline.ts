@@ -8,7 +8,7 @@ import { NS } from '../common/namespaces';
 import { unzip, zip } from '../common/zip';
 import { coverPageXml, coverStylesXml, type CoverPageContent } from './cover-page';
 import { readOriginal, StyleSheet } from './original-reader';
-import { convertPart, DEFAULT_STYLE_OPTIONS, type ChangeCounts, type StaticRedlineStyleOptions } from './static-redline';
+import { convertPart, DEFAULT_STYLE_OPTIONS, PROPERTY_CHANGE_RECORDS, type ChangeCounts, type StaticRedlineStyleOptions } from './static-redline';
 
 const W = NS.w;
 const decoder = new TextDecoder();
@@ -138,6 +138,24 @@ function addCoverStyles(stylesXml: string): string {
   return stylesXml.replace('</w:styles>', `${coverStylesXml(basedOn)}</w:styles>`);
 }
 
+/**
+ * A part that holds no text but can still carry records of changed formatting: the engine tracks a
+ * change to a style's own definition (when the two documents define a style of the same name
+ * differently) inside the styles part. The static redline keeps the new definition and drops the record.
+ */
+function removeChangeRecords(xml: string): string {
+  const document = new DOMParser().parseFromString(xml, 'application/xml');
+  const records: Element[] = [];
+  const all = document.getElementsByTagNameNS(W, '*');
+  for (let i = 0; i < all.length; i++) {
+    const element = all.item(i) as unknown as Element;
+    if (PROPERTY_CHANGE_RECORDS.has(element.localName!)) records.push(element);
+  }
+  if (records.length === 0) return xml;
+  for (const record of records) record.parentNode?.removeChild(record);
+  return new XMLSerializer().serializeToString(document);
+}
+
 export async function makeStaticRedline(trackedChanges: Uint8Array, original: Uint8Array, options: StaticRedlineOptions): Promise<StaticRedline> {
   // The original document: the formatting its text had, and its clause numbers.
   const originalFiles = await unzip(original);
@@ -154,7 +172,7 @@ export async function makeStaticRedline(trackedChanges: Uint8Array, original: Ui
   const files = await unzip(trackedChanges);
   const contentTypes = files.get('[Content_Types].xml');
   if (!contentTypes) throw new Error('the tracked-changes file has no content types');
-  const { textParts, main, styles } = partsOfTypes(decoder.decode(contentTypes), files.keys(), TEXT_PART_TYPES);
+  const { textParts, main, styles, numbering } = partsOfTypes(decoder.decode(contentTypes), files.keys(), TEXT_PART_TYPES);
   if (!main) throw new Error('the tracked-changes file has no main document part');
   if (!styles) throw new Error('the tracked-changes file has no styles part');
 
@@ -175,7 +193,8 @@ export async function makeStaticRedline(trackedChanges: Uint8Array, original: Ui
   const facingPages = settingsPart !== undefined && /<w:(evenAndOddHeaders|mirrorMargins)(?![^>]*w:val="(0|false|off)")[^>]*>/.test(decoder.decode(files.get(settingsPart)!));
   converted.set(main, addCoverPage(converted.get(main)!, content, facingPages));
   for (const [part, xml] of converted) files.set(part, encoder.encode(xml));
-  files.set(styles, encoder.encode(addCoverStyles(decoder.decode(files.get(styles)!))));
+  files.set(styles, encoder.encode(addCoverStyles(removeChangeRecords(decoder.decode(files.get(styles)!)))));
+  if (numbering && files.has(numbering)) files.set(numbering, encoder.encode(removeChangeRecords(decoder.decode(files.get(numbering)!))));
 
   return { docx: await zip(files), counts };
 }

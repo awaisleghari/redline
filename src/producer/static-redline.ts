@@ -53,7 +53,7 @@ export const CHANGE_STYLE: Record<ChangeKind, { color: string; underline?: 'doub
 const WRAPPER_KIND: Record<string, ChangeKind> = { ins: 'inserted', del: 'deleted', moveFrom: 'movedFrom', moveTo: 'movedTo' };
 
 /** Records of a change to properties (formatting, numbering, table shape). Removed: the new state is kept. */
-const PROPERTY_CHANGE_RECORDS = new Set(['rPrChange', 'pPrChange', 'sectPrChange', 'tblPrChange', 'tblPrExChange', 'tcPrChange', 'trPrChange', 'tblGridChange', 'numberingChange']);
+export const PROPERTY_CHANGE_RECORDS = new Set(['rPrChange', 'pPrChange', 'sectPrChange', 'tblPrChange', 'tblPrExChange', 'tcPrChange', 'trPrChange', 'tblGridChange', 'numberingChange']);
 /** Zero-width markers that only make sense alongside tracked changes. Removed. */
 const RANGE_MARKERS = new Set(['moveFromRangeStart', 'moveFromRangeEnd', 'moveToRangeStart', 'moveToRangeEnd', 'customXmlInsRangeStart', 'customXmlInsRangeEnd', 'customXmlDelRangeStart', 'customXmlDelRangeEnd', 'customXmlMoveFromRangeStart', 'customXmlMoveFromRangeEnd', 'customXmlMoveToRangeStart', 'customXmlMoveToRangeEnd']);
 /** Property containers in which w:ins / w:del etc. are flags on the owner, not wrappers round content. */
