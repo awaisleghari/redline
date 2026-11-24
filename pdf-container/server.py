@@ -1,5 +1,7 @@
 """
 PDF converter: POST a .docx to /convert, get the PDF back.
+GET /state reports three counts (see state()) so that "it keeps nothing" can be
+checked on the running service from outside.
 
 Privacy rules (PLAN.md, "PDF step and privacy"):
   - each request works in its own temporary folder, which is deleted before the
@@ -38,9 +40,59 @@ DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 # LibreOffice is heavy; convert at most two documents at a time.
 SLOTS = threading.BoundedSemaphore(2)
 
+# For GET /state: every folder this account can write to, found by looking (not
+# assumed) when the server starts, and what was in them then, so that only what
+# has appeared since is counted.
+def writable_roots() -> list:
+    roots = []
+    for folder, folders, _files in os.walk("/"):
+        folders[:] = [name for name in folders if os.path.join(folder, name) not in ("/proc", "/sys")]
+        if os.access(folder, os.W_OK):
+            roots.append(folder)
+            folders[:] = []  # everything beneath is walked by scratch_paths()
+    return roots
+
+
+SCRATCH = writable_roots()
+ATTEMPTS = 0
+ATTEMPTS_LOCK = threading.Lock()
+
+
+def scratch_paths() -> set:
+    found = set()
+    for root in SCRATCH:
+        for folder, folders, files in os.walk(root):
+            found.update(os.path.join(folder, name) for name in folders + files)
+    return found
+
+
+BASELINE = scratch_paths()
+
+
+def state() -> str:
+    """
+    Three numbers and nothing else: how many conversions this copy of the
+    converter has attempted since it started, how many files or folders it is
+    holding that were not there when it started, and how many LibreOffice
+    processes are running. Between conversions the last two must be 0. No name,
+    size or content of anything is reported.
+    """
+    office = 0
+    for entry in os.listdir("/proc"):
+        if entry.isdigit():
+            try:
+                with open(f"/proc/{entry}/cmdline", "rb") as handle:
+                    office += b"soffice" in handle.read()
+            except OSError:
+                pass
+    return f"conversions={ATTEMPTS} files={len(scratch_paths() - BASELINE)} office_processes={office}"
+
 
 def convert(docx: bytes) -> bytes:
     """Convert in a private temporary folder and delete it afterwards, always."""
+    global ATTEMPTS
+    with ATTEMPTS_LOCK:
+        ATTEMPTS += 1
     folder = tempfile.mkdtemp(prefix="c-")
     process = None
     try:
@@ -155,6 +207,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):  # noqa: N802
         if self.path == "/health":
             self.reply(200, b"ok", "text/plain; charset=utf-8")
+        elif self.path == "/state":
+            self.reply(200, state().encode(), "text/plain; charset=utf-8")
         else:
             self.refuse(404, "Not found.")
 

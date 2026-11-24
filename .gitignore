@@ -17,3 +17,6 @@ coverage/
 
 # Sample files generated for the owner to open in Word
 owner-checks/
+
+# Wrangler (Cloudflare tool) local state
+.wrangler/

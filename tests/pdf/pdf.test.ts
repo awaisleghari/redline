@@ -2,6 +2,7 @@
  * Stage 5: the PDF. These tests run the real converter container (Docker) and
  * the Checker's check 9 on its output.
  */
+import { execFileSync } from 'node:child_process';
 import { initialize } from 'docxodus/core';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { checkPdf, CHECKS_FOR } from '../../src/checker';
@@ -160,6 +161,52 @@ print("done")`;
       expect(containerOfficeProcesses(name)).toEqual([]);
       expect(containerScratchFiles(name)).toEqual([]);
       expect(containerLog(name)).toBe('');
+    } finally {
+      removeContainer(name);
+    }
+  });
+
+  it('its own state report gives three counts and nothing else, and agrees with the search below', async () => {
+    const report = await (await fetch(CONVERT_URL.replace('/convert', '/state'))).text();
+    const counts = /^conversions=(\d+) files=(\d+) office_processes=(\d+)$/.exec(report);
+    expect(counts, report).not.toBeNull();
+    expect(Number(counts![1])).toBeGreaterThan(50); // every conversion this suite asked for was counted
+    expect(Number(counts![2])).toBe(0);
+    expect(Number(counts![3])).toBe(0);
+  });
+
+  it('the state report does count a file that is left behind (so a clean report means something)', async () => {
+    // A converter with an ordinary writable disk, as on Cloudflare (the other tests use a read-only one).
+    const name = 'redline-pdf-state';
+    execFileSync('docker', ['rm', '-f', name], { stdio: 'ignore' });
+    execFileSync('docker', ['run', '-d', '--name', name, '-p', '127.0.0.1:8793:8080', 'redline-pdf'], { stdio: 'ignore' });
+    try {
+      const state = async (): Promise<string> => (await fetch('http://127.0.0.1:8793/state')).text();
+      for (let attempt = 0; attempt < 60; attempt++) {
+        try {
+          await state();
+          break;
+        } catch {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+      }
+      expect(await state()).toBe('conversions=0 files=0 office_processes=0');
+      // Every folder the converter's account can write to anywhere on the disk, found independently of the server.
+      const writable = execFileSync('docker', ['exec', name, 'sh', '-c', 'find / -path /proc -prune -o -path /sys -prune -o -type d -writable -print 2>/dev/null; true'], { encoding: 'utf8' }).split('\n').filter(Boolean);
+      expect(writable).toEqual(expect.arrayContaining(['/tmp', '/home/converter', '/run/lock']));
+      // A file planted in each one, as the converter's own account, is counted.
+      let planted = 0;
+      for (const folder of writable) {
+        execFileSync('docker', ['exec', name, 'sh', '-c', `touch "${folder}/left.docx"`]);
+        planted++;
+        expect(await state(), folder).toBe(`conversions=0 files=${planted} office_processes=0`);
+      }
+      // And a real conversion on a writable disk leaves the count where it was.
+      const pair = await buildPair(pairById('one-word-change'));
+      const reply = await fetch('http://127.0.0.1:8793/convert', { method: 'POST', headers: { 'Content-Type': DOCX_TYPE }, body: new Blob([pair.modified.slice().buffer]) });
+      expect(reply.status).toBe(200);
+      await reply.arrayBuffer();
+      expect(await state()).toBe(`conversions=1 files=${planted} office_processes=0`);
     } finally {
       removeContainer(name);
     }

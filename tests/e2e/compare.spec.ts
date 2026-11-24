@@ -110,10 +110,11 @@ test('each kind of tracked change has its own author, so Word colours them diffe
   expect(xml2).toMatch(/<w:del [^>]*w:author="Redline \(deleted\)"/);
 });
 
-test('a link inside a document cannot be followed from the viewer, and the page requests nothing from outside', async ({ page }) => {
+test('a link inside a document cannot be followed from the viewer, and the page requests nothing from outside', async ({ page, baseURL }) => {
   const outside: string[] = [];
+  const site = new URL(baseURL!).origin + '/';
   page.on('request', (request) => {
-    if (!request.url().startsWith('http://localhost:4173/') && !request.url().startsWith('blob:') && !request.url().startsWith('data:') && !request.url().startsWith('about:')) outside.push(request.url());
+    if (!request.url().startsWith(site) && !request.url().startsWith('blob:') && !request.url().startsWith('data:') && !request.url().startsWith('about:')) outside.push(request.url());
   });
   const pair = await buildPair(pairById('hyperlink-address-change'));
   await compare(page, pair.original, pair.modified);

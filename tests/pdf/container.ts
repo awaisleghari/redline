@@ -17,12 +17,21 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 function docker(args: string[], allowFailure = false): string {
   const run = spawnSync('docker', args, { encoding: 'utf8' });
   if (run.error) throw new Error(`Docker is needed for the PDF tests and could not be run (${run.error.message}).`);
-  if (run.status !== 0 && !allowFailure) throw new Error(`docker ${args[0]} failed: ${run.stderr.trim().split('\n').pop()}`);
+  if (run.status !== 0 && !allowFailure) throw new Error(`docker ${args[0]} failed: ${run.stderr.trim().split('\n').slice(-3).join(' | ')}`);
   return run.stdout;
 }
 
 export async function startContainer(): Promise<void> {
-  docker(['build', '-q', '-t', 'redline-pdf', join(root, 'pdf-container')]);
+  // Docker Hub sometimes refuses the base-image lookup for a moment ("429 Too Many Requests"); try again before giving up.
+  for (let attempt = 1; ; attempt++) {
+    try {
+      docker(['build', '-q', '-t', 'redline-pdf', join(root, 'pdf-container')]);
+      break;
+    } catch (error) {
+      if (attempt === 5 || !/429|Too Many Requests/.test(String(error))) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 30_000));
+    }
+  }
   docker(['rm', '-f', CONTAINER_NAME], true);
   // Read-only file system with only memory-backed scratch space, and no route out to the internet from inside.
   docker(['run', '-d', '--name', CONTAINER_NAME, '--read-only', '--tmpfs', '/tmp', '--tmpfs', '/home/converter', '-p', `127.0.0.1:${CONTAINER_PORT}:8080`, 'redline-pdf']);
