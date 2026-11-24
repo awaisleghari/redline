@@ -185,3 +185,86 @@ describe('comparing when an upload contains tracked changes', () => {
     expect(report.checks.filter((check) => !check.passed).map((check) => check.id)).toEqual(expect.arrayContaining(['no-tracked-changes']));
   });
 });
+
+/**
+ * Tracked changes as Word itself writes them, built by hand (found wrongly withheld by the independent review).
+ * For each: the upload with tracked changes, and the same document with the changes accepted by hand.
+ */
+describe('tracked changes written the way Word writes them', () => {
+  const A = 'w:id="901" w:author="A Lawyer" w:date="2026-11-20T10:00:00Z"';
+  const p = (text: string): string => `<w:p><w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`;
+  const gone = (text: string): string => `<w:del ${A}><w:r><w:delText xml:space="preserve">${text}</w:delText></w:r></w:del>`;
+  const goneParagraph = (text: string): string => `<w:p><w:pPr><w:rPr><w:del ${A}/></w:rPr></w:pPr>${gone(text)}</w:p>`;
+  const table = (rows: string[], deleted = false): string =>
+    `<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid>${rows.map((text) => `<w:tr>${deleted ? `<w:trPr><w:del ${A}/></w:trPr>` : ''}<w:tc><w:tcPr><w:tcW w:w="4000" w:type="dxa"/></w:tcPr>${deleted ? `<w:p>${gone(text)}</w:p>` : p(text)}</w:tc></w:tr>`).join('')}</w:tbl>`;
+
+  /** A generated document with its body text replaced. */
+  async function withBody(base: Uint8Array, body: string): Promise<Uint8Array> {
+    const files = await unzip(base);
+    const xml = decoder.decode(files.get('word/document.xml')!);
+    const start = xml.indexOf('>', xml.indexOf('<w:body')) + 1;
+    const end = xml.lastIndexOf('<w:sectPr');
+    files.set('word/document.xml', encoder.encode(xml.slice(0, start) + body + xml.slice(end)));
+    return zip(files);
+  }
+
+  const CASES: { name: string; tracked: string; accepted: string }[] = [
+    { name: 'a deleted paragraph mark with a bookmark end and a proofing mark before the next paragraph', tracked: `${p('Start.')}<w:p><w:pPr><w:rPr><w:del ${A}/></w:rPr></w:pPr><w:r><w:t xml:space="preserve">one </w:t></w:r></w:p><w:bookmarkEnd w:id="77"/><w:proofErr w:type="spellEnd"/>${p('two')}${p('End.')}`, accepted: `${p('Start.')}${p('one two')}${p('End.')}` },
+    { name: 'a deleted paragraph mark before a content control', tracked: `<w:p><w:pPr><w:rPr><w:del ${A}/></w:rPr></w:pPr><w:r><w:t xml:space="preserve">one </w:t></w:r></w:p><w:sdt><w:sdtPr><w:id w:val="5"/></w:sdtPr><w:sdtContent>${p('two')}</w:sdtContent></w:sdt>${p('End.')}`, accepted: `<w:sdt><w:sdtPr><w:id w:val="5"/></w:sdtPr><w:sdtContent>${p('one two')}</w:sdtContent></w:sdt>${p('End.')}` },
+    { name: 'a table deleted whole', tracked: `${p('before')}${table(['a', 'b'], true)}${p('after')}`, accepted: `${p('before')}${p('after')}` },
+    { name: 'a wholly deleted first paragraph, with a table after it', tracked: `${goneParagraph('Heading')}${table(['a', 'b'])}${p('after')}`, accepted: `${table(['a', 'b'])}${p('after')}` },
+    { name: 'several paragraphs deleted in a row, then one edited', tracked: `${p('Keep.')}${goneParagraph('First gone.')}${goneParagraph('Second gone.')}<w:p><w:r><w:t xml:space="preserve">The fee is </w:t></w:r>${gone('100')}<w:ins ${A}><w:r><w:t>200</w:t></w:r></w:ins><w:r><w:t>.</w:t></w:r></w:p>`, accepted: `${p('Keep.')}${p('The fee is 200.')}` },
+    { name: 'markup that only looks tracked, inside an XML comment', tracked: `<!-- <w:ins w:id="1"> -->${p('Plain.')}${p('Text.')}`, accepted: `${p('Plain.')}${p('Text.')}` },
+  ];
+
+  it.each(CASES)('$name: read alike by the Producer, the Checker and a hand-accepted copy; both Word files pass, either way round', async ({ name, tracked, accepted }) => {
+    const base = await buildPair(pairById('one-word-change')); // text only: no notes, headers or footers for the new body to leave behind
+    const upload = await withBody(base.modified, tracked);
+    const control = await withBody(base.modified, accepted);
+    const isTracked = !name.includes('only looks tracked');
+    expect(await containsTrackedChanges(upload)).toBe(isTracked);
+    const wanted = readStories(await openPackage(control));
+    expect(readStories(await openPackage(upload)), 'the Checker, reading the upload as accepted').toEqual(wanted);
+    expect(readStories(await openPackage(await acceptTrackedChanges(upload))), "the Producer's accepted copy").toEqual(wanted);
+    const asOriginal = await bothPass(upload, base.original, `${name}: as the original`);
+    const asModified = await bothPass(base.original, upload, `${name}: as the modified document`);
+    // The same changes are counted as when the hand-accepted copy is uploaded.
+    expect(asOriginal.counts).toEqual((await bothPass(control, base.original, 'control, as the original')).counts);
+    expect(asModified.counts).toEqual((await bothPass(base.original, control, 'control, as the modified document')).counts);
+  });
+
+  it('a deleted footnote: the note and its reference are gone, and the comparison is not withheld', async () => {
+    const base = await buildPair(pairById('footnote-change'));
+    const files = await unzip(base.original);
+    const xml = decoder.decode(files.get('word/document.xml')!);
+    const reference = /<w:r>(?:(?!<\/w:r>).)*<w:footnoteReference\b[^>]*\/>(?:(?!<\/w:r>).)*<\/w:r>/.exec(xml);
+    expect(reference).not.toBeNull();
+    // As Word writes it: the reference inside a deletion, and the note's own text marked deleted.
+    files.set('word/document.xml', encoder.encode(xml.replace(reference![0], `<w:del ${A}>${reference![0]}</w:del>`)));
+    const notes = decoder.decode(files.get('word/footnotes.xml')!);
+    const marked = notes.replace(/<w:r>((?:<w:rPr>(?:(?!<\/w:rPr>).)*<\/w:rPr>)?)<w:t([^>]*)>([^<]+)<\/w:t><\/w:r>/g, (_run, rPr: string, attributes: string, text: string) => `<w:del ${A}><w:r>${rPr}<w:delText${attributes}>${text}</w:delText></w:r></w:del>`);
+    expect(marked).not.toBe(notes);
+    const withMarkedNote = new Map(files);
+    withMarkedNote.set('word/footnotes.xml', encoder.encode(marked));
+    for (const upload of [await zip(withMarkedNote), await zip(files)]) {
+      expect(await containsTrackedChanges(upload)).toBe(true);
+      // Nothing of the note is read once its changes are accepted.
+      expect(readStories(await openPackage(upload)).filter((story) => story.key.startsWith('footnote'))).toEqual([]);
+      await bothPass(upload, base.modified, 'deleted footnote, as the original');
+      await bothPass(base.modified, upload, 'deleted footnote, as the modified document');
+    }
+  });
+
+  it('a note that nothing at all refers to still stops the comparison (only a note that deleted text refers to is excused)', async () => {
+    const base = await buildPair(pairById('footnote-change'));
+    const files = await unzip(base.original);
+    const xml = decoder.decode(files.get('word/document.xml')!);
+    const reference = /<w:r>(?:(?!<\/w:r>).)*<w:footnoteReference\b[^>]*\/>(?:(?!<\/w:r>).)*<\/w:r>/.exec(xml)!;
+    // The reference is simply gone (not tracked), and elsewhere the document does hold a tracked change.
+    files.set('word/document.xml', encoder.encode(xml.replace(reference[0], `<w:ins ${A}><w:r><w:t>x</w:t></w:r></w:ins>`)));
+    const orphaned = await zip(files);
+    const tracked = await produceTrackedChanges(orphaned, base.modified);
+    const report = await checkTrackedChanges({ original: orphaned, modified: base.modified, output: tracked });
+    expect(report.checks.filter((check) => !check.passed).map((check) => check.id)).toContain('completeness');
+  });
+});

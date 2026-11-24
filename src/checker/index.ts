@@ -121,8 +121,8 @@ export async function checkTrackedChanges(input: CheckInput): Promise<CheckRepor
     guarded('numbering', () => verdict('numbering', numberingFailure(modifiedText().stories, accepted().stories))),
     guarded('completeness', () => {
       const problems = [
-        ...unreadText(original, [originalText()], 'original document'),
-        ...unreadText(modified, [modifiedText()], 'modified document'),
+        ...unreadText(original, [originalText()], 'original document', deletedSide(original)),
+        ...unreadText(modified, [modifiedText()], 'modified document', deletedSide(modified)),
         ...unreadText(output, [accepted(), rejected()], 'output'),
       ];
       const failure = completenessFailure(problems);
@@ -166,6 +166,9 @@ export interface StaticCheckInput extends CheckInput {
   modifiedName: string;
   comparedAt: string;
 }
+
+/** For an upload with tracked changes of its own: its reading with those changes rejected, used only to see which notes deleted text refers to. */
+const deletedSide = (upload: DocxPackage): StoryReading[] => (hadTrackedChanges(upload) ? [readStories(upload, 'rejected')] : []);
 
 /** Whether an upload holds tracked changes of its own (it is then read as if they had all been accepted). */
 const hadTrackedChanges = (upload: DocxPackage): boolean => leftoverTrackedChanges(upload).length > 0;
@@ -214,8 +217,8 @@ export async function checkStaticRedline(input: StaticCheckInput): Promise<Check
     guarded('numbering', () => verdict('numbering', numberingFailure(modifiedText().stories, newSide().stories) ?? oldNumberFailure(originalText().stories, oldSide().stories))),
     guarded('completeness', () => {
       const problems = [
-        ...unreadText(original, [originalText()], 'original document'),
-        ...unreadText(modified, [modifiedText()], 'modified document'),
+        ...unreadText(original, [originalText()], 'original document', deletedSide(original)),
+        ...unreadText(modified, [modifiedText()], 'modified document', deletedSide(modified)),
         ...unreadText(output, [newSide(), oldSide()], 'output'),
       ];
       const failure = completenessFailure(problems);

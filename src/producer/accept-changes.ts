@@ -25,9 +25,17 @@ const CHANGE_RECORDS = new Set(['rPrChange', 'pPrChange', 'sectPrChange', 'tblPr
 const MARKERS = /^(moveFromRange|moveToRange|customXml(Ins|Del|MoveFrom|MoveTo)Range)(Start|End)$/;
 /** Property containers in which w:ins / w:del are a flag on the owner (a paragraph mark, a row), not a wrapper round content. */
 const FLAG_PARENTS = new Set(['rPr', 'trPr', 'tcPr', 'numPr', 'tblPrEx']);
+/** Zero-width things Word writes between paragraphs: they hold no content and do not stop two paragraphs joining. */
+const BETWEEN_PARAGRAPHS = /^(bookmarkStart|bookmarkEnd|proofErr|permStart|permEnd|commentRangeStart|commentRangeEnd|(moveFrom|moveTo)Range(Start|End)|customXml(Ins|Del|MoveFrom|MoveTo)Range(Start|End))$/;
 
-/** The same test the page uses: any tracked-change markup, whatever the namespace prefix. */
-const TRACKED = /<(?:[A-Za-z_][\w.-]*:)?(?:ins|del|moveFrom|moveTo|cellIns|cellDel|cellMerge|numberingChange|(?:rPr|pPr|sectPr|tblPr|tblPrEx|tcPr|trPr|tblGrid)Change|customXml(?:Ins|Del|MoveFrom|MoveTo)RangeStart|move(?:From|To)RangeStart)[\s/>]/;
+/** Any tracked-change markup, whatever the namespace prefix. */
+const TRACKED = /<(?:[A-Za-z_][\w.-]*:)?(?:ins|del|moveFrom|moveTo|delText|delInstrText|cellIns|cellDel|cellMerge|numberingChange|(?:rPr|pPr|sectPr|tblPr|tblPrEx|tcPr|trPr|tblGrid)Change|customXml(?:Ins|Del|MoveFrom|MoveTo)Range(?:Start|End)|move(?:From|To)Range(?:Start|End))[\s/>]/;
+/** Markup inside a comment or a CDATA section is not markup. */
+const withoutAsides = (xml: string): string => xml.replace(/<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>/g, '');
+/** Whether one part holds tracked-change markup. The page uses this same test. */
+export const partHasTrackedChanges = (xml: string): boolean => TRACKED.test(withoutAsides(xml));
+/** The parts looked at: everything under word/, including a template's building blocks. */
+const WORD_PART = /^word\/.+\.xml$/;
 
 const isW = (node: Node | null | undefined, name?: string): node is El => !!node && node.nodeType === 1 && (node as El).namespaceURI === W && (name === undefined || (node as El).localName === name);
 const children = (element: El): El[] => {
@@ -44,7 +52,7 @@ const unwrap = (element: El): void => {
 const flagOn = (owner: El | undefined, names: string[]): El | undefined => (owner ? children(owner).find((c) => isW(c) && names.includes(c.localName!)) : undefined);
 
 export function acceptChangesInPart(xml: string): string {
-  if (!TRACKED.test(xml)) return xml;
+  if (!partHasTrackedChanges(xml)) return xml;
   const document = new DOMParser().parseFromString(xml, 'application/xml');
   const root = document.documentElement as unknown as El;
 
@@ -65,6 +73,11 @@ export function acceptChangesInPart(xml: string): string {
     if (flagOn(tcPr, ['cellDel'])) remove(cell);
   }
 
+  // A table left with no row at all is gone (every one of its rows was deleted).
+  for (const table of all().filter((e) => e.localName === 'tbl')) {
+    if (table.parentNode && !children(table).some((c) => isW(c, 'tr'))) remove(table);
+  }
+
   // 2. Paragraph marks: a deleted (or moved-away) mark joins its paragraph to the next one, which keeps its own properties.
   //    Done before the deleted text is removed, last paragraph first, so that a run of deleted marks collapses correctly.
   const paragraphs = all().filter((e) => e.localName === 'p');
@@ -73,22 +86,24 @@ export function acceptChangesInPart(xml: string): string {
     const pPr = children(paragraph).find((c) => isW(c, 'pPr'));
     const markProperties = pPr && children(pPr).find((c) => isW(c, 'rPr'));
     if (!flagOn(markProperties, ['del', 'moveFrom'])) continue;
+    // What the paragraph would join: the next thing with content, stepping over the zero-width markers Word leaves
+    // between paragraphs (bookmarks, comment and permission ranges, proofing marks, move ranges).
     let next: Node | null = paragraph.nextSibling;
-    while (next && !(next.nodeType === 1)) next = next.nextSibling;
+    while (next && !(next.nodeType === 1 && !(isW(next) && BETWEEN_PARAGRAPHS.test((next as El).localName!)))) next = next.nextSibling;
+    // Into a content control or custom XML block: its first paragraph.
+    for (let block = next as El | null; block && isW(block) && (block.localName === 'sdt' || block.localName === 'customXml'); block = next as El | null) {
+      const inner: El | undefined = block.localName === 'sdt' ? children(block).find((c) => isW(c, 'sdtContent')) : block;
+      next = (inner && children(inner).find((c) => isW(c) && !['sdtPr', 'sdtEndPr', 'customXmlPr'].includes(c.localName!) && !BETWEEN_PARAGRAPHS.test(c.localName!))) ?? null;
+    }
     if (!isW(next, 'p')) {
-      // The last paragraph of a cell, a note or the text: there is nothing to join it to. If nothing of it
-      // remains (all its content is deleted or moved away) and a paragraph stands before it, it goes whole.
-      const runs = paragraph.getElementsByTagNameNS(W, 'r');
-      let kept = false;
-      for (let r = 0; r < runs.length && !kept; r++) {
-        let inside: Node | null = runs.item(r)!.parentNode;
-        let removed = false;
-        for (; inside && inside !== paragraph; inside = inside.parentNode) if (isW(inside) && REMOVED_WRAPPERS.has((inside as El).localName!)) removed = true;
-        kept = !removed;
-      }
+      // Nothing to join it to: it is the last paragraph of a cell, a note or the text, or a table follows. If nothing of it
+      // remains (everything in it is deleted or moved away), it goes whole, provided its container still ends properly:
+      // a table follows it, or a paragraph stands before it.
+      const leavesNothing = (c: El): boolean => c.namespaceURI === W && (c.localName === 'pPr' || REMOVED_WRAPPERS.has(c.localName!) || BETWEEN_PARAGRAPHS.test(c.localName!));
+      const kept = children(paragraph).some((c) => !leavesNothing(c));
       let previous: Node | null = paragraph.previousSibling;
-      while (previous && previous.nodeType !== 1) previous = previous.previousSibling;
-      if (!kept && isW(previous, 'p')) remove(paragraph);
+      while (previous && !(previous.nodeType === 1 && !(isW(previous) && BETWEEN_PARAGRAPHS.test((previous as El).localName!)))) previous = previous.previousSibling;
+      if (!kept && (isW(next, 'tbl') || isW(previous, 'p'))) remove(paragraph);
       continue;
     }
     const target = next;
@@ -122,7 +137,7 @@ export function acceptChangesInPart(xml: string): string {
 /** Whether a Word file holds tracked changes in any of its parts. */
 export async function hasTrackedChanges(docx: Uint8Array): Promise<boolean> {
   const decoder = new TextDecoder();
-  for (const [name, bytes] of await unzip(docx)) if (/^word\/[^/]+\.xml$/.test(name) && TRACKED.test(decoder.decode(bytes))) return true;
+  for (const [name, bytes] of await unzip(docx)) if (WORD_PART.test(name) && partHasTrackedChanges(decoder.decode(bytes))) return true;
   return false;
 }
 
@@ -133,7 +148,7 @@ export async function acceptTrackedChanges(docx: Uint8Array): Promise<Uint8Array
   const encoder = new TextEncoder();
   let changed = false;
   for (const [name, bytes] of files) {
-    if (!/^word\/[^/]+\.xml$/.test(name)) continue;
+    if (!WORD_PART.test(name)) continue;
     const xml = decoder.decode(bytes);
     const accepted = acceptChangesInPart(xml);
     if (accepted !== xml) {

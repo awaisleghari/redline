@@ -4,6 +4,7 @@
  * and the notice for uploads that contain tracked changes.
  */
 import { unzip } from '../common/zip';
+import { partHasTrackedChanges } from '../producer/accept-changes';
 
 export const MAX_FILE_BYTES = 25 * 1024 * 1024;
 
@@ -36,7 +37,7 @@ export async function refusalFor(file: { name: string; size: number; bytes: () =
 export async function containsTrackedChanges(docx: Uint8Array): Promise<boolean> {
   const decoder = new TextDecoder();
   for (const [part, bytes] of await unzip(docx)) {
-    if (/^word\/[^/]+\.xml$/.test(part) && hasTrackedChanges(decoder.decode(bytes))) return true;
+    if (/^word\/.+\.xml$/.test(part) && hasTrackedChanges(decoder.decode(bytes))) return true;
   }
   return false;
 }
@@ -48,17 +49,7 @@ export const TRACKED_NOTICE = {
   both: 'Both documents already contained tracked changes. They were compared as if those had all been accepted.',
 } as const;
 
-/**
- * Every kind of tracked change Word can store: inserted, deleted and moved
- * text; tracked changes to formatting, numbering, sections and tables; and
- * tracked table cells. Matched whatever namespace prefix the file uses.
- */
-const TRACKED_CHANGE = new RegExp(
-  '<(?:[A-Za-z_][\\w.-]*:)?(?:ins|del|moveFrom|moveTo|cellIns|cellDel|cellMerge|numberingChange|' +
-    '(?:rPr|pPr|sectPr|tblPr|tblPrEx|tcPr|trPr|tblGrid)Change|' +
-    'customXml(?:Ins|Del|MoveFrom|MoveTo)RangeStart)[\\s/>]',
-);
-
+/** Whether one part of a Word file holds tracked-change markup of any kind (the Producer's own test, so the two cannot disagree). */
 export function hasTrackedChanges(partXml: string): boolean {
-  return TRACKED_CHANGE.test(partXml);
+  return partHasTrackedChanges(partXml);
 }

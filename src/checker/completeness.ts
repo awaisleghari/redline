@@ -29,9 +29,9 @@ function isExempt(partName: string, root: XmlElement): boolean {
 /**
  * Every problem that means some text in this file was not read.
  * `readings` are all the readings taken of this file (one view for an upload,
- * both views for an output).
+ * both views for an output). A note that nothing at all refers to still fails.
  */
-export function unreadText(pkg: DocxPackage, readings: StoryReading[], fileName: string): string[] {
+export function unreadText(pkg: DocxPackage, readings: StoryReading[], fileName: string, alsoReferenced: StoryReading[] = []): string[] {
   const problems: string[] = [];
   for (const reading of readings) for (const problem of reading.problems) problems.push(`In the ${fileName}: ${problem}`);
 
@@ -56,7 +56,9 @@ export function unreadText(pkg: DocxPackage, readings: StoryReading[], fileName:
     const noteKind = is(root, W, 'footnotes') ? 'footnote' : is(root, W, 'endnotes') ? 'endnote' : undefined;
     if (!noteKind) continue;
     const idsRead = new Set<string>();
-    for (const reading of readings) for (const id of reading.noteIdsRead.get(partName) ?? []) idsRead.add(id);
+    // `alsoReferenced`: for an upload with tracked changes of its own, the reading with those changes rejected. A note that
+    // only deleted text refers to is deleted content (it is not part of the document as accepted), not text left unread.
+    for (const reading of [...readings, ...alsoReferenced]) for (const id of reading.noteIdsRead.get(partName) ?? []) idsRead.add(id);
     for (const note of root.children) {
       if (!is(note, W, noteKind)) continue;
       const type = attribute(note, W, 'type');

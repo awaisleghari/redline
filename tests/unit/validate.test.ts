@@ -1,4 +1,4 @@
-/** The page's refusal of uploads it cannot compare, including every kind of existing tracked change. */
+/** The page's refusal of uploads it cannot compare, and its recognition of every kind of existing tracked change (compared as accepted, with a notice). */
 import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
 import { hasTrackedChanges, MAX_FILE_BYTES, containsTrackedChanges, refusalFor } from '../../src/app/validate';
@@ -15,7 +15,7 @@ async function docx(body: string, extra: Record<string, string> = {}): Promise<U
 const file = (name: string, bytes: Uint8Array, size = bytes.length) => ({ name, size, bytes: async () => bytes });
 const refusal = async (body: string, extra?: Record<string, string>): Promise<string | undefined> => refusalFor(file('a.docx', await docx(body, extra)), 'original');
 
-describe('refusing uploads', () => {
+describe('uploads: what is refused, and what is recognised', () => {
   it('accepts a clean Word document, whatever the case of its extension', async () => {
     const clean = await docx('<w:p><w:r><w:t>Insert and delete are just words here: ins del.</w:t></w:r></w:p>');
     expect(await refusalFor(file('a.docx', clean), 'original')).toBeUndefined();
