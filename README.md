@@ -178,7 +178,8 @@ locally: a few tests make deliberately wrong PDFs to prove they are withheld).
 started, files it holds that were not there when it started, LibreOffice
 processes running). Between conversions the last two must be 0. It never
 reports a name, a size or any content, and asking never starts the converter
-or keeps it awake.
+or keeps it awake. `/api/converter-state?detail` adds where any counted
+files are, as a count per system folder.
 
 ## How it is built
 

@@ -212,6 +212,44 @@ print("done")`;
     }
   });
 
+  it('a second list of running processes mounted by the host (as Cloudflare does) is not mistaken for files', async () => {
+    // Found on the live site: Cloudflare mounts a process list at /run/cloudchamber/proc, parts of which the
+    // converter's account can "write" to (its own open connections). They are not files and must not be counted.
+    const name = 'redline-pdf-cloudlike';
+    execFileSync('docker', ['rm', '-f', name], { stdio: 'ignore' });
+    execFileSync('docker', ['run', '-d', '--name', name, '--privileged', '--user', '0', '--entrypoint', 'sh', '-p', '127.0.0.1:8794:8080', 'redline-pdf', '-c',
+      'mkdir -p /run/cloudchamber/proc && mount -t proc proc /run/cloudchamber/proc && exec setpriv --reuid 999 --regid 999 --clear-groups python3 -u /opt/converter/server.py'], { stdio: 'ignore' });
+    try {
+      const ask = async (path: string): Promise<string> => (await fetch(`http://127.0.0.1:8794${path}`)).text();
+      for (let attempt = 0; attempt < 60; attempt++) {
+        try {
+          await ask('/state');
+          break;
+        } catch {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+      }
+      // The layout really is there, and really is writable in places by the converter's account.
+      const writable = execFileSync('docker', ['exec', '-u', '999', name, 'sh', '-c', 'find /run/cloudchamber/proc -maxdepth 3 -type d -writable 2>/dev/null | head -5; true'], { encoding: 'utf8' });
+      expect(writable).toContain('/run/cloudchamber/proc/');
+      const pair = await buildPair(pairById('one-word-change'));
+      const reply = await fetch('http://127.0.0.1:8794/convert', { method: 'POST', headers: { 'Content-Type': DOCX_TYPE }, body: new Blob([pair.modified.slice().buffer]) });
+      expect(reply.status).toBe(200);
+      await reply.arrayBuffer();
+      expect(await ask('/state')).toBe('conversions=1 files=0 office_processes=0');
+      const detail = await ask('/state-detail');
+      expect(detail).toMatch(/^before_first=0 since_first=0 where=/);
+      expect(detail).not.toContain('cloudchamber');
+      expect(detail).toContain('/tmp:0');
+      // A real file planted afterwards is still counted.
+      execFileSync('docker', ['exec', '-u', '999', name, 'sh', '-c', 'touch /tmp/left.docx']);
+      expect(await ask('/state')).toBe('conversions=1 files=1 office_processes=0');
+      expect(await ask('/state-detail')).toContain('since_first=1');
+    } finally {
+      removeContainer(name);
+    }
+  });
+
   it('after every conversion above, successful or not: no file is left behind, nothing is still running, and nothing was logged', () => {
     expect(containerScratchFiles()).toEqual([]);
     expect(containerOfficeProcesses()).toEqual([]);
