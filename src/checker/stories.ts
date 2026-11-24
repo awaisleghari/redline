@@ -196,8 +196,15 @@ const M_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/math';
 const V_NS = 'urn:schemas-microsoft-com:vml';
 
 /** Does an element hold any document markup at all (text, a note reference, a tab, a field, an equation, a shape...)? */
+/**
+ * Whether an element could hold something a reader sees as text: Word's own markup, a piece of text in a
+ * drawing or an equation, or a legacy text box. Drawing settings that hold no text (colours, line and fill
+ * styles, such as the "hidden fill" and "hidden line" extensions Word writes on pictures) do not count.
+ */
 function holdsWordMarkup(element: XmlElement): boolean {
-  return element.children.some((c) => c.ns === W || c.ns === M_NS || c.ns === A_NS || c.ns === V_NS || holdsWordMarkup(c));
+  return element.children.some(
+    (c) => c.ns === W || ((c.ns === A_NS || c.ns === M_NS) && (c.name === 't' || c.name === 'fld')) || (c.ns === V_NS && (c.name === 'textbox' || c.name === 'textpath')) || holdsWordMarkup(c),
+  );
 }
 
 /** A short, stable fingerprint of a file's bytes (FNV-1a, two passes), to tell whether a picture or embedded object changed. */

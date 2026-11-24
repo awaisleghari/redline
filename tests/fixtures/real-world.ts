@@ -72,3 +72,22 @@ export function withSections(docx: Uint8Array, nameInEvery = false): Promise<Uin
     return out;
   });
 }
+
+/**
+ * Put the paragraph that carries the first footnote mark into a table cell, with
+ * a second row beneath it holding `secondRow`. (A table that has a footnote hanging
+ * off one of its cells: common in definitions and particulars tables.)
+ */
+export function withNoteInTable(docx: Uint8Array, secondRow: string): Promise<Uint8Array> {
+  return editParts(docx, (name, xml) => {
+    if (name !== 'word/document.xml') return xml;
+    const mark = xml.indexOf('<w:footnoteReference');
+    if (mark < 0) throw new Error('withNoteInTable: the document has no footnote');
+    const start = Math.max(xml.lastIndexOf('<w:p>', mark), xml.lastIndexOf('<w:p ', mark));
+    const end = xml.indexOf('</w:p>', mark) + '</w:p>'.length;
+    const cell = (content: string): string => `<w:tc><w:tcPr><w:tcW w:w="9000" w:type="dxa"/></w:tcPr>${content}</w:tc>`;
+    const second = `<w:p><w:r><w:t xml:space="preserve">${secondRow}</w:t></w:r></w:p>`;
+    const table = `<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid><w:tr>${cell(xml.slice(start, end))}</w:tr><w:tr>${cell(second)}</w:tr></w:tbl>`;
+    return xml.slice(0, start) + table + xml.slice(end);
+  });
+}

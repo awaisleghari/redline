@@ -8,6 +8,7 @@ import { unzip, zip } from '../common/zip';
 import { acceptTrackedChanges } from './accept-changes';
 import { makeSpacesExplicit } from './explicit-spaces';
 import { labelAuthors } from './label-authors';
+import { repairNotes } from './repair-notes';
 import { REVISION_AUTHOR } from './protocol';
 
 /** The engine must already be initialised. */
@@ -19,8 +20,10 @@ export async function produceTrackedChanges(original: Uint8Array, modified: Uint
   const files = await unzip(result);
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
-  for (const [name, bytes] of files) {
-    if (/^word\/[^/]+\.xml$/.test(name)) files.set(name, encoder.encode(labelAuthors(decoder.decode(bytes))));
-  }
+  // The engine's output, part by part: first repaired where the engine is known to go wrong, then relabelled.
+  const parts = new Map<string, string>();
+  for (const [name, bytes] of files) if (/^word\/[^/]+\.xml$/.test(name)) parts.set(name, decoder.decode(bytes));
+  for (const [name, xml] of repairNotes(parts)) parts.set(name, xml);
+  for (const [name, xml] of parts) files.set(name, encoder.encode(labelAuthors(xml)));
   return zip(files);
 }
