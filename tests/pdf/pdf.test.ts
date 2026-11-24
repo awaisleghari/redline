@@ -218,7 +218,7 @@ print("done")`;
     const name = 'redline-pdf-cloudlike';
     execFileSync('docker', ['rm', '-f', name], { stdio: 'ignore' });
     execFileSync('docker', ['run', '-d', '--name', name, '--privileged', '--user', '0', '--entrypoint', 'sh', '-p', '127.0.0.1:8794:8080', 'redline-pdf', '-c',
-      'mkdir -p /run/cloudchamber/proc && mount -t proc proc /run/cloudchamber/proc && exec setpriv --reuid 999 --regid 999 --clear-groups python3 -u /opt/converter/server.py'], { stdio: 'ignore' });
+      'mkdir -p /run/cloudchamber/proc /run/host/bpf && mount -t proc proc /run/cloudchamber/proc && mount -t bpf bpf /run/host/bpf && chmod 1777 /run/host/bpf && mount -t tmpfs tmpfs /sys/fs/bpf && chmod 1777 /sys/fs/bpf && echo old > /tmp/existing && chown 999 /tmp/existing && exec setpriv --reuid 999 --regid 999 --clear-groups python3 -u /opt/converter/server.py'], { stdio: 'ignore' });
     try {
       const ask = async (path: string): Promise<string> => (await fetch(`http://127.0.0.1:8794${path}`)).text();
       for (let attempt = 0; attempt < 60; attempt++) {
@@ -245,6 +245,20 @@ print("done")`;
       execFileSync('docker', ['exec', '-u', '999', name, 'sh', '-c', 'touch /tmp/left.docx']);
       expect(await ask('/state')).toBe('conversions=1 files=1 office_processes=0');
       expect(await ask('/state-detail')).toContain('since_first=1');
+      // Found by the Stage 6 review: other places an unprivileged account can keep data. Each is counted:
+      // a writable special file system; a file system mounted inside /sys; a file that was already there
+      // and has been written to; a block of shared memory (which is not a file at all).
+      const plant = async (command: string, expected: number): Promise<void> => {
+        execFileSync('docker', ['exec', '-u', '999', name, 'sh', '-c', command]);
+        expect(await ask('/state'), command).toBe(`conversions=1 files=${expected} office_processes=0`);
+      };
+      await plant('mkdir /run/host/bpf/kept', 2);
+      await plant('touch /sys/fs/bpf/kept', 3);
+      await plant('echo more >> /tmp/existing', 4);
+      await plant('python3 -c "import ctypes; ctypes.CDLL(None).shmget(0, 4096, 0o1600)"', 5);
+      const where = await ask('/state-detail');
+      expect(where).toContain('/run/host/bpf:1');
+      expect(where).toContain('/sys/fs/bpf:1');
     } finally {
       removeContainer(name);
     }
