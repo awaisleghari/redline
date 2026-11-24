@@ -14,6 +14,7 @@ import { produceTrackedChanges } from '../../src/producer/produce';
 import { buildPair, pairById } from '../fixtures/pairs';
 import { compareDocuments } from 'docxodus/core';
 import { repairNotes } from '../../src/producer/repair-notes';
+import { repairParagraphProperties } from '../../src/producer/repair-paragraphs';
 import { withBlueDoubleUnderline, withClauseStyle, withNumberedClausesInCell, withDocumentWideSpaces, withNoteInTable, withSections } from '../fixtures/real-world';
 
 const COVER = { originalName: 'original.docx', modifiedName: 'modified.docx', comparedAt: '24 November 2026 at 10:00 (UTC+00:00)' };
@@ -369,5 +370,45 @@ describe('numbered clauses at the end of a table cell', () => {
       await bothPass(await withNumberedClausesInCell(base), await withNumberedClausesInCell(base, 'joined'));
       await bothPass(await withNumberedClausesInCell(base, 'last deleted'), await withNumberedClausesInCell(base));
     }
+  });
+});
+
+/**
+ * Found on real contracts (Stage 7) and in an earlier review: the engine sometimes gives a paragraph that survives
+ * the wrong properties (another paragraph's numbering or style, or none where the modified document has a style).
+ */
+describe('a surviving paragraph must carry the modified document\'s properties', () => {
+  const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+  const doc = (body: string): string => `<w:document ${W}><w:body>${body}<w:sectPr/></w:body></w:document>`;
+  const A = 'w:id="1" w:author="x" w:date="2000-01-01T00:00:00Z"';
+
+  it('the repair gives each surviving paragraph the modified document\'s properties, keeps the mark\'s own flags, and leaves a file alone when the paragraphs do not line up', () => {
+    const modified = doc('<w:p><w:pPr><w:pStyle w:val="Clause"/><w:numPr><w:ilvl w:val="0"/><w:numId w:val="7"/></w:numPr></w:pPr><w:r><w:t>One</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Plain"/></w:pPr></w:p><w:p><w:r><w:t>Three</w:t></w:r></w:p>');
+    // As the engine wrote it: a deleted paragraph (not part of the accepted text), then the empty paragraph wrongly numbered, an inserted mark, and a style where there should be none.
+    const tracked = doc(
+      `<w:p><w:pPr><w:pStyle w:val="Clause"/><w:numPr><w:ilvl w:val="0"/><w:numId w:val="7"/></w:numPr></w:pPr><w:r><w:t>One</w:t></w:r></w:p>` +
+        `<w:p><w:pPr><w:pStyle w:val="Clause"/><w:rPr><w:del ${A}/></w:rPr></w:pPr><w:del ${A}><w:r><w:delText>gone</w:delText></w:r></w:del></w:p>` +
+        `<w:p><w:pPr><w:pStyle w:val="Clause"/><w:numPr><w:ilvl w:val="0"/><w:numId w:val="7"/></w:numPr><w:rPr><w:ins ${A}/><w:b/></w:rPr></w:pPr></w:p>` +
+        `<w:p><w:pPr><w:pStyle w:val="Clause"/></w:pPr><w:r><w:t>Three</w:t></w:r></w:p>`,
+    );
+    const repaired = repairParagraphProperties(tracked, modified)!;
+    expect(repaired).toContain(`<w:p><w:pPr><w:pStyle w:val="Plain"/><w:rPr><w:ins ${A}/><w:b/></w:rPr></w:pPr></w:p>`);
+    expect(repaired).toContain('<w:p><w:pPr/><w:r><w:t>Three</w:t></w:r></w:p>');
+    // The deleted paragraph and the paragraph that was already right are untouched.
+    expect(repaired).toContain(`<w:pPr><w:pStyle w:val="Clause"/><w:rPr><w:del ${A}/></w:rPr></w:pPr>`);
+    expect(repaired).toContain('<w:p><w:pPr><w:pStyle w:val="Clause"/><w:numPr><w:ilvl w:val="0"/><w:numId w:val="7"/></w:numPr></w:pPr><w:r><w:t>One</w:t></w:r></w:p>');
+    // Nothing to do, and nothing done when the two do not line up.
+    expect(repairParagraphProperties(modified, modified)).toBeUndefined();
+    expect(repairParagraphProperties(tracked, doc('<w:p><w:r><w:t>One</w:t></w:r></w:p>'))).toBeUndefined();
+  });
+
+  it('a paragraph that gains a named style where the original had none (the engine drops the style): both Word files now pass', async () => {
+    const pair = await buildPair(pairById('one-word-change'));
+    const modified = await withClauseStyle(pair.modified, '<w:pPr><w:spacing w:before="240"/><w:jc w:val="both"/></w:pPr><w:rPr><w:i/></w:rPr>');
+    // The fault is real: straight from the engine, the tracked-changes file is refused.
+    const raw = await compareDocuments(pair.original, modified, { authorName: 'Redline' });
+    expect(await failed(checkTrackedChanges({ original: pair.original, modified, output: raw }))).not.toEqual([]);
+    const { tracked } = await bothPass(pair.original, modified);
+    expect(decoder.decode((await unzip(tracked)).get('word/document.xml')!)).toContain('<w:pStyle w:val="Clause"/>');
   });
 });
