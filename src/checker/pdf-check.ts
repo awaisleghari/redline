@@ -33,7 +33,7 @@ import type { CheckFailure } from './report';
 import { CHAR, isStructureMark, kindOfCode, MARK, type Layout, type PageKind, type Story, type StoryReading } from './stories';
 
 /** The colour each kind of change must be printed in (the style spec in PLAN.md). */
-const COLOUR: Record<StaticKind, string> = { inserted: '0000FF', deleted: 'FF0000', movedFrom: '008000', movedTo: '008000' };
+let COLOUR: Record<StaticKind, string> = { inserted: '0000FF', deleted: 'FF0000', movedFrom: '008000', movedTo: '008000' };
 const KIND_NAME: Record<StaticKind, string> = { inserted: 'inserted', deleted: 'deleted', movedFrom: 'moved-from', movedTo: 'moved-to' };
 
 /** Something a page prints at a point in the text without the document spelling it out. */
@@ -397,7 +397,7 @@ export interface PdfCheckResult {
   note: string;
 }
 
-const CHANGE_COLOURS = new Set(Object.values(COLOUR));
+let CHANGE_COLOURS = new Set(Object.values(COLOUR));
 
 /**
  * Compare a PDF with the static redline it was made from. `printed` is the
@@ -407,6 +407,9 @@ export function comparePdf(reading: StoryReading, pdf: PdfReading): PdfCheckResu
   // Which header and footer each page prints is worked out below from the sections themselves, so the
   // readings of a header or footer carried over into a later section are left out here.
   const printed: StoryReading = { ...reading, stories: reading.stories.filter((story) => !story.carriedOver) };
+  // Insertions are printed in the colour this redline uses for them (blue, or the alternative where the document itself uses blue double underline).
+  COLOUR = { ...COLOUR, inserted: reading.insertedColour };
+  CHANGE_COLOURS = new Set(Object.values(COLOUR));
   const chars = pdf.chars.map((x) => ({ ...x, c: canon(x.c) }));
   const source: Source = { chars, owner: new Array<Owner>(chars.length).fill(undefined) };
   const { owner } = source;

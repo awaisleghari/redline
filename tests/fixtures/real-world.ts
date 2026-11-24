@@ -91,3 +91,22 @@ export function withNoteInTable(docx: Uint8Array, secondRow: string): Promise<Ui
     return xml.slice(0, start) + table + xml.slice(end);
   });
 }
+
+/**
+ * Give some of a document's own text the look the redline normally uses for insertions: blue with a
+ * double underline. `where` chooses a stretch of text (the last run of the main text) or a paragraph mark only.
+ */
+export function withBlueDoubleUnderline(docx: Uint8Array, where: 'text' | 'paragraph mark' = 'text'): Promise<Uint8Array> {
+  const look = '<w:color w:val="0000FF"/><w:u w:val="double"/>';
+  return editParts(docx, (name, xml) => {
+    if (name !== 'word/document.xml') return xml;
+    if (where === 'paragraph mark') {
+      const at = xml.indexOf('<w:p>');
+      if (at < 0) throw new Error('withBlueDoubleUnderline: no plain paragraph found');
+      return `${xml.slice(0, at)}<w:p><w:pPr><w:rPr>${look}</w:rPr></w:pPr>${xml.slice(at + '<w:p>'.length)}`;
+    }
+    const at = xml.lastIndexOf('<w:r><w:t');
+    if (at < 0) throw new Error('withBlueDoubleUnderline: no plain run found');
+    return `${xml.slice(0, at)}<w:r><w:rPr>${look}</w:rPr>${xml.slice(at + '<w:r>'.length)}`;
+  });
+}
