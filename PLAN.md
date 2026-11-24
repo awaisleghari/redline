@@ -192,10 +192,14 @@ Work in order. A stage is done only when every criterion passes and the independ
 - The cloud session cannot reach Cloudflare's API by default. Set out the deployment options for the owner and ask which to use: (a) Cloudflare's own GitHub integration, which deploys automatically when `main` changes (check that it supports Containers); (b) a GitHub Actions workflow with a Cloudflare API token stored as a GitHub secret; (c) allowing `api.cloudflare.com` in the cloud environment and storing the token as a network secret. Never put a token in the repository or in a plain environment variable.
 - Done when: the owner has approved the first public deployment, and the live site passes the Playwright test run against its URL.
 
-**Stage 7: Real-world testing**
-- Real contracts must never be committed, and cloud sessions see only what is committed. So this stage runs on the owner's own computer: he pulls the session down with `claude --teleport` (or opens the repository in local Claude Code) and places anonymised contract pairs in `tests/fixtures/private/` (git-ignored). Before this stage, give the owner plain step-by-step instructions for that switch.
-- Compare results against Word Compare or Litera output for the same pairs; log every discrepancy in the status log, fix the causes, and add a regression test for each fix.
-- Done when: the owner signs off on the private test set.
+**Stage 7: Real-world testing** (rewritten on the owner's instruction, 2026-11-24)
+- The owner uses the product in his browser only and will not run anything locally or supply documents himself. He wants this stage run hands-off.
+- Corpus: at least 100 real contracts found online (public model contracts and agreements published in Word format), each at least 15 pages. The documents themselves are never committed; a list of where each came from is (`tests/corpus/sources.json`), and the downloaded files live in `tests/fixtures/private/` (git-ignored).
+- For each contract, a tool (`scripts/corpus/mutate.ts`) makes a modified version by applying at least 150 known edits of many kinds: words and figures changed, words and sentences added and removed, clauses added, deleted, moved, split and joined, formatting changed, table rows added and removed, alignment changed, headers, footers and notes edited. The edits are the exact right answer a perfect tracked-changes document would show.
+- Each pair is run through the product as the website runs it (`scripts/corpus/run.ts`) and scored: are both Word files released by the Checker; and how many words does the redline mark against the smallest set of words that really differ (`scripts/corpus/measure.ts`; 1.0 times is a perfect redline). Results are summarised by `scripts/corpus/report.ts`.
+- Every fault found is logged in the status log, its cause fixed, and a regression test added from a generated (non-real) document.
+- Done when: the results are reported to the owner in plain terms and he signs off, or says what must improve first.
+- (The earlier form of this stage, with the owner placing anonymised contracts on his own computer, is withdrawn.)
 
 ## Owner actions
 
