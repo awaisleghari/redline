@@ -285,6 +285,17 @@ describe('notes, headers and text boxes', () => {
     }
   });
 
+  it('a drawing saved as shapes with an empty text box, and as a flat picture for older programs, reads the same either way', async () => {
+    // Found on real contracts (Stage 7): a logo in a header, stored both ways. An empty text box shows no text.
+    const MC = 'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"';
+    const WPS = 'xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"';
+    const box = (content: string): string => `<w:drawing><wps:wsp ${WPS}><wps:txbx><w:txbxContent>${content}</w:txbxContent></wps:txbx></wps:wsp></w:drawing>`;
+    const both = (choice: string): string => p(`${r('Logo: ')}<w:r><mc:AlternateContent ${MC}><mc:Choice Requires="wps">${choice}</mc:Choice><mc:Fallback><w:drawing/></mc:Fallback></mc:AlternateContent></w:r>`);
+    expect(readStories(await pkg(both(box('<w:p/><w:p/>'))), 'accepted').problems).toEqual([]);
+    // A text box with words in it, absent from the other form, is still refused.
+    expect(readStories(await pkg(both(box(p(r('Words only one form has'))))), 'accepted').problems.join(' ')).toContain('alternative forms whose text differs');
+  });
+
   it('refuses a document that pulls in another file', async () => {
     const reading = readStories(await pkg(p(r('Body')) + '<w:altChunk r:id="rId9"/>'), 'accepted');
     expect(reading.problems.join(' ')).toContain('another file');

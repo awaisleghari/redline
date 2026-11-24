@@ -410,7 +410,17 @@ function alternateContentBranch(element: XmlElement, context: Context, read: (br
       const inline = read(branch, probe);
       // Pictures are stored differently in the modern and legacy forms, so linked files are left out of this comparison.
       const texts = (list: Para[]): string[] => list.map((entry) => entry.text);
-      return JSON.stringify([inline, texts(probe.paragraphs), probe.pending, texts(probe.textBoxes), probe.notes]).replace(/⟦file [^⟧]*⟧/g, '');
+      // A text box holding nothing but empty paragraphs shows no text: a drawing saved as shapes with such a box
+      // and, for older programs, as a flat picture of itself reads the same either way.
+      const shown = (list: Para[]): string[] => {
+        const boxes: string[][] = [];
+        for (const text of texts(list)) {
+          if (text === '⟦text box⟧' || boxes.length === 0) boxes.push([]);
+          if (text !== '⟦text box⟧') boxes[boxes.length - 1]!.push(text);
+        }
+        return boxes.filter((box) => box.some((text) => text.trim() !== '')).flatMap((box) => ['⟦text box⟧', ...box]);
+      };
+      return JSON.stringify([inline, texts(probe.paragraphs), probe.pending, shown(probe.textBoxes), probe.notes]).replace(/⟦file [^⟧]*⟧/g, '');
     });
     if (new Set(readings).size > 1) {
       context.problems.push('A drawing or text box is stored in alternative forms whose text differs, so what a reader would see cannot be verified.');
