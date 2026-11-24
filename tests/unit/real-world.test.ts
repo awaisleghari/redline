@@ -255,6 +255,19 @@ describe('a footnote hanging off a table in which something else changes', () =>
     expect(counts).toEqual({ insertions: 1, deletions: 1, moves: 0, formattingChanges: 0 });
   });
 
+  it('an empty footnote re-issued the same way (no text, only its paragraph mark flagged) is restored too', () => {
+    const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+    const A = 'w:id="1" w:author="x" w:date="2000-01-01T00:00:00Z"';
+    const parts = new Map<string, string>([
+      ['word/document.xml', `<w:document ${W}><w:body><w:p><w:r><w:footnoteReference w:id="5"/></w:r></w:p></w:body></w:document>`],
+      ['word/footnotes.xml', `<w:footnotes ${W}><w:footnote w:id="5"><w:p><w:pPr><w:rPr><w:ins ${A}/></w:rPr></w:pPr></w:p></w:footnote><w:footnote w:id="9"><w:p><w:pPr><w:rPr><w:del ${A}/></w:rPr></w:pPr></w:p></w:footnote></w:footnotes>`],
+    ]);
+    const repaired = repairNotes(parts).get('word/footnotes.xml')!;
+    expect(repaired).not.toContain('w:id="9"');
+    expect(repaired).not.toMatch(/<w:(ins|del) /);
+    expect(repaired).toContain('<w:footnote w:id="5">');
+  });
+
   it('when the footnote itself was edited as well, the note shows its old and new text, and both Word files pass', async () => {
     const pair = await buildPair(pairById('footnote-change'));
     const original = await withNoteInTable(pair.original, 'The fee is payable monthly in arrear.');
