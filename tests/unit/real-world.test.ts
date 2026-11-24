@@ -65,14 +65,36 @@ describe('a document that says "keep white space" once, for the whole document',
     expect(parseXml('<a><t> x </t></a>').children[0]!.preserveSpace).toBe(false);
   });
 
-  it('before the engine sees such a document, the setting is written onto each piece of text; other documents are left byte for byte', async () => {
-    const part = '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xml:space="preserve"><w:body><w:p><w:r><w:t>TERM</w:t></w:r><w:r><w:t> SHEET</w:t></w:r><w:r><w:t xml:space="default"> x </w:t></w:r></w:p></w:body></w:document>';
+  it('before the engine sees such a document, the setting is written onto each piece of text and taken off everything else; nothing else changes', async () => {
+    const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+    const part = `<?xml version="1.0"?><!-- xml:space="x" --><w:document ${W} xmlns:a="urn:drawing" xml:space="preserve"><w:body><w:p><w:r><w:t>TERM</w:t></w:r><w:r><w:t> SHEET</w:t></w:r><w:r><w:t xml:space="default"> x </w:t></w:r><w:r xml:space='default'><w:t> y </w:t><w:instrText> PAGE </w:instrText></w:r><a:t> drawing </a:t><w:r><w:t>a&#13;b &amp; c</w:t><w:tab/></w:r></w:p></w:body></w:document>`;
     const explicit = makeSpacesExplicitInPart(part);
-    expect(explicit).toContain('<w:t xml:space="preserve">TERM</w:t>');
-    expect(explicit).toContain('<w:t xml:space="preserve"> SHEET</w:t>');
-    expect(explicit).toContain('<w:t xml:space="default"> x </w:t>');
+    expect(explicit).toBe(
+      `<?xml version="1.0"?><!-- xml:space="x" --><w:document ${W} xmlns:a="urn:drawing"><w:body><w:p><w:r><w:t xml:space="preserve">TERM</w:t></w:r><w:r><w:t xml:space="preserve"> SHEET</w:t></w:r><w:r><w:t xml:space="default"> x </w:t></w:r><w:r><w:t> y </w:t><w:instrText> PAGE </w:instrText></w:r><a:t> drawing </a:t><w:r><w:t xml:space="preserve">a&#13;b &amp; c</w:t><w:tab/></w:r></w:p></w:body></w:document>`,
+    );
+    // A part that is not Word markup is left alone, whatever it says.
+    const other = '<a:theme xmlns:a="urn:drawing" xml:space="preserve"><a:t> x </a:t></a:theme>';
+    expect(makeSpacesExplicitInPart(other)).toBe(other);
+    // An ordinary document is passed on as the very same bytes.
     const ordinary = (await buildPair(pairById('several-changes'))).modified;
     expect(await makeSpacesExplicit(ordinary)).toBe(ordinary);
+  });
+
+  it('the prepared document reads, to the Checker, exactly as the upload does, for every generated pair', async () => {
+    const { ALL_PAIR_SPECS } = await import('../fixtures/pairs');
+    const { openPackage, readStories } = await import('./real-world-reading');
+    for (const spec of ALL_PAIR_SPECS) {
+      const pair = await buildPair(spec);
+      for (const docx of [pair.original, pair.modified]) {
+        const upload = await withDocumentWideSpaces(docx);
+        const prepared = await makeSpacesExplicit(upload);
+        expect(prepared).not.toBe(upload);
+        // No outer setting is left in what the engine is given.
+        for (const [name, bytes] of await unzip(prepared)) if (/^word\/[^/]+\.xml$/.test(name)) expect(decoder.decode(bytes), `${spec.id} ${name}`).not.toMatch(/<w:(document|hdr|ftr|footnotes|endnotes|body|p|r)\b[^>]*xml:space/);
+        expect(readStories(await openPackage(prepared)), spec.id).toEqual(readStories(await openPackage(upload)));
+        expect(readStories(await openPackage(upload)), spec.id).toEqual(readStories(await openPackage(docx)));
+      }
+    }
   });
 
   for (const [which, reshape] of [
@@ -98,14 +120,25 @@ describe('a document that says "keep white space" once, for the whole document',
     });
   }
 
-  it('an output in which such a space is lost is caught (words run together)', async () => {
+  it('an output in which such a space is lost is caught (words run together), whichever of the two documents is written this way', async () => {
     const pair = await buildPair(pairById('several-changes'));
-    const modified = await withDocumentWideSpaces(pair.modified);
-    const { tracked, staticRedline } = await bothPass(pair.original, modified);
-    // What the engine did before the fix: text copied without its setting, under an outer element that no longer has one.
-    const lose = (xml: string): string => xml.replace(/<w:t xml:space="preserve">( [^<]*)<\/w:t>/, '<w:t>$1</w:t>');
-    expect(await failed(checkTrackedChanges({ original: pair.original, modified, output: await editPart(tracked, /^word\/document\.xml$/, lose) }))).toEqual(expect.arrayContaining(['accept-all']));
-    expect(await failed(checkStaticRedline({ original: pair.original, modified, output: await editPart(staticRedline, /^word\/document\.xml$/, lose), ...COVER }))).toEqual(expect.arrayContaining(['static-new']));
+    for (const reshape of [{ original: false, modified: true }, { original: true, modified: false }, { original: true, modified: true }]) {
+      const original = reshape.original ? await withDocumentWideSpaces(pair.original) : pair.original;
+      const modified = reshape.modified ? await withDocumentWideSpaces(pair.modified) : pair.modified;
+      const { tracked, staticRedline } = await bothPass(original, modified);
+      // No output leaves the matter to an outer element.
+      for (const output of [tracked, staticRedline]) {
+        for (const [name, bytes] of await unzip(output)) if (/^word\/[^/]+\.xml$/.test(name)) expect(decoder.decode(bytes), name).not.toMatch(/<w:(document|hdr|ftr|footnotes|endnotes|body|p|r)\b[^>]*xml:space/);
+      }
+      // One piece of text loses its own setting.
+      const lose = (xml: string): string => xml.replace(/<w:t xml:space="preserve">( [^<]*)<\/w:t>/, '<w:t>$1</w:t>');
+      expect(await failed(checkTrackedChanges({ original, modified, output: await editPart(tracked, /^word\/document\.xml$/, lose) }))).toEqual(expect.arrayContaining(['accept-all']));
+      expect(await failed(checkStaticRedline({ original, modified, output: await editPart(staticRedline, /^word\/document\.xml$/, lose), ...COVER }))).toEqual(expect.arrayContaining(['static-new']));
+      // An output that states the setting on its outermost element instead is refused outright, even though it would read the same.
+      const outer = (xml: string): string => xml.replace(/<w:document\b/, '<w:document xml:space="preserve"');
+      expect(await failed(checkTrackedChanges({ original, modified, output: await editPart(tracked, /^word\/document\.xml$/, outer) }))).toEqual(['structure']);
+      expect(await failed(checkStaticRedline({ original, modified, output: await editPart(staticRedline, /^word\/document\.xml$/, outer), ...COVER }))).toEqual(['structure']);
+    }
   });
 });
 
