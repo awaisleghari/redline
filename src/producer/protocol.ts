@@ -16,6 +16,7 @@ export interface StaticRequest {
   originalName: string;
   modifiedName: string;
   comparedAt: string;
+  trackedChangesIn?: 'original' | 'modified' | 'both';
 }
 
 export interface RenderRequest {

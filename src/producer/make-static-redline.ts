@@ -6,6 +6,7 @@
 import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
 import { NS } from '../common/namespaces';
 import { unzip, zip } from '../common/zip';
+import { acceptTrackedChanges, hasTrackedChanges } from './accept-changes';
 import { coverPageXml, coverStylesXml, type CoverPageContent } from './cover-page';
 import { readOriginal, StyleSheet } from './original-reader';
 import { convertPart, DEFAULT_STYLE_OPTIONS, PROPERTY_CHANGE_RECORDS, type ChangeCounts, type StaticRedlineStyleOptions } from './static-redline';
@@ -31,6 +32,8 @@ export interface StaticRedlineOptions {
   modifiedName: string;
   /** Date and time of the comparison, already formatted for display. */
   comparedAt: string;
+  /** Which uploads contained tracked changes of their own; when not stated, the Producer looks at the original itself. */
+  trackedChangesIn?: 'original' | 'modified' | 'both';
   style?: Partial<StaticRedlineStyleOptions>;
 }
 
@@ -158,7 +161,8 @@ function removeChangeRecords(xml: string): string {
 
 export async function makeStaticRedline(trackedChanges: Uint8Array, original: Uint8Array, options: StaticRedlineOptions): Promise<StaticRedline> {
   // The original document: the formatting its text had, and its clause numbers.
-  const originalFiles = await unzip(original);
+  // Tracked changes already in the original count as accepted: its formatting and numbering are read from the accepted copy.
+  const originalFiles = await unzip(await acceptTrackedChanges(original));
   const originalTypes = originalFiles.get('[Content_Types].xml');
   if (!originalTypes) throw new Error('the original document has no content types');
   const originalParts = partsOfTypes(decoder.decode(originalTypes), originalFiles.keys(), TEXT_PART_TYPES);
@@ -188,7 +192,9 @@ export async function makeStaticRedline(trackedChanges: Uint8Array, original: Ui
     counts.formattingChanges += result.formattingChanges;
   }
 
-  const content: CoverPageContent = { originalName: options.originalName, modifiedName: options.modifiedName, comparedAt: options.comparedAt, ...counts };
+  const stated = options.trackedChangesIn;
+  const trackedChangesIn = stated === 'original' || stated === 'modified' || stated === 'both' ? stated : stated === undefined && (await hasTrackedChanges(original)) ? 'original' : undefined;
+  const content: CoverPageContent = { originalName: options.originalName, modifiedName: options.modifiedName, comparedAt: options.comparedAt, ...counts, trackedChangesIn };
   const settingsPart = [...files.keys()].find((name) => /(^|\/)settings\.xml$/.test(name));
   const facingPages = settingsPart !== undefined && /<w:(evenAndOddHeaders|mirrorMargins)(?![^>]*w:val="(0|false|off)")[^>]*>/.test(decoder.decode(files.get(settingsPart)!));
   converted.set(main, addCoverPage(converted.get(main)!, content, facingPages));

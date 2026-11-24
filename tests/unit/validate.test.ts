@@ -1,7 +1,7 @@
 /** The page's refusal of uploads it cannot compare, including every kind of existing tracked change. */
 import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
-import { hasTrackedChanges, MAX_FILE_BYTES, refusalFor } from '../../src/app/validate';
+import { hasTrackedChanges, MAX_FILE_BYTES, containsTrackedChanges, refusalFor } from '../../src/app/validate';
 
 const NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
 
@@ -34,17 +34,20 @@ describe('refusing uploads', () => {
     ['a tracked table cell', '<w:tbl><w:tr><w:tc><w:tcPr><w:cellIns w:id="1"/></w:tcPr><w:p/></w:tc></w:tr></w:tbl>'],
     ['a deleted table cell', '<w:tbl><w:tr><w:tc><w:tcPr><w:cellDel w:id="1"/></w:tcPr><w:p/></w:tc></w:tr></w:tbl>'],
     ['a numbering change', '<w:p><w:pPr><w:numPr><w:numberingChange w:id="1" w:original="1."/></w:numPr></w:pPr></w:p>'],
-  ])('refuses a document with %s', async (_name, body) => {
-    expect(await refusal(body)).toMatch(/already contains tracked changes\. Please accept or reject the existing changes first, then compare\./);
+  ])('accepts a document with %s, and recognises that it holds tracked changes', async (_name, body) => {
+    // Owner's decision of 2026-11-24: such a document is no longer refused; it is compared as if its changes had been accepted, with a notice.
+    expect(await refusal(body)).toBeUndefined();
+    expect(await containsTrackedChanges(await docx(body))).toBe(true);
   });
 
-  it('refuses tracked changes under a different namespace prefix, and in headers or footnotes', async () => {
+  it('recognises tracked changes under a different namespace prefix, and in headers or footnotes; and none in a clean document', async () => {
     const other = '<x:document xmlns:x="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><x:body><x:p><x:ins x:id="1"><x:r><x:t>y</x:t></x:r></x:ins></x:p></x:body></x:document>';
     expect(hasTrackedChanges(other)).toBe(true);
     const inHeader = { 'word/header1.xml': `<w:hdr ${NS}><w:p><w:del w:id="1"><w:r><w:delText>x</w:delText></w:r></w:del></w:p></w:hdr>` };
-    expect(await refusal('<w:p/>', inHeader)).toMatch(/already contains tracked changes/);
+    expect(await containsTrackedChanges(await docx('<w:p/>', inHeader))).toBe(true);
     const inNotes = { 'word/footnotes.xml': `<w:footnotes ${NS}><w:footnote w:id="1"><w:p><w:ins w:id="1"><w:r><w:t>x</w:t></w:r></w:ins></w:p></w:footnote></w:footnotes>` };
-    expect(await refusal('<w:p/>', inNotes)).toMatch(/already contains tracked changes/);
+    expect(await containsTrackedChanges(await docx('<w:p/>', inNotes))).toBe(true);
+    expect(await containsTrackedChanges(await docx('<w:p><w:r><w:t>Insert and delete are just words here: ins del.</w:t></w:r></w:p>'))).toBe(false);
   });
 
   it('refuses old, foreign, oversized, empty and unreadable files in plain words, without reading an oversized file', async () => {

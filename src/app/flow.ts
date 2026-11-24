@@ -20,6 +20,8 @@ export interface ComparisonDetails {
   modifiedName: string;
   /** Date and time of the comparison, formatted for display. */
   comparedAt: string;
+  /** Which uploads contained tracked changes of their own (they are compared as if accepted). */
+  trackedChangesIn?: 'original' | 'modified' | 'both';
 }
 
 type Files = { original: Uint8Array; modified: Uint8Array; output: Uint8Array };

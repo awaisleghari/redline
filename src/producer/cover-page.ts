@@ -18,6 +18,8 @@ export interface CoverPageContent {
   deletions: number;
   moves: number;
   formattingChanges: number;
+  /** Which uploads contained tracked changes of their own (compared as if accepted); undefined when neither did. */
+  trackedChangesIn?: 'original' | 'modified' | 'both';
 }
 
 /** Style ids of the cover page. The Checker recognises the cover page by these. */
@@ -43,6 +45,13 @@ function changeRunProperties(kind: ChangeKind): string {
   return `<w:rPr>${strike}<w:color w:val="${style.color}"/>${underline}</w:rPr>`;
 }
 
+/** Said on the cover page when an upload came with tracked changes of its own: the reader must know what was compared. */
+export const ACCEPTED_NOTE = {
+  original: 'Note: the original contained tracked changes. It was compared as if they had all been accepted.',
+  modified: 'Note: the modified document contained tracked changes. It was compared as if they had all been accepted.',
+  both: 'Note: both documents contained tracked changes. They were compared as if those had all been accepted.',
+} as const;
+
 /** The lines of the cover page, in order. Exported so tests can state the expected wording once. */
 export function coverLines(content: CoverPageContent): { style: string; text: string; kind?: ChangeKind; shaded?: boolean }[] {
   return [
@@ -50,6 +59,7 @@ export function coverLines(content: CoverPageContent): { style: string; text: st
     { style: COVER_STYLE.text, text: `Original: ${content.originalName}` },
     { style: COVER_STYLE.text, text: `Modified: ${content.modifiedName}` },
     { style: COVER_STYLE.text, text: `Compared: ${content.comparedAt}` },
+    ...(content.trackedChangesIn ? [{ style: COVER_STYLE.text, text: ACCEPTED_NOTE[content.trackedChangesIn] }] : []),
     { style: COVER_STYLE.heading, text: 'Legend' },
     ...(Object.keys(LEGEND) as ChangeKind[]).map((kind) => ({ style: COVER_STYLE.text, text: LEGEND[kind], kind })),
     { style: COVER_STYLE.text, text: 'Text whose formatting changed', shaded: true },

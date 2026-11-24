@@ -7,7 +7,7 @@
  */
 import { ProducerError, runComparison, runPdf, type FlowResult, type Reviewed } from './app/flow';
 import { displayName, formatComparedAt } from './app/format';
-import { refusalFor } from './app/validate';
+import { containsTrackedChanges, refusalFor, TRACKED_NOTICE } from './app/validate';
 import { OUTPUT_NAME, reportAsText, type CheckReport } from './checker';
 import { CheckerClient } from './checker/checker-client';
 import { CompareClient } from './producer/compare-client';
@@ -154,6 +154,7 @@ function offer(kind: 'tracked' | 'static' | 'pdf', reviewed: Reviewed): void {
 function reset(): void {
   for (const url of urls.splice(0)) URL.revokeObjectURL(url);
   results.hidden = true;
+  element<HTMLParagraphElement>('tracked-notice').hidden = true;
   summary.hidden = true;
   viewer.hidden = true;
   viewer.removeAttribute('srcdoc');
@@ -289,8 +290,14 @@ compareButton.addEventListener('click', async () => {
     progressText.textContent = 'Comparing and checking…';
     const when = new Date();
     const names = { originalName: displayName(original.name), modifiedName: displayName(modified.name) };
-    const details = { ...names, comparedAt: formatComparedAt(when) };
     const [originalBytes, modifiedBytes] = await Promise.all([original.arrayBuffer(), modified.arrayBuffer()]);
+    // An upload with tracked changes of its own is compared as if they had been accepted, and the user is told.
+    const [inOriginal, inModified] = await Promise.all([containsTrackedChanges(new Uint8Array(originalBytes)), containsTrackedChanges(new Uint8Array(modifiedBytes))]);
+    const trackedChangesIn: 'original' | 'modified' | 'both' | undefined = inOriginal && inModified ? 'both' : inOriginal ? 'original' : inModified ? 'modified' : undefined;
+    const details = { ...names, comparedAt: formatComparedAt(when), trackedChangesIn };
+    const trackedNotice = element<HTMLParagraphElement>('tracked-notice');
+    trackedNotice.textContent = trackedChangesIn ? TRACKED_NOTICE[trackedChangesIn] : '';
+    trackedNotice.hidden = !trackedChangesIn;
     const result = await runComparison(new Uint8Array(originalBytes), new Uint8Array(modifiedBytes), details, {
       produce: (a, b) => producer.compare(a, b),
       makeStatic: (tracked, source, info) => producer.makeStatic(tracked, source, info),

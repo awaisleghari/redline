@@ -1,6 +1,7 @@
 /**
  * Checks on an uploaded file before anything is compared. Plain-English
- * refusals for the cases version 1 does not handle (see PLAN.md, "Out of scope").
+ * refusals for the cases version 1 does not handle (see PLAN.md, "Out of scope"),
+ * and the notice for uploads that contain tracked changes.
  */
 import { unzip } from '../common/zip';
 
@@ -24,15 +25,28 @@ export async function refusalFor(file: { name: string; size: number; bytes: () =
   if (!parts.has('[Content_Types].xml') || ![...parts.keys()].some((part) => /^word\/document\d*\.xml$/.test(part))) {
     return `${which} could not be read as a Word document. It may be damaged, or not really a .docx file.`;
   }
-  const decoder = new TextDecoder();
-  for (const [part, bytes] of parts) {
-    if (!/^word\/[^/]+\.xml$/.test(part)) continue;
-    if (hasTrackedChanges(decoder.decode(bytes))) {
-      return `${which} already contains tracked changes. Please accept or reject the existing changes first, then compare.`;
-    }
-  }
   return undefined;
 }
+
+/**
+ * Whether an upload already contains tracked changes of its own. Such a document
+ * is compared as if they had all been accepted, as Word's own Compare does, and
+ * the user is told so (owner's decision, 2026-11-24; before that it was refused).
+ */
+export async function containsTrackedChanges(docx: Uint8Array): Promise<boolean> {
+  const decoder = new TextDecoder();
+  for (const [part, bytes] of await unzip(docx)) {
+    if (/^word\/[^/]+\.xml$/.test(part) && hasTrackedChanges(decoder.decode(bytes))) return true;
+  }
+  return false;
+}
+
+/** What the page says when one or both uploads came with tracked changes. */
+export const TRACKED_NOTICE = {
+  original: 'The original already contained tracked changes. It was compared as if they had all been accepted.',
+  modified: 'The modified document already contained tracked changes. It was compared as if they had all been accepted.',
+  both: 'Both documents already contained tracked changes. They were compared as if those had all been accepted.',
+} as const;
 
 /**
  * Every kind of tracked change Word can store: inserted, deleted and moved
