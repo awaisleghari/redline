@@ -14,7 +14,7 @@ import { produceTrackedChanges } from '../../src/producer/produce';
 import { buildPair, pairById } from '../fixtures/pairs';
 import { compareDocuments } from 'docxodus/core';
 import { repairNotes } from '../../src/producer/repair-notes';
-import { withBlueDoubleUnderline, withClauseStyle, withDocumentWideSpaces, withNoteInTable, withSections } from '../fixtures/real-world';
+import { withBlueDoubleUnderline, withClauseStyle, withNumberedClausesInCell, withDocumentWideSpaces, withNoteInTable, withSections } from '../fixtures/real-world';
 
 const COVER = { originalName: 'original.docx', modifiedName: 'modified.docx', comparedAt: '24 November 2026 at 10:00 (UTC+00:00)' };
 const decoder = new TextDecoder();
@@ -334,5 +334,40 @@ describe('a document that itself uses blue double underline', () => {
     const { staticRedline } = await bothPass(pair.original, blueModified);
     const wrongLegend = await editPart(staticRedline, /^word\/document\.xml$/, (xml) => xml.replace(ALT_LEGEND, 'Inserted text'));
     expect(await failed(checkStaticRedline({ original: pair.original, modified: blueModified, output: wrongLegend, ...COVER }))).toContain('cover-page');
+  });
+});
+
+/**
+ * Found on real contracts (Stage 7, about a dozen documents): the last numbered clause in a table cell is deleted.
+ * A cell's last paragraph mark cannot go, so the removal is shown on the mark of the paragraph before. The clause
+ * that gives up its number must still be the deleted one; otherwise the surviving clause loses its number, or
+ * both keep one and every later clause is numbered one too high.
+ */
+describe('numbered clauses at the end of a table cell', () => {
+  it('the last clause deleted: it loses its number and shows its old one, the clause before keeps its own, and later clauses are numbered as in the modified document', async () => {
+    for (const id of ['numbered-clause-deleted', 'numbered-clause-moved']) {
+      const base = (await buildPair(pairById(id))).original;
+      const original = await withNumberedClausesInCell(base);
+      const modified = await withNumberedClausesInCell(base, 'last deleted');
+      const { staticRedline, counts } = await bothPass(original, modified);
+      expect(counts).toEqual({ insertions: 0, deletions: 1, moves: 0, formattingChanges: 0 });
+      // In the cell: three paragraphs; only the last (the deleted clause) has had its automatic number taken off.
+      const xml = decoder.decode((await unzip(staticRedline)).get('word/document.xml')!);
+      const cell = /<w:tc>.*?<\/w:tc>/s.exec(xml)![0];
+      const inCell = cell.match(/<w:p>.*?<\/w:p>/gs)!;
+      expect(inCell).toHaveLength(3);
+      expect(inCell.map((paragraph) => paragraph.includes('<w:numId w:val="0"/>'))).toEqual([false, false, true]);
+      // And a redline in which the surviving clause loses its number instead is refused.
+      const wrong = await editPart(staticRedline, /^word\/document\.xml$/, (doc) => doc.replace(inCell[1]!, inCell[1]!.replace(/<w:numPr>.*?<\/w:numPr>/s, '<w:numPr><w:numId w:val="0"/></w:numPr>')));
+      expect(await failed(checkStaticRedline({ original, modified, output: wrong, ...COVER }))).toContain('numbering');
+    }
+  });
+
+  it('the last two clauses run together, and a clause added at the end: both Word files pass', async () => {
+    for (const id of ['numbered-clause-deleted', 'numbered-clause-moved']) {
+      const base = (await buildPair(pairById(id))).original;
+      await bothPass(await withNumberedClausesInCell(base), await withNumberedClausesInCell(base, 'joined'));
+      await bothPass(await withNumberedClausesInCell(base, 'last deleted'), await withNumberedClausesInCell(base));
+    }
   });
 });

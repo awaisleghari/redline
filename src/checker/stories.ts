@@ -273,6 +273,8 @@ interface Context {
   oldNumber: string;
   /** Whether the last paragraph read had its mark removed in this view. */
   lastMarkRemoved: boolean;
+  /** In a static redline: paragraphs whose mark is to be read differently from how it is formatted (see readCell). */
+  markAt?: Map<XmlElement, StaticKind | undefined>;
   /** Paragraphs of text boxes met while reading this story. */
   textBoxes: Para[];
   notes: NoteRef[];
@@ -591,7 +593,7 @@ function readParagraph(paragraph: XmlElement, context: Context): void {
   context.paragraphStyle = undefined;
 
   const markProperties = properties && child(properties, W, 'rPr');
-  const markKind = markup === 'static' ? staticKindOf(markProperties, context.source.insertedColour) : undefined;
+  const markKind = markup !== 'static' ? undefined : context.markAt?.has(paragraph) ? context.markAt.get(paragraph) : staticKindOf(markProperties, context.source.insertedColour);
   const markRemoved =
     markup === 'static' ? staticDropped(markKind, context.view) : removedIn(markProperties, context.view, ['ins', 'moveTo'], ['del', 'moveFrom']);
   // Is the paragraph itself removed by the changes (whatever this view shows)?
@@ -726,12 +728,50 @@ function readRow(row: XmlElement, context: Context): void {
   }
 }
 
+/**
+ * The end of a cell in a static redline. A cell always keeps its last paragraph mark, so when the cell's last
+ * paragraph is added or removed whole, the change can only be shown on the mark of the paragraph before it.
+ * Read as formatted, that would make the paragraph before the one that was removed or added. So where the mark
+ * before the last paragraph shows a change and everything in the last paragraph shows the same change, the
+ * change belongs to the last paragraph: that is the clause that came or went, and the one before it is untouched.
+ */
+function cellEndMarks(cell: XmlElement, insertedColour: string): Map<XmlElement, StaticKind | undefined> | undefined {
+  const blocks = cell.children.filter((c) => w(c, 'p') || w(c, 'tbl'));
+  const last = blocks[blocks.length - 1];
+  const before = blocks[blocks.length - 2];
+  if (!last || !before || !w(last, 'p') || !w(before, 'p')) return undefined;
+  const markOf = (paragraph: XmlElement): StaticKind | undefined => {
+    const properties = child(paragraph, W, 'pPr');
+    return staticKindOf(properties && child(properties, W, 'rPr'), insertedColour);
+  };
+  const kind = markOf(before);
+  if (!kind || markOf(last)) return undefined;
+  const runs: XmlElement[] = [];
+  const collect = (element: XmlElement): void => {
+    for (const c of element.children) {
+      if (w(c, 'r')) {
+        if (c.children.some((x) => !w(x, 'rPr'))) runs.push(c);
+      } else if (!w(c, 'pPr')) collect(c);
+    }
+  };
+  collect(last);
+  const styleOf = (run: XmlElement): string | undefined => {
+    const style = child(run, W, 'rPr') && child(child(run, W, 'rPr')!, W, 'rStyle');
+    return style ? attribute(style, W, 'val') : undefined;
+  };
+  // The old clause number typed in front of a removed paragraph is the redline's own addition, not the paragraph's content.
+  const content = runs.filter((run) => styleOf(run) !== STATIC_STYLE.oldNumber);
+  if (content.length === 0 || !content.every((run) => staticKindOf(child(run, W, 'rPr'), insertedColour) === kind)) return undefined;
+  return new Map<XmlElement, StaticKind | undefined>([[before, undefined], [last, kind]]);
+}
+
 /** Read one cell. Returns undefined when the cell does not exist in this view. */
 function readCell(cell: XmlElement, context: Context): Context | undefined {
   if (context.source.markup === 'tracked' && removedIn(child(cell, W, 'tcPr'), context.view, ['cellIns'], ['cellDel'])) return undefined;
   // A cell is its own scope for joining paragraphs: text never leaks out of a cell.
   const inner = newContext(context.view, context.problems, context.source);
   inner.code = context.code & CHAR.changed;
+  if (context.source.markup === 'static') inner.markAt = cellEndMarks(cell, context.source.insertedColour);
   readBlocks(cell, inner);
   // In a static redline there are no flags on rows and cells: a cell is gone
   // in this view exactly when its last paragraph's mark is (Word never lets a

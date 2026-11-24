@@ -110,3 +110,27 @@ export function withBlueDoubleUnderline(docx: Uint8Array, where: 'text' | 'parag
     return `${xml.slice(0, at)}<w:r><w:rPr>${look}</w:rPr>${xml.slice(at + '<w:r>'.length)}`;
   });
 }
+
+/**
+ * Put the first three numbered clauses into one table cell (clauses inside a table, as in schedules and
+ * definitions tables). `lastTwo` says what then happens to the second and third: nothing; they are run
+ * together into one clause (an editor deleting the paragraph break between them); or the third is deleted.
+ */
+export function withNumberedClausesInCell(docx: Uint8Array, lastTwo: 'kept' | 'joined' | 'last deleted' = 'kept'): Promise<Uint8Array> {
+  return editParts(docx, (name, xml) => {
+    if (name !== 'word/document.xml') return xml;
+    const paragraphs = [...xml.matchAll(/<w:p>(?:(?!<\/w:p>).)*<w:numPr>(?:(?!<\/w:p>).)*<\/w:p>/gs)];
+    if (paragraphs.length < 4) throw new Error('withNumberedClausesInCell: the document needs at least four numbered clauses');
+    const [a, b, c] = paragraphs;
+    if (a!.index! + a![0].length !== b!.index || b!.index! + b![0].length !== c!.index) throw new Error('withNumberedClausesInCell: the first three numbered clauses are not consecutive');
+    let third = c![0];
+    let second = b![0];
+    if (lastTwo === 'joined') {
+      const runs = third.slice(third.indexOf('</w:pPr>') + '</w:pPr>'.length, third.lastIndexOf('</w:p>'));
+      second = second.slice(0, second.lastIndexOf('</w:p>')) + '<w:r><w:t xml:space="preserve"> </w:t></w:r>' + runs + '</w:p>';
+      third = '';
+    } else if (lastTwo === 'last deleted') third = '';
+    const table = `<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="9000" w:type="dxa"/></w:tcPr>${a![0]}${second}${third}</w:tc></w:tr></w:tbl>`;
+    return xml.slice(0, a!.index) + table + xml.slice(c!.index! + c![0].length);
+  });
+}

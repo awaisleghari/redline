@@ -370,6 +370,8 @@ class PartConverter {
   constructor(
     private readonly options: StaticRedlineStyleOptions,
     private readonly oldNumberOf: Map<Element, string> = new Map(),
+    /** Looks up a paragraph's numbering (its own, or its style's) in the tracked-changes file. */
+    private readonly numberingOf: (paragraph: Element) => Element | undefined = (paragraph) => childW(childW(paragraph, 'pPr') ?? paragraph, 'numPr'),
   ) {}
 
   /** Type the old clause number, struck through like the paragraph it belongs to, at the start of a removed paragraph. */
@@ -407,6 +409,26 @@ class PartConverter {
       }
       i = Math.max(j, i + 1);
     }
+  }
+
+  /** Give `to` the numbering that `from` states for itself (list and level), in place of its own. */
+  private takeNumberingFrom(from: Element, to: Element): void {
+    // Its own numbering, or its style's; if it has none, the paragraph that takes over has none either.
+    const stated = this.numberingOf(from);
+    if (!stated) {
+      this.removeNumbering(to);
+      return;
+    }
+    const prefix = to.prefix ?? 'w';
+    let pPr = childW(to, 'pPr');
+    if (!pPr) {
+      pPr = to.ownerDocument!.createElementNS(W, `${prefix}:pPr`);
+      to.insertBefore(pPr, to.firstChild);
+    }
+    const existing = childW(pPr, 'numPr');
+    if (existing) pPr.removeChild(existing);
+    const before = elementChildren(pPr).find((c) => !(isW(c) && PPR_BEFORE_NUMPR.has(c.localName!)));
+    pPr.insertBefore(stated.cloneNode(true), before ?? null);
   }
 
   private removeNumbering(paragraph: Element): void {
@@ -530,6 +552,7 @@ class PartConverter {
     // A table cell always keeps its last paragraph mark for as long as the cell
     // exists. So the last mark in a cell is changed only if the cell itself (or
     // its row) was inserted or deleted, whatever the paragraph's own flag says.
+    let numberLostAtCellEnd: ChangeKind | undefined;
     const cell = paragraph.parentNode as Element;
     if (!kind && isWord(cell, 'tc') && kids(cell).filter((c) => isWord(c, 'p') || isWord(c, 'tbl')).pop() === paragraph) {
       const cellKind = this.cellChange.get(cell) ?? this.cellChange.get(cell.parentNode as Element);
@@ -543,6 +566,24 @@ class PartConverter {
         if (previous && index !== undefined && this.tokens[index] === 'unchanged') {
           applyChangeStyle(markProperties(previous), markKind, this.options.insertedColor);
           this.tokens[index] = markKind;
+          // Numbering must follow (found on real contracts: otherwise two paragraphs keep a number where the
+          // modified document has one clause, and every later clause is numbered one too high).
+          if (markKind === 'deleted' || markKind === 'movedFrom') {
+            const wrapper = markKind === 'deleted' ? 'del' : 'moveFrom';
+            if (content.length > 0 && content.every((c) => isW(c, wrapper))) {
+              // Nothing of this paragraph remains: it is the clause that was removed, so it is the one that gives up
+              // its number (below), and the paragraph before keeps its own.
+              numberLostAtCellEnd = markKind;
+            } else {
+              // Part of this paragraph remains: it is now the tail of the clause before it, which, as with any
+              // removed mark, gives up its number to the paragraph it joins. The engine gave the paragraph before
+              // the modified document's numbering, so that numbering moves here.
+              this.takeNumberingFrom(previous, paragraph);
+              const label = this.oldNumberOf.get(previous);
+              if (this.options.showOldNumbers && label) this.addOldNumber(previous, label, markKind);
+              if (this.options.unnumberRemovedParagraphs) this.removeNumbering(previous);
+            }
+          }
         }
         markKind = undefined;
       } else if (markKind === 'movedFrom' || markKind === 'movedTo') markKind = cellKind ? markKind : undefined;
@@ -554,9 +595,10 @@ class PartConverter {
     for (const child of elementChildren(paragraph)) if (!isW(child, 'pPr')) this.visit(child, kind);
 
     if (markKind) applyChangeStyle(markProperties(paragraph), markKind, this.options.insertedColor);
-    if (markKind === 'deleted' || markKind === 'movedFrom') {
+    const numberLost = markKind === 'deleted' || markKind === 'movedFrom' ? markKind : numberLostAtCellEnd;
+    if (numberLost) {
       const label = this.oldNumberOf.get(paragraph);
-      if (this.options.showOldNumbers && label) this.addOldNumber(paragraph, label, markKind);
+      if (this.options.showOldNumbers && label) this.addOldNumber(paragraph, label, numberLost);
       if (this.options.unnumberRemovedParagraphs) this.removeNumbering(paragraph);
     }
     this.markToken.set(paragraph, this.tokens.length);
@@ -592,7 +634,7 @@ export function convertPart(xml: string, options: StaticRedlineStyleOptions = DE
   // These two need the tracked changes still in place, so they come first.
   const numbers = original && original.isMain && options.showOldNumbers ? oldNumbers(root, original) : new Map<Element, string>();
   if (original && options.markFormattingChanges) markFormattingChanges(root, original);
-  const converter = new PartConverter(options, numbers);
+  const converter = new PartConverter(options, numbers, original ? (paragraph) => original.styles.numPr(paragraph) : undefined);
   converter.convert(root, undefined);
   return { xml: new XMLSerializer().serializeToString(document), counts: countTokens(converter.tokens), formattingChanges: countShadedStretches(root) };
 }
