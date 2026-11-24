@@ -13,8 +13,12 @@ export const STATE_PATH = '/api/converter-state';
 export type StateReader = (detail: boolean) => Promise<string[]>;
 
 const SHAPE = /^(asleep|unavailable|conversions=\d+ files=\d+ office_processes=\d+)$/;
-/** With ?detail: where the counted files are, as a count per system folder (never a file's name). */
-const DETAIL_SHAPE = /^(asleep|unavailable|before_first=(none|\d+) since_first=\d+ where=(\/[a-z/]*:\d+,?)*)$/;
+/**
+ * With ?detail: where the counted files are, as a count per system folder (never a file's name).
+ * The folders are the ones the converter found writable when it started, before any document arrived,
+ * so their names cannot come from a document.
+ */
+const DETAIL_SHAPE = /^(asleep|unavailable|before_first=(none|\d+) since_first=\d+ where=(\/[A-Za-z0-9._\/-]*:\d+,?)*)$/;
 
 /** The reply to a request for STATE_PATH. Never throws. */
 export async function handleStateRequest(request: Request, read: StateReader): Promise<Response> {

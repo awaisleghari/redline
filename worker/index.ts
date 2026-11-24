@@ -29,6 +29,7 @@ export class PdfConverter extends Container {
     if (!container?.running) return 'asleep';
     try {
       const reply = await container.getTcpPort(CONVERTER_PORT).fetch(detail ? 'http://converter/state-detail' : 'http://converter/state', { signal: AbortSignal.timeout(5000) });
+      // A converter still running an older image does not know the detailed form.
       return reply.ok ? await reply.text() : 'unavailable';
     } catch {
       return 'unavailable';
