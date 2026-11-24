@@ -53,6 +53,14 @@ function describe(note: El): { text: string; all?: 'inserted' | 'deleted' } {
     kinds.add(wrapper === 'ins' || wrapper === 'moveTo' ? 'inserted' : wrapper === 'del' || wrapper === 'moveFrom' ? 'deleted' : 'plain');
     for (const t of [...children(run, 't'), ...children(run, 'delText')]) text += t.textContent ?? '';
   }
+  if (kinds.size === 0) {
+    // A note with no text at all (an empty footnote): go by its paragraph marks instead.
+    for (const paragraph of descendants(note, 'p')) {
+      const mark = children(children(paragraph, 'pPr')[0] ?? paragraph, 'rPr')[0];
+      const flags = mark ? children(mark).filter((c) => c.namespaceURI === W).map((c) => c.localName!) : [];
+      kinds.add(flags.includes('ins') || flags.includes('moveTo') ? 'inserted' : flags.includes('del') || flags.includes('moveFrom') ? 'deleted' : 'plain');
+    }
+  }
   const only = kinds.size === 1 ? [...kinds][0] : undefined;
   return { text, all: only === 'inserted' || only === 'deleted' ? only : undefined };
 }

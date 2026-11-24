@@ -1,0 +1,63 @@
+Documents run: 161
+  words per document: median 15080, total 3680810
+  edits applied: median 161, total 25985; documents with fewer than 150: 0
+  by kind: word replaced 6283, words inserted 4361, words deleted 3974, formatting changed 2513, figure changed 1535, sentence added 1480, clause added 1336, clause deleted 1262, alignment changed 728, clause moved 652, clause split in two 589, two clauses joined 546, table row added 373, table row deleted 353
+
+Outcome
+  engine failed outright:            0 of 161 (0%)
+  tracked-changes file passed:       152 of 161 (94%)
+  static redline passed:             145 of 161 (90%)
+  both Word files released:          144 of 161 (89%)
+
+Why documents were withheld (first failing check of each), most common first
+    5  static/static-new: The text differs from the modified document.
+         e.g. github-goheather__series-seed-finland-investment-agreement.docx
+    3  tracked/accept-all: The text differs from the modified document.
+         e.g. assets.publishing.service.gov.uk__Template_Transfer_Agreement__Mutual_.docx.DOCX
+    2  tracked/formatting: Text does not have the formatting it has in the modified document.
+         e.g. github-goheather__model-written-statement-for-a-secure-occupation-contract--gb-wls.docx
+    2  tracked/reject-all: The output has fewer paragraphs than the original document (0 instead of 1).
+         e.g. thedocs.worldbank.org__SPDRequestforBidsSMALLWORKS1envelopeprocesscurrent.docx
+    1  static/numbering: A paragraph does not carry the number it has in the modified document.
+         e.g. assets.publishing.service.gov.uk__Mid-Tier_Schedule_07__Staff_Transfer__Word_v1.3_2025.DOCX
+    1  tracked/completeness: The original document contains text in "word/footer1.xml" that was not checked (nothing in
+         e.g. github-goheather__bylaws--us-de.docx
+    1  static/numbering: A removed clause does not show the number it had in the original document.
+         e.g. github-goheather__series-seed-finland-shareholders-agreement.docx
+    1  static/static-old: A table is laid out differently from the original document (its rows, cells or position do
+         e.g. thedocs.worldbank.org__SPD-Prequalification-Doc-HEALTH-SECTOR-GOODS-July-2023.docx
+    1  tracked/reject-all: The output has fewer paragraphs than the original document (0 instead of 2).
+         e.g. thedocs.worldbank.org__SPD-RFB-Small-Works-July-2023.docx
+
+How much the redline marks, against the words that really changed (1.0 = exactly the real changes): all documents the engine produced a redline for
+  up to 1.1 times:   146 of 161 (91%)
+  1.1 to 1.5 times:  11 of 161 (7%)
+  1.5 to 3 times:    3 of 161 (2%)
+  3 to 10 times:     1 of 161 (1%)
+  over 10 times:     0 of 161 (0%)
+  median 1.02, worst 8.3
+
+How much the redline marks, against the words that really changed (1.0 = exactly the real changes): documents whose Word files were both released
+  up to 1.1 times:   135 of 144 (94%)
+  1.1 to 1.5 times:  8 of 144 (6%)
+  1.5 to 3 times:    1 of 144 (1%)
+  3 to 10 times:     0 of 144 (0%)
+  over 10 times:     0 of 144 (0%)
+  median 1.02, worst 1.6
+
+Worst ten for over-marking
+     8.3 times  really changed 1328 words, marked 10965  buyingfor.vic.gov.au__VPS-Request-for-Tender-Conditions-October-2026.d
+     2.2 times  really changed 1006 words, marked 2172  assets.publishing.service.gov.uk__Mid-Tier_Schedule_16__Security___Sho
+     1.8 times  really changed 1051 words, marked 1874  assets.publishing.service.gov.uk__Mid-Tier_Schedule_16__Security___Dev
+     1.6 times  really changed 1314 words, marked 2059  assets.publishing.service.gov.uk__Mid-Tier_Schedule_20__Processing_Dat
+     1.3 times  really changed 912 words, marked 1176  procurement.govt.nz__template-rfp-government-model.docx
+     1.3 times  really changed 1072 words, marked 1349  github-goheather__model-written-statement-for-a-fixed-term-standard-oc
+     1.2 times  really changed 1335 words, marked 1623  assets.publishing.service.gov.uk__CTA_model_15_November_2013_FINAL.doc
+     1.2 times  really changed 933 words, marked 1116  thedocs.worldbank.org__SPD-Prequalification-Doc-HEALTH-SECTOR-GOODS-Ju
+     1.2 times  really changed 745 words, marked 874  github-goheather__nih-non-exclusive-sublicense-patent-license-agreemen
+     1.2 times  really changed 1098 words, marked 1265  buyingfor.vic.gov.au__VPS-Schedule-of-Collateral-Documents-October-202
+
+Moved clauses: 652 made; shown as moves in released redlines: 577 (of 576 made in those documents)
+Formatting changes: 2513 made; counted in released redlines: 2248 (of 2246 made in those documents)
+
+Time per document (compare, both Word files, all checks): median 6.1 s, slowest 226.5 s

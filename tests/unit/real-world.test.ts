@@ -15,7 +15,7 @@ import { buildPair, pairById } from '../fixtures/pairs';
 import { compareDocuments } from 'docxodus/core';
 import { repairNotes } from '../../src/producer/repair-notes';
 import { repairParagraphProperties } from '../../src/producer/repair-paragraphs';
-import { withBlueDoubleUnderline, withClauseStyle, withNumberedClausesInCell, withDocumentWideSpaces, withNoteInTable, withSections } from '../fixtures/real-world';
+import { withBlueDoubleUnderline, withCellsInContentControls, withClauseStyle, withNumberedClausesInCell, withDocumentWideSpaces, withNoteInTable, withSections } from '../fixtures/real-world';
 
 const COVER = { originalName: 'original.docx', modifiedName: 'modified.docx', comparedAt: '24 November 2026 at 10:00 (UTC+00:00)' };
 const decoder = new TextDecoder();
@@ -255,6 +255,19 @@ describe('a footnote hanging off a table in which something else changes', () =>
     expect(counts).toEqual({ insertions: 1, deletions: 1, moves: 0, formattingChanges: 0 });
   });
 
+  it('an empty footnote re-issued the same way (no text, only its paragraph mark flagged) is restored too', () => {
+    const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+    const A = 'w:id="1" w:author="x" w:date="2000-01-01T00:00:00Z"';
+    const parts = new Map<string, string>([
+      ['word/document.xml', `<w:document ${W}><w:body><w:p><w:r><w:footnoteReference w:id="5"/></w:r></w:p></w:body></w:document>`],
+      ['word/footnotes.xml', `<w:footnotes ${W}><w:footnote w:id="5"><w:p><w:pPr><w:rPr><w:ins ${A}/></w:rPr></w:pPr></w:p></w:footnote><w:footnote w:id="9"><w:p><w:pPr><w:rPr><w:del ${A}/></w:rPr></w:pPr></w:p></w:footnote></w:footnotes>`],
+    ]);
+    const repaired = repairNotes(parts).get('word/footnotes.xml')!;
+    expect(repaired).not.toContain('w:id="9"');
+    expect(repaired).not.toMatch(/<w:(ins|del) /);
+    expect(repaired).toContain('<w:footnote w:id="5">');
+  });
+
   it('when the footnote itself was edited as well, the note shows its old and new text, and both Word files pass', async () => {
     const pair = await buildPair(pairById('footnote-change'));
     const original = await withNoteInTable(pair.original, 'The fee is payable monthly in arrear.');
@@ -440,5 +453,18 @@ describe('files as other programs write them', () => {
     };
     expect(await failed(checkTrackedChanges({ original: pair.original, modified: pair.modified, output: await withExtra('[trash]/0000.dat') }))).toEqual([]);
     expect(await failed(checkTrackedChanges({ original: pair.original, modified: pair.modified, output: await withExtra('word/0000.dat') }))).toContain('structure');
+  });
+});
+
+/**
+ * Found on real contracts (Stage 7): a table whose cells sit in content controls (tick-box cells in forms and
+ * schedules). When such a row was deleted or added, the static redline left that cell's own mark unmarked,
+ * so the row did not read as removed.
+ */
+describe('table rows whose cells sit in content controls', () => {
+  it.each(['table-row-deleted', 'table-row-added', 'table-cell-change'])('%s: both Word files pass', async (id) => {
+    const pair = await buildPair(pairById(id));
+    const { counts } = await bothPass(await withCellsInContentControls(pair.original), await withCellsInContentControls(pair.modified));
+    expect(counts.insertions + counts.deletions).toBeGreaterThan(0);
   });
 });

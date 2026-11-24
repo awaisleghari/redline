@@ -134,3 +134,14 @@ export function withNumberedClausesInCell(docx: Uint8Array, lastTwo: 'kept' | 'j
     return xml.slice(0, a!.index) + table + xml.slice(c!.index! + c![0].length);
   });
 }
+
+/** Wrap the last cell of every table row in a content control, as Word stores a tick-box cell in a form or schedule. */
+export function withCellsInContentControls(docx: Uint8Array): Promise<Uint8Array> {
+  return editParts(docx, (name, xml) => {
+    if (name !== 'word/document.xml') return xml;
+    let id = 700;
+    const out = xml.replace(/(<w:tc>(?:(?!<\/w:tc>).)*<\/w:tc>)(<\/w:tr>)/gs, (_all, cell: string, end: string) => `<w:sdt><w:sdtPr><w:id w:val="${id++}"/></w:sdtPr><w:sdtContent>${cell}</w:sdtContent></w:sdt>${end}`);
+    if (out === xml) throw new Error('withCellsInContentControls: the document has no table');
+    return out;
+  });
+}

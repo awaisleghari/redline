@@ -555,7 +555,10 @@ class PartConverter {
     let numberLostAtCellEnd: ChangeKind | undefined;
     const cell = paragraph.parentNode as Element;
     if (!kind && isWord(cell, 'tc') && kids(cell).filter((c) => isWord(c, 'p') || isWord(c, 'tbl')).pop() === paragraph) {
-      const cellKind = this.cellChange.get(cell) ?? this.cellChange.get(cell.parentNode as Element);
+      // The cell's row: its parent, or further up when the cell sits in a content control (a tick-box cell) or custom XML wrapper.
+      let row = cell.parentNode as Element | null;
+      while (row && isWord(row) && ['sdt', 'sdtContent', 'customXml'].includes(row.localName!)) row = row.parentNode as Element | null;
+      const cellKind = this.cellChange.get(cell) ?? (row ? this.cellChange.get(row) : undefined);
       if (!cellKind && markKind) {
         // The cell stays but its last paragraph was added or removed. Since the
         // cell's final mark cannot change, the join or split really happens at
