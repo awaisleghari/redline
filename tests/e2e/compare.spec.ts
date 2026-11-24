@@ -350,11 +350,48 @@ test.describe('refusals, in plain English', () => {
   test('a .docx that is not really one', async ({ page }) => {
     await refuse(page, { name: 'fake.docx', buffer: Buffer.from('this is not a docx file') }, /could not be read as a Word document/);
   });
-  test('a document that already contains tracked changes', async ({ page }) => {
-    const pair = await buildPair(PAIR_SPECS[0]!);
+});
+
+test.describe('an upload that already contains tracked changes is compared as if they had been accepted', () => {
+  const NOTICE = {
+    original: 'The original already contained tracked changes. It was compared as if they had all been accepted.',
+    modified: 'The modified document already contained tracked changes. It was compared as if they had all been accepted.',
+    both: 'Both documents already contained tracked changes. They were compared as if those had all been accepted.',
+  };
+
+  test('as the original, as the modified document and as both: a notice, both Word files pass, and the cover page says so', async ({ page }) => {
+    const pair = await buildPair(pairById('several-changes'));
+    await initialize();
+    const withChanges = await produceTrackedChanges(pair.original, pair.modified); // reads as the modified document
+    for (const [original, modified, which] of [[withChanges, pair.original, 'original'], [pair.original, withChanges, 'modified'], [withChanges, withChanges, 'both']] as const) {
+      await compare(page, original, modified);
+      await expect(page.locator('#tracked-notice')).toBeVisible();
+      await expect(page.locator('#tracked-notice')).toHaveText(NOTICE[which]);
+      await expect(page.locator('#verdict-tracked')).toHaveText('(all checks passed)');
+      await expect(page.locator('#verdict-static')).toHaveText('(all checks passed)');
+      const staticRedline = await downloadFrom(page, '#download-static');
+      const tracked = await downloadFrom(page, '#download-tracked');
+      // Checked again outside the browser, against the uploads as uploaded.
+      expect((await checkTrackedChanges({ original, modified, output: tracked.bytes })).passed).toBe(true);
+      const xml = new TextDecoder().decode((await unzip(staticRedline.bytes)).get('word/document.xml')!);
+      expect(xml).toContain(which === 'both' ? 'Note: both documents contained tracked changes.' : `Note: the ${which === 'original' ? 'original' : 'modified document'} contained tracked changes.`);
+      // The check report the user can keep says how the upload was read.
+      const report = new TextDecoder().decode((await downloadFrom(page, '#download-report')).bytes);
+      expect(report).toContain('contained tracked changes of its own; it was read as if they had all been accepted.');
+      // The viewer shows the cover page with the note.
+      await expect(page.frameLocator('#viewer').getByText('contained tracked changes', { exact: false }).first()).toBeVisible();
+    }
+  });
+
+  test('an ordinary comparison shows no such notice, and a new comparison clears an earlier one', async ({ page }) => {
+    const pair = await buildPair(pairById('several-changes'));
     await initialize();
     const withChanges = await produceTrackedChanges(pair.original, pair.modified);
-    await refuse(page, { name: 'marked-up.docx', buffer: Buffer.from(withChanges) }, /already contains tracked changes\. Please accept or reject the existing changes first, then compare\./);
+    await compare(page, withChanges, pair.original);
+    await expect(page.locator('#tracked-notice')).toBeVisible();
+    await compare(page, pair.original, pair.modified);
+    await expect(page.locator('#tracked-notice')).toBeHidden();
+    await expect(page.locator('#verdict-static')).toHaveText('(all checks passed)');
   });
 });
 

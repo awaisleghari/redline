@@ -55,6 +55,7 @@ self.addEventListener('message', async (event: MessageEvent<ProducerRequest>) =>
         originalName: request.originalName,
         modifiedName: request.modifiedName,
         comparedAt: request.comparedAt,
+        trackedChangesIn: request.trackedChangesIn,
       });
       const staticRedline = made.docx.slice().buffer;
       response = { type: 'static-made', id: request.id, staticRedline, counts: made.counts };

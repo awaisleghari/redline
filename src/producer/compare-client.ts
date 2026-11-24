@@ -20,6 +20,7 @@ export interface StaticDetails {
   originalName: string;
   modifiedName: string;
   comparedAt: string;
+  trackedChangesIn?: 'original' | 'modified' | 'both';
 }
 
 interface Pending {

@@ -111,18 +111,18 @@ export async function checkTrackedChanges(input: CheckInput): Promise<CheckRepor
   const checks: CheckResult[] = [
     guarded('accept-all', () => {
       const failure = compareStories(modifiedText().stories, accepted().stories, 'modified document') ?? compareLinks(modifiedText().links, accepted().links, 'modified document');
-      return failure ? fail('accept-all', failure) : pass('accept-all');
+      return failure ? fail('accept-all', failure) : pass('accept-all', hadTrackedChanges(modified) ? ACCEPTED_READING.modified : undefined);
     }),
     guarded('reject-all', () => {
       const failure = compareStories(originalText().stories, rejected().stories, 'original document') ?? compareLinks(originalText().links, rejected().links, 'original document');
-      return failure ? fail('reject-all', failure) : pass('reject-all');
+      return failure ? fail('reject-all', failure) : pass('reject-all', hadTrackedChanges(original) ? ACCEPTED_READING.original : undefined);
     }),
     guarded('formatting', () => verdict('formatting', formattingFailure(modifiedText().stories, accepted().stories, false))),
     guarded('numbering', () => verdict('numbering', numberingFailure(modifiedText().stories, accepted().stories))),
     guarded('completeness', () => {
       const problems = [
-        ...unreadText(original, [originalText()], 'original document'),
-        ...unreadText(modified, [modifiedText()], 'modified document'),
+        ...unreadText(original, [originalText()], 'original document', deletedSide(original)),
+        ...unreadText(modified, [modifiedText()], 'modified document', deletedSide(modified)),
         ...unreadText(output, [accepted(), rejected()], 'output'),
       ];
       const failure = completenessFailure(problems);
@@ -167,6 +167,16 @@ export interface StaticCheckInput extends CheckInput {
   comparedAt: string;
 }
 
+/** For an upload with tracked changes of its own: its reading with those changes rejected, used only to see which notes deleted text refers to. */
+const deletedSide = (upload: DocxPackage): StoryReading[] => (hadTrackedChanges(upload) ? [readStories(upload, 'rejected')] : []);
+
+/** Whether an upload holds tracked changes of its own (it is then read as if they had all been accepted). */
+const hadTrackedChanges = (upload: DocxPackage): boolean => leftoverTrackedChanges(upload).length > 0;
+const ACCEPTED_READING = {
+  original: 'The original contained tracked changes of its own; it was read as if they had all been accepted.',
+  modified: 'The modified document contained tracked changes of its own; it was read as if they had all been accepted.',
+} as const;
+
 /**
  * Check a static redline Word file (checks 3, 4, 5, 6, 7 and 8 of PLAN.md,
  * the marking of formatting changes, and clause numbers). Changes are
@@ -189,21 +199,26 @@ export async function checkStaticRedline(input: StaticCheckInput): Promise<Check
   const oldSide = (): StoryReading => reading('old', () => readStories(output, 'rejected', 'static'));
 
   const checks: CheckResult[] = [
-    guarded('static-new', () => verdict('static-new', compareStories(modifiedText().stories, newSide().stories, 'modified document') ?? compareLinks(modifiedText().links, newSide().links, 'modified document'))),
-    guarded('static-old', () => verdict('static-old', compareStories(originalText().stories, oldSide().stories, 'original document') ?? compareLinks(originalText().links, oldSide().links, 'original document'))),
+    guarded('static-new', () => verdict('static-new', compareStories(modifiedText().stories, newSide().stories, 'modified document') ?? compareLinks(modifiedText().links, newSide().links, 'modified document'), hadTrackedChanges(modified) ? ACCEPTED_READING.modified : undefined)),
+    guarded('static-old', () => verdict('static-old', compareStories(originalText().stories, oldSide().stories, 'original document') ?? compareLinks(originalText().links, oldSide().links, 'original document'), hadTrackedChanges(original) ? ACCEPTED_READING.original : undefined)),
     guarded('no-tracked-changes', () => verdict('no-tracked-changes', firstOf(leftoverTrackedChanges(output)))),
     guarded('cover-page', () => {
       const counts = countStaticChanges(output);
       const note = `Counted independently: ${counts.insertions} insertions, ${counts.deletions} deletions, ${counts.moves} moves, ${counts.formattingChanges} formatting changes.`;
-      return verdict('cover-page', coverPageFailure(newSide().cover, newSide().coverLooks, input, counts), note);
+      // Whether an upload came with tracked changes of its own is the Checker's own finding, from the upload itself.
+      const inOriginal = hadTrackedChanges(original);
+      const inModified = hadTrackedChanges(modified);
+      const trackedChangesIn = inOriginal && inModified ? 'both' : inOriginal ? 'original' : inModified ? 'modified' : undefined;
+      const expectation = { originalName: input.originalName, modifiedName: input.modifiedName, comparedAt: input.comparedAt, trackedChangesIn } as const;
+      return verdict('cover-page', coverPageFailure(newSide().cover, newSide().coverLooks, expectation, counts), note);
     }),
     guarded('formatting', () => verdict('formatting', formattingFailure(modifiedText().stories, newSide().stories, true))),
     guarded('format-marks', () => verdict('format-marks', formatMarksFailure(originalText().stories, oldSide().stories, newSide().stories))),
     guarded('numbering', () => verdict('numbering', numberingFailure(modifiedText().stories, newSide().stories) ?? oldNumberFailure(originalText().stories, oldSide().stories))),
     guarded('completeness', () => {
       const problems = [
-        ...unreadText(original, [originalText()], 'original document'),
-        ...unreadText(modified, [modifiedText()], 'modified document'),
+        ...unreadText(original, [originalText()], 'original document', deletedSide(original)),
+        ...unreadText(modified, [modifiedText()], 'modified document', deletedSide(modified)),
         ...unreadText(output, [newSide(), oldSide()], 'output'),
       ];
       const failure = completenessFailure(problems);

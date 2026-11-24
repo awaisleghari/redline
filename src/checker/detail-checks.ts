@@ -270,7 +270,16 @@ export interface CoverExpectation {
   originalName: string;
   modifiedName: string;
   comparedAt: string;
+  /** Which uploads the Checker itself found tracked changes in. */
+  trackedChangesIn?: 'original' | 'modified' | 'both';
 }
+
+/** What the cover page must say when an upload came with tracked changes of its own (and must not say otherwise). */
+export const ACCEPTED_NOTE_EXPECTED = {
+  original: 'Note: the original contained tracked changes. It was compared as if they had all been accepted.',
+  modified: 'Note: the modified document contained tracked changes. It was compared as if they had all been accepted.',
+  both: 'Note: both documents contained tracked changes. They were compared as if those had all been accepted.',
+} as const;
 
 /** Check 5: the cover page says exactly what it should, with the Checker's own counts. */
 export function coverPageFailure(cover: string[], coverLooks: string[], expectation: CoverExpectation, counts: StaticCounts): CheckFailure | undefined {
@@ -287,6 +296,7 @@ export function coverPageFailure(cover: string[], coverLooks: string[], expectat
     `Original: ${expectation.originalName}`,
     `Modified: ${expectation.modifiedName}`,
     `Compared: ${expectation.comparedAt}`,
+    ...(expectation.trackedChangesIn ? [ACCEPTED_NOTE_EXPECTED[expectation.trackedChangesIn]] : []),
     'Legend',
     'Inserted text',
     'Deleted text',

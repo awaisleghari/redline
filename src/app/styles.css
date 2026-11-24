@@ -57,6 +57,7 @@ a.button[hidden], a[hidden], [hidden] { display: none !important; }
 .viewer-message { padding: 2rem; color: var(--bad); font-weight: 600; }
 .side h2:first-child { margin-top: 0; }
 .note { margin: 0.2rem 0 0.6rem; color: var(--muted); font-size: 0.88rem; }
+.notice { margin: 0 0 0.8rem; padding: 0.6rem 0.8rem; border: 1px solid #b7791f; border-left-width: 5px; background: #fffaf0; color: #5c3d00; font-weight: 600; }
 .downloads { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.6rem; }
 .downloads .button { width: 100%; }
 .withheld { color: var(--bad); font-weight: 600; }
