@@ -296,6 +296,17 @@ describe('notes, headers and text boxes', () => {
     expect(readStories(await pkg(both(box(p(r('Words only one form has'))))), 'accepted').problems.join(' ')).toContain('alternative forms whose text differs');
   });
 
+  it('a shape type (a template for shapes) shows nothing, however many times a file defines it; an actual shape\'s text is read', async () => {
+    // Found on a real contract (Stage 7): the same WordArt shape type defined twice in the upload, once in the output.
+    const V = 'xmlns:v="urn:schemas-microsoft-com:vml"';
+    const type = `<v:shapetype ${V} id="_x0000_t136"><v:textpath on="t" fitshape="t"/></v:shapetype>`;
+    const shape = `<v:shape ${V} type="#_x0000_t136"><v:textpath string="DRAFT"/></v:shape>`;
+    const read = async (pict: string): Promise<string[]> => readStories(await pkg(p(`<w:r><w:pict>${pict}</w:pict></w:r>`)), 'accepted').stories[0]!.paragraphs;
+    expect(await read(type + type + shape)).toEqual(await read(type + shape));
+    expect((await read(type + shape)).join('')).toContain('⟦shape text: DRAFT⟧');
+    expect((await read(type + shape)).join('')).not.toContain('⟦shape text: ⟧');
+  });
+
   it('refuses a document that pulls in another file', async () => {
     const reading = readStories(await pkg(p(r('Body')) + '<w:altChunk r:id="rId9"/>'), 'accepted');
     expect(reading.problems.join(' ')).toContain('another file');

@@ -145,3 +145,20 @@ export function withCellsInContentControls(docx: Uint8Array): Promise<Uint8Array
     return out;
   });
 }
+
+/**
+ * Wrap every table row but the first in a content control, as a "repeating section" in a procurement or form
+ * template does (the first row stays an ordinary heading row).
+ */
+export function withRowsInContentControls(docx: Uint8Array): Promise<Uint8Array> {
+  return editParts(docx, (name, xml) => {
+    if (name !== 'word/document.xml') return xml;
+    let id = 900;
+    const out = xml.replace(/<w:tbl>.*?<\/w:tbl>/gs, (table) => {
+      let row = 0;
+      return table.replace(/<w:tr[ >].*?<\/w:tr>/gs, (tr) => (row++ === 0 ? tr : `<w:sdt><w:sdtPr><w:id w:val="${id++}"/></w:sdtPr><w:sdtContent>${tr}</w:sdtContent></w:sdt>`));
+    });
+    if (out === xml) throw new Error('withRowsInContentControls: the document has no table with more than one row');
+    return out;
+  });
+}

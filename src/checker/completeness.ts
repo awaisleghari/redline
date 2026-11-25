@@ -31,7 +31,7 @@ function isExempt(partName: string, root: XmlElement): boolean {
  * `readings` are all the readings taken of this file (one view for an upload,
  * both views for an output). A note that nothing at all refers to still fails.
  */
-export function unreadText(pkg: DocxPackage, readings: StoryReading[], fileName: string, alsoReferenced: StoryReading[] = []): string[] {
+export function unreadText(pkg: DocxPackage, readings: StoryReading[], fileName: string, alsoReferenced: StoryReading[] = [], isUpload = false): string[] {
   const problems: string[] = [];
   for (const reading of readings) for (const problem of reading.problems) problems.push(`In the ${fileName}: ${problem}`);
 
@@ -48,6 +48,10 @@ export function unreadText(pkg: DocxPackage, readings: StoryReading[], fileName:
     if (root.ns !== W) continue;
 
     if (!partsRead.has(partName)) {
+      // A header or footer is shown only where a section refers to it. One that no section refers to (left behind
+      // when a section was deleted, say) is never shown by Word. In an upload that is simply how the user's file
+      // is, and it is not document content. An output, though, must not carry text that nothing refers to.
+      if (isUpload && (is(root, W, 'hdr') || is(root, W, 'ftr'))) continue;
       if (hasText(root)) problems.push(`The ${fileName} contains text in "${partName}" that was not checked (nothing in the document refers to it).`);
       continue;
     }
