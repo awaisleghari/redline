@@ -1231,12 +1231,13 @@ describe('a section break shown removed and added again', () => {
   const engine = main([text('one'), breakWith(AB, 'del'), breakWith(AB, 'ins'), text('two'), breakWith(C), text('three'), breakWith(DE, '', 990)], DE);
   const namedAt = (xml: string): string[] => [...xml.matchAll(/<w:sectPr\b.*?<\/w:sectPr>/gs)].map((m) => [...m[0].matchAll(/w:type="(\w+)" r:id="rId(\w)"/g)].map((x) => `${x[1]}:${x[2]}`).join(','));
 
-  it('each section break that stays names the headers the modified document names there', () => {
+  it('each section break that stays names the headers the modified document shows in that section', () => {
     const repaired = repairSectionReferences(engine, RELS, upload, upload)!;
-    expect(namedAt(repaired)).toEqual(['even:A,default:B', 'even:A,default:B', '', 'default:C', 'even:D,default:E']);
+    // (A section that names none carries on with the previous section's: written out in full, as the engine does.)
+    expect(namedAt(repaired)).toEqual(['even:A,default:B', 'even:A,default:B', 'even:A,default:B', 'even:A,default:C', 'even:D,default:E']);
     // Nothing else in a section break moves: the headers stay in front of the page settings, which are untouched.
-    expect(repaired).toContain(`<w:sectPr>${C}${PAGE}<w:pgMar w:top="990"/></w:sectPr>`);
-    expect(repaired).toContain(`<w:sectPr>${PAGE}<w:pgMar w:top="1260"/></w:sectPr>`);
+    expect(repaired).toContain(`<w:sectPr>${ref('even', 'rIdA')}${C}${PAGE}<w:pgMar w:top="990"/></w:sectPr>`);
+    expect(repaired.split(`<w:sectPr>${AB}${PAGE}<w:pgMar w:top="1260"/></w:sectPr>`)).toHaveLength(4);
   });
 
   it('nothing is touched where the output has as many section breaks as the uploads', () => {

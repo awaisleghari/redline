@@ -14,9 +14,10 @@
  * The repair, on the engine's output, only where the output holds a different
  * number of section breaks from the uploads: the section breaks that remain
  * when every change is accepted are, in order, the modified document's; each
- * is given exactly the headers and footers the modified document names at
- * that break. A section break that only the original has (shown removed) is
- * given the original's in the same way. Nothing else in a section break is
+ * is given the headers and footers the modified document shows in that
+ * section (those it names there, or carries over from an earlier section). A
+ * section break that only the original has (shown removed) is given the
+ * original's in the same way. Nothing else in a section break is
  * touched. If the breaks cannot be paired off one for one, or a header named
  * by an upload is not in the output under the same name, nothing is changed
  * and the Checker judges the engine's output as it stands.
@@ -109,6 +110,18 @@ export function repairSectionReferences(tracked: string, trackedRels: string, or
   const inModified = breaksOf(parse(modified.main));
   const inOriginal = breaksOf(parse(original.main));
   const kept = breaks.filter((b) => b.change !== 'removed');
+  // What each section of an upload shows: the headers and footers it names, and for the rest those of the nearest
+  // section before it that names them. These are written out in full, as the engine itself does, so that a break
+  // reads the same whichever other breaks stand before it once the changes are accepted or rejected.
+  const shownAt = (list: Break[]): Reference[][] => {
+    const current = new Map<string, Reference>();
+    return list.map((b) => {
+      for (const r of b.references) current.set(`${r.kind} ${r.type}`, r);
+      return [...current.values()];
+    });
+  };
+  const shownInModified = shownAt(inModified);
+  const shownInOriginal = shownAt(inOriginal);
   const old = breaks.filter((b) => b.change !== 'added');
   if (kept.length !== inModified.length || old.length !== inOriginal.length) return undefined;
   if (breaks.length === inModified.length && breaks.length === inOriginal.length) return undefined;
@@ -134,10 +147,10 @@ export function repairSectionReferences(tracked: string, trackedRels: string, or
     }
     changed = true;
   };
-  kept.forEach((b, i) => give(b, inModified[i]!.references));
+  kept.forEach((b, i) => give(b, shownInModified[i]!));
   old.forEach((b, i) => {
     // Only the original has this break: it keeps the original's headers, where the output holds them under the same names.
-    if (b.change === 'removed' && present(inOriginal[i]!.references, inUpload.original)) give(b, inOriginal[i]!.references);
+    if (b.change === 'removed' && present(shownInOriginal[i]!, inUpload.original)) give(b, shownInOriginal[i]!);
   });
   return changed ? new XMLSerializer().serializeToString(document) : undefined;
 }
