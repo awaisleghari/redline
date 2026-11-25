@@ -550,6 +550,35 @@ describe('a document that itself uses red strikethrough', () => {
     expect(deletedIn(xml, 'FF0000')).toBeGreaterThan(1);
   });
 
+  it('text that the upload\'s own tracked changes delete, and a footer nothing refers to, do not count (review finding): the redline stays red and passes', async () => {
+    const pair = await buildPair(pairById('several-changes'));
+    const A = 'w:id="900" w:author="x" w:date="2000-01-01T00:00:00Z"';
+    const look = '<w:rPr><w:strike/><w:color w:val="FF0000"/></w:rPr>';
+    // Red struck-through text inside a tracked deletion of the upload's own.
+    const withDeleted = (docx: Uint8Array): Promise<Uint8Array> => editPart(docx, /^word\/document\.xml$/, (xml) => xml.replace('<w:p>', `<w:p><w:del ${A}><w:r>${look}<w:delText>struck before</w:delText></w:r></w:del>`));
+    // Red struck-through text in a footer that no section refers to.
+    const withFooter = async (docx: Uint8Array): Promise<Uint8Array> => {
+      const files = await unzip(docx);
+      files.set('word/footer9.xml', encoder.encode(`<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r>${look}<w:t>Left over</w:t></w:r></w:p></w:ftr>`));
+      files.set('[Content_Types].xml', encoder.encode(decoder.decode(files.get('[Content_Types].xml')!).replace('</Types>', '<Override PartName="/word/footer9.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>')));
+      files.set('word/_rels/document.xml.rels', encoder.encode(decoder.decode(files.get('word/_rels/document.xml.rels')!).replace('</Relationships>', '<Relationship Id="rIdLeft" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer9.xml"/></Relationships>')));
+      return zip(files);
+    };
+    for (const [original, modified] of [
+      [await withDeleted(pair.original), pair.modified],
+      [await withFooter(pair.original), pair.modified],
+      [pair.original, await withFooter(pair.modified)],
+    ] as const) {
+      const xml = await bodyOf((await bothPass(original, modified)).staticRedline);
+      expect(xml).not.toContain('dark orange');
+    }
+    // The same in the modified upload (the redline is told, as the page tells it, that this upload had tracked changes).
+    const modified = await withDeleted(pair.modified);
+    const made = await makeStaticRedline(await produceTrackedChanges(pair.original, modified), pair.original, { ...COVER, trackedChangesIn: 'modified' });
+    expect(await failed(checkStaticRedline({ original: pair.original, modified, output: made.docx, ...COVER }))).toEqual([]);
+    expect(await bodyOf(made.docx)).not.toContain('dark orange');
+  });
+
   it('a document with both looks of its own gets both alternative colours, and passes', async () => {
     const pair = await buildPair(pairById('several-changes'));
     const modified = await withBlueDoubleUnderline(await withRedStrikethrough(pair.modified, 'paragraph mark'));
@@ -640,6 +669,17 @@ describe('a pen mark (handwriting) in the document', () => {
     expect(await failed(checkTrackedChanges({ original: pair.original, modified, output: tracked }))).toContain('reject-all');
   });
 
+  it('an output that keeps the pen strokes must keep them unchanged (review finding): changed strokes are refused, kept ones pass', async () => {
+    const pair = await buildPair(pairById('one-word-change'));
+    const original = await withInk(pair.original);
+    // An output that still holds the strokes: the upload itself, compared with itself.
+    expect(await failed(checkTrackedChanges({ original, modified: original, output: original }))).toEqual([]);
+    const changed = await editPart(original, /^word\/ink\/ink1\.xml$/, (xml) => xml.replace("0 1,'0'0", "5 9,'3'7"));
+    const failures = await failed(checkTrackedChanges({ original, modified: original, output: changed }));
+    expect(failures).toContain('accept-all');
+    expect(failures).toContain('reject-all');
+  });
+
   it('the alternative forms of ordinary content must still say the same: text that only one form has is refused', async () => {
     const pair = await buildPair(pairById('one-word-change'));
     const odd = await editPart(await withInk(pair.original), /^word\/document\.xml$/, (xml) => xml.replace('</mc:Fallback>', '<w:t>only in one form</w:t></mc:Fallback>'));
@@ -679,6 +719,15 @@ describe('text that joins a paragraph of another style when its paragraph mark i
     expect(await failed(checkTrackedChanges({ original, modified, output: plainHeading }))).toContain('formatting');
   });
 
+  it('a bookmark between the two paragraphs changes nothing (review finding): both files still pass', async () => {
+    const between = (body: string): string => body.replace('</w:p><w:p><w:pPr><w:pStyle w:val="BoldHead"/>', '</w:p><w:bookmarkStart w:id="77" w:name="between"/><w:bookmarkEnd w:id="77"/><w:p><w:pPr><w:pStyle w:val="BoldHead"/>');
+    expect(between(bodies.tracked)).not.toBe(bodies.tracked);
+    const [original, modified, tracked] = await Promise.all([build(bodies.original), build(bodies.modified), build(between(bodies.tracked))]);
+    expect(await failed(checkTrackedChanges({ original, modified, output: tracked }))).toEqual([]);
+    const made = await makeStaticRedline(tracked, original, COVER);
+    expect(await failed(checkStaticRedline({ original, modified, output: made.docx, ...COVER }))).toEqual([]);
+  });
+
   it('the static redline shows the new word bold, as the modified document has it, and passes', async () => {
     const [original, modified, tracked] = await Promise.all([build(bodies.original), build(bodies.modified), build(bodies.tracked)]);
     const made = await makeStaticRedline(tracked, original, COVER);
@@ -709,6 +758,19 @@ describe('several paragraphs added or removed at the end of a table cell', () =>
     const { counts } = await bothPass(await withParagraphsAtCellEnd(base, []), await withParagraphsAtCellEnd(base, lines));
     expect(counts.insertions).toBeGreaterThan(0);
     expect(counts.deletions).toBe(0);
+  });
+
+  it('several numbered clauses removed from, or added at, the end of a cell (review finding): both Word files pass', async () => {
+    const base = (await buildPair(pairById('numbered-clause-deleted'))).original;
+    const all = await withNumberedClausesInCell(base);
+    const firstOnly = await editPart(all, /^word\/document\.xml$/, (xml) => {
+      const cell = /<w:tc>.*?<\/w:tc>/s.exec(xml)![0];
+      const clauses = cell.match(/<w:p>.*?<\/w:p>/gs)!;
+      expect(clauses).toHaveLength(3);
+      return xml.replace(cell, cell.replace(clauses[1]! + clauses[2]!, ''));
+    });
+    expect((await bothPass(all, firstOnly)).counts.deletions).toBeGreaterThan(0);
+    expect((await bothPass(firstOnly, all)).counts.insertions).toBeGreaterThan(0);
   });
 
   it.each(LINES.map((lines) => [JSON.stringify(lines), lines] as const))('removed %s: both Word files pass', async (_, lines) => {

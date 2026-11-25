@@ -7,6 +7,7 @@ import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
 import { NS } from '../common/namespaces';
 import { unzip, zip } from '../common/zip';
 import { acceptTrackedChanges, hasTrackedChanges } from './accept-changes';
+import { dropUnusedHeadersAndFooters } from './drop-unused-headers';
 import { coverPageXml, coverStylesXml, type CoverPageContent } from './cover-page';
 import { readOriginal, StyleSheet } from './original-reader';
 import { convertPart, DEFAULT_STYLE_OPTIONS, DELETED_COLOR, INSERTED_COLOR, PROPERTY_CHANGE_RECORDS, usesDeletionLook, usesInsertionLook, type ChangeCounts, type StaticRedlineStyleOptions } from './static-redline';
@@ -189,6 +190,8 @@ export async function makeStaticRedline(trackedChanges: Uint8Array, original: Ui
   // The original document: the formatting its text had, and its clause numbers.
   // Tracked changes already in the original count as accepted: its formatting and numbering are read from the accepted copy.
   const originalFiles = await unzip(await acceptTrackedChanges(original));
+  // Headers and footers that no section refers to are not document content (and are not in the tracked-changes file either).
+  dropUnusedHeadersAndFooters(originalFiles);
   const originalTypes = originalFiles.get('[Content_Types].xml');
   if (!originalTypes) throw new Error('the original document has no content types');
   const originalParts = partsOfTypes(decoder.decode(originalTypes), originalFiles, TEXT_PART_TYPES);

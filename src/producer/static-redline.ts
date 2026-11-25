@@ -356,7 +356,8 @@ function stateLookOfJoinedText(root: Element, styles: StyleSheet): void {
     let joined: Element | undefined = paragraph;
     while (joined && markRemoved(joined)) {
       let next: Node | null = joined.nextSibling;
-      while (next && next.nodeType !== 1) next = next.nextSibling;
+      // Markers that hold no content (bookmarks and the like) do not keep paragraphs apart.
+      while (next && (next.nodeType !== 1 || (isWord(next) && /^(bookmarkStart|bookmarkEnd|proofErr|permStart|permEnd|commentRangeStart|commentRangeEnd|move(From|To)Range(Start|End))$/.test((next as Element).localName!)))) next = next.nextSibling;
       joined = next && isWord(next, 'p') ? (next as Element) : undefined;
     }
     if (!joined) continue;

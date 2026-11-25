@@ -112,6 +112,8 @@ export interface StoryReading {
    * text inserted, so each view has exactly its own document's links.)
    */
   links: string[];
+  /** Handwriting (pen strokes) the document holds, in reading order: a fingerprint of each. */
+  inks: string[];
   /** The text of each table row marked to repeat at the top of every page the table runs onto. */
   repeatRows: string[];
   /** How the pages are set up: sections, their headers and footers, page numbering, note numbering. */
@@ -294,6 +296,7 @@ interface Source {
   part: string;
   partsRead: Set<string>;
   links: string[];
+  inks: string[];
   markup: Markup;
   styles: Styles;
   numbering: Numbering;
@@ -384,9 +387,11 @@ function linkedContent(node: XmlElement, context: Context): string {
       const root = pkg.xml(rel.partName);
       if (root.ns === W) continue; // headers, footers and notes are read as stories of their own
       if (root.ns === INK_NS) {
-        // Handwriting: pen strokes, stored as coordinates. There is no text in it; what can be checked is the
-        // picture of it that the file carries alongside (see alternateContentBranch).
+        // Handwriting: pen strokes, stored as coordinates. There is no text in it. The strokes are noted, to be
+        // compared between the files; the picture of them that the file carries alongside is read as a picture
+        // (see alternateContentBranch).
         partsRead.add(rel.partName);
+        context.source.inks.push(fingerprint(pkg.entries.get(rel.partName)!));
         continue;
       }
       partsRead.add(rel.partName);
@@ -421,7 +426,7 @@ function alternateContentBranch(element: XmlElement, context: Context, read: (br
   if (branches.length > 1) {
     // Every branch (there may be several Choices) must read the same: text, text boxes and note references.
     const readings = branches.map((branch) => {
-      const probe = newContext(context.view, [], { ...context.source, partsRead: new Set(), links: [], repeatRows: [] });
+      const probe = newContext(context.view, [], { ...context.source, partsRead: new Set(), links: [], inks: [], repeatRows: [] });
       const inline = read(branch, probe);
       // Pictures are stored differently in the modern and legacy forms, so linked files are left out of this comparison.
       const texts = (list: Para[]): string[] => list.map((entry) => entry.text);
@@ -445,19 +450,31 @@ function alternateContentBranch(element: XmlElement, context: Context, read: (br
   // picture of them. The strokes cannot be compared with anything, and a program that rewrites the file may keep
   // only the picture. So the picture is the form that is read: it is what is compared between the files.
   const fallback = branches.find((branch) => branch.name === 'Fallback');
-  if (fallback && branches[0] !== fallback && linksToInk(branches[0]!, context)) return fallback;
+  // The strokes are still noted: a file that keeps them must keep them unchanged (the Checker compares them).
+  if (fallback && branches[0] !== fallback) {
+    const strokes = inkIn(branches[0]!, context);
+    if (strokes.length > 0) {
+      context.source.inks.push(...strokes);
+      return fallback;
+    }
+  }
   return branches[0];
 }
 
-/** Does anything in this element link to a part of pen strokes? */
-function linksToInk(element: XmlElement, context: Context): boolean {
-  const { pkg, part } = context.source;
+/** The pen strokes anything in this element links to: a fingerprint of each such part. */
+function inkIn(element: XmlElement, context: Context): string[] {
+  const { pkg, part, partsRead } = context.source;
+  const found: string[] = [];
   for (const [key, id] of element.attributes) {
     if (!key.startsWith(`${NS.r}|`) || id === '') continue;
     const rel = pkg.relationships(part).find((r) => r.id === id);
-    if (rel && !rel.external && rel.partName && /\.xml$/i.test(rel.partName) && pkg.has(rel.partName) && pkg.xml(rel.partName).ns === INK_NS) return true;
+    if (rel && !rel.external && rel.partName && /\.xml$/i.test(rel.partName) && pkg.has(rel.partName) && pkg.xml(rel.partName).ns === INK_NS) {
+      partsRead.add(rel.partName);
+      found.push(fingerprint(pkg.entries.get(rel.partName)!));
+    }
   }
-  return element.children.some((c) => linksToInk(c, context));
+  for (const c of element.children) found.push(...inkIn(c, context));
+  return found;
 }
 
 function unknownWrapperProblem(node: XmlElement, context: Context): void {
@@ -615,6 +632,8 @@ function closeParagraph(context: Context, number: string, removed: boolean, list
  * paragraph's properties (so text that joins a heading is formatted as the heading). `siblings` is the content of
  * the paragraph's container, and `index` the paragraph's place in it.
  */
+const BETWEEN_PARAGRAPHS = /^(bookmarkStart|bookmarkEnd|proofErr|permStart|permEnd|commentRangeStart|commentRangeEnd|move(From|To)Range(Start|End))$/;
+
 function survivingParagraph(paragraph: XmlElement, siblings: XmlElement[], index: number, context: Context): XmlElement {
   if (context.source.markup !== 'tracked' || context.view === 'all') return paragraph;
   const markRemoved = (p: XmlElement): boolean => {
@@ -623,6 +642,8 @@ function survivingParagraph(paragraph: XmlElement, siblings: XmlElement[], index
   };
   let current = paragraph;
   for (let i = index + 1; markRemoved(current); i++) {
+    // Markers that hold no content (bookmarks and the like) do not keep paragraphs apart.
+    while (siblings[i] && siblings[i]!.ns === W && BETWEEN_PARAGRAPHS.test(siblings[i]!.name)) i++;
     const next = siblings[i];
     // Only a paragraph directly after can be joined; anything else (a table, a wrapper, the end) ends the run of paragraphs.
     if (!next || !w(next, 'p')) return paragraph;
@@ -797,6 +818,10 @@ function cellEndMarks(cell: XmlElement, colours: ChangeColours): Map<XmlElement,
   };
   const kind = markOf(before);
   if (!kind || markOf(last)) return undefined;
+  // Several paragraphs in a row may have come or gone at the end of the cell. Their marks then show the change
+  // from one paragraph further up, all the way: the first mark of that run is the one that is really untouched.
+  let first = before;
+  for (let i = blocks.length - 3; i >= 0 && w(blocks[i]!, 'p') && markOf(blocks[i]!) === kind; i--) first = blocks[i]!;
   const runs: XmlElement[] = [];
   const collect = (element: XmlElement): void => {
     for (const c of element.children) {
@@ -813,7 +838,7 @@ function cellEndMarks(cell: XmlElement, colours: ChangeColours): Map<XmlElement,
   // The old clause number typed in front of a removed paragraph is the redline's own addition, not the paragraph's content.
   const content = runs.filter((run) => styleOf(run) !== STATIC_STYLE.oldNumber);
   if (content.length === 0 || !content.every((run) => staticKindOf(child(run, W, 'rPr'), colours) === kind)) return undefined;
-  return new Map<XmlElement, StaticKind | undefined>([[before, undefined], [last, kind]]);
+  return new Map<XmlElement, StaticKind | undefined>([[first, undefined], [last, kind]]);
 }
 
 /** Read one cell. Returns undefined when the cell does not exist in this view. */
@@ -850,6 +875,7 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
   const noteIdsRead = new Map<string, Set<string>>();
   const problems: string[] = [];
   const links: string[] = [];
+  const inks: string[] = [];
   const cover: string[] = [];
   const coverLooks: string[] = [];
   const repeatRows: string[] = [];
@@ -862,10 +888,10 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
   let body = child(pkg.xml(main), W, 'body');
   if (!body) {
     problems.push('The main document has no body.');
-    return { stories, partsRead, noteIdsRead, problems, links, cover, coverLooks, repeatRows, layout, colours };
+    return { stories, partsRead, noteIdsRead, problems, links, inks, cover, coverLooks, repeatRows, layout, colours };
   }
   partsRead.add(main);
-  const shared = { pkg, partsRead, links, markup, styles: new Styles(pkg, main), numbering: new Numbering(pkg, main), repeatRows, colours };
+  const shared = { pkg, partsRead, links, inks, markup, styles: new Styles(pkg, main), numbering: new Numbering(pkg, main), repeatRows, colours };
 
   if (markup === 'static' && view !== 'all') {
     // The cover page: the leading paragraphs in the cover styles. It is the
@@ -1042,5 +1068,5 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
     if (stated.size > 1 || restarts) layout.noteFormat[kind] = 'mixed';
   }
 
-  return { stories, partsRead, noteIdsRead, problems, links, cover, coverLooks, repeatRows, layout, colours };
+  return { stories, partsRead, noteIdsRead, problems, links, inks, cover, coverLooks, repeatRows, layout, colours };
 }

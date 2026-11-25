@@ -51,6 +51,15 @@ function guarded(id: CheckId, run: () => CheckResult): CheckResult {
 }
 
 /** Hyperlinks must cover the same words and point to the same place as in the document being reproduced. */
+/**
+ * Handwriting. An output may hold the picture of a pen mark in place of the strokes (the picture is compared with
+ * the text, as every picture is). But strokes it does hold must be the document's own, all of them and unchanged.
+ */
+function compareInks(expected: string[], found: string[], expectedName: string): CheckFailure | undefined {
+  if (found.length === 0 || (expected.length === found.length && expected.every((ink, i) => ink === found[i]))) return undefined;
+  return { message: `Handwriting (pen strokes) differs from the ${expectedName}.`, expected: `${expected.length} pen mark(s), unchanged`, found: `${found.length} pen mark(s), not the same` };
+}
+
 function compareLinks(expected: string[], found: string[], expectedName: string): CheckFailure | undefined {
   for (let i = 0; i < Math.max(expected.length, found.length); i++) {
     if (expected[i] === found[i]) continue;
@@ -113,11 +122,11 @@ export async function checkTrackedChanges(input: CheckInput): Promise<CheckRepor
 
   const checks: CheckResult[] = [
     guarded('accept-all', () => {
-      const failure = compareStories(modifiedText().stories, accepted().stories, 'modified document') ?? compareLinks(modifiedText().links, accepted().links, 'modified document');
+      const failure = compareStories(modifiedText().stories, accepted().stories, 'modified document') ?? compareLinks(modifiedText().links, accepted().links, 'modified document') ?? compareInks(modifiedText().inks, accepted().inks, 'modified document');
       return failure ? fail('accept-all', failure) : pass('accept-all', hadTrackedChanges(modified) ? ACCEPTED_READING.modified : undefined);
     }),
     guarded('reject-all', () => {
-      const failure = compareStories(originalText().stories, rejected().stories, 'original document') ?? compareLinks(originalText().links, rejected().links, 'original document');
+      const failure = compareStories(originalText().stories, rejected().stories, 'original document') ?? compareLinks(originalText().links, rejected().links, 'original document') ?? compareInks(originalText().inks, rejected().inks, 'original document');
       return failure ? fail('reject-all', failure) : pass('reject-all', hadTrackedChanges(original) ? ACCEPTED_READING.original : undefined);
     }),
     guarded('formatting', () => verdict('formatting', formattingFailure(modifiedText().stories, accepted().stories, false))),
@@ -185,12 +194,40 @@ const deletedSide = (upload: DocxPackage): StoryReading[] => (hadTrackedChanges(
  * blue with a double underline (an insertion), or red and struck through (a deletion).
  */
 function usesLookIn(upload: DocxPackage, usesLook: (root: XmlElement) => boolean): boolean {
+  // Headers and footers no section refers to are not document content, and are not carried into the redline.
+  const main = upload.mainDocumentPart();
+  const referenced = new Set([...upload.relationshipsOfType(main, 'header'), ...upload.relationshipsOfType(main, 'footer')].filter((r) => referencedIn(upload.xml(main), r.id)).map((r) => r.partName));
   for (const partName of upload.partNames) {
     if (!partName.endsWith('.xml') || partName === '[Content_Types].xml') continue;
     const root = upload.xml(partName);
-    if (root.ns === NS.w && ['document', 'hdr', 'ftr', 'footnotes', 'endnotes'].includes(root.name) && usesLook(root)) return true;
+    if (root.ns !== NS.w || !['document', 'hdr', 'ftr', 'footnotes', 'endnotes', 'comments'].includes(root.name)) continue;
+    if ((root.name === 'hdr' || root.name === 'ftr') && !referenced.has(partName)) continue;
+    // The upload is compared as if its own tracked changes had been accepted: text they delete does not count.
+    if (usesLook(withoutDeleted(root))) return true;
   }
   return false;
+}
+
+function referencedIn(root: XmlElement, id: string): boolean {
+  if (root.ns === NS.w && (root.name === 'headerReference' || root.name === 'footerReference') && [...root.attributes].some(([key, value]) => key.startsWith(`${NS.r}|`) && value === id)) return true;
+  return root.children.some((c) => referencedIn(c, id));
+}
+
+/** A copy without what the document's own tracked changes delete: deleted and moved-away text, and paragraph marks flagged as deleted. */
+function withoutDeleted(element: XmlElement): XmlElement {
+  const kept: XmlElement[] = [];
+  for (const c of element.children) {
+    if (c.ns === NS.w && (c.name === 'del' || c.name === 'moveFrom') && !(element.ns === NS.w && ['rPr', 'trPr', 'tcPr', 'numPr', 'tblPrEx'].includes(element.name))) continue;
+    if (c.ns === NS.w && c.name === 'pPr') {
+      const mark = c.children.find((x) => x.ns === NS.w && x.name === 'rPr');
+      if (mark && mark.children.some((x) => x.ns === NS.w && (x.name === 'del' || x.name === 'moveFrom'))) {
+        kept.push({ ...c, children: c.children.filter((x) => x !== mark) });
+        continue;
+      }
+    }
+    kept.push(withoutDeleted(c));
+  }
+  return { ...element, children: kept };
 }
 
 /** Whether an upload holds tracked changes of its own (it is then read as if they had all been accepted). */
@@ -229,8 +266,8 @@ export async function checkStaticRedline(input: StaticCheckInput): Promise<Check
   const oldSide = (): StoryReading => reading('old', () => readStories(output, 'rejected', 'static', colours));
 
   const checks: CheckResult[] = [
-    guarded('static-new', () => verdict('static-new', compareStories(modifiedText().stories, newSide().stories, 'modified document') ?? compareLinks(modifiedText().links, newSide().links, 'modified document'), hadTrackedChanges(modified) ? ACCEPTED_READING.modified : undefined)),
-    guarded('static-old', () => verdict('static-old', compareStories(originalText().stories, oldSide().stories, 'original document') ?? compareLinks(originalText().links, oldSide().links, 'original document'), hadTrackedChanges(original) ? ACCEPTED_READING.original : undefined)),
+    guarded('static-new', () => verdict('static-new', compareStories(modifiedText().stories, newSide().stories, 'modified document') ?? compareLinks(modifiedText().links, newSide().links, 'modified document') ?? compareInks(modifiedText().inks, newSide().inks, 'modified document'), hadTrackedChanges(modified) ? ACCEPTED_READING.modified : undefined)),
+    guarded('static-old', () => verdict('static-old', compareStories(originalText().stories, oldSide().stories, 'original document') ?? compareLinks(originalText().links, oldSide().links, 'original document') ?? compareInks(originalText().inks, oldSide().inks, 'original document'), hadTrackedChanges(original) ? ACCEPTED_READING.original : undefined)),
     guarded('no-tracked-changes', () => verdict('no-tracked-changes', firstOf(leftoverTrackedChanges(output)))),
     guarded('cover-page', () => {
       const counts = countStaticChanges(output, colours);
