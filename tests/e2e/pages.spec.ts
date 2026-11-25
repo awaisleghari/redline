@@ -1,0 +1,283 @@
+/**
+ * Browser tests of the landing page (/) and the docs (/docs, /docs/<article>).
+ * The workspace is in compare.spec.ts.
+ */
+import { expect, test, type Page } from '@playwright/test';
+import { CHECK_TITLES, CHECKS_FOR } from '../../src/checker';
+
+function watchForErrors(page: Page): string[] {
+  const errors: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') errors.push(message.text());
+  });
+  page.on('pageerror', (error) => errors.push(error.message));
+  return errors;
+}
+
+/** Whether anything is drawn on a canvas, and a fingerprint of what. */
+const inkOf = (page: Page, id: string): Promise<{ lit: number; sum: number }> =>
+  page.locator(`#${id}`).evaluate((canvas: HTMLCanvasElement) => {
+    const data = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data;
+    let lit = 0;
+    let sum = 0;
+    for (let i = 3; i < data.length; i += 4) {
+      if (data[i]! > 0) lit++;
+      sum += data[i]! * ((i % 977) + 1);
+    }
+    return { lit, sum };
+  });
+
+test.describe('the landing page', () => {
+  test('shows the headline over two animated grids, with the two buttons leading to the workspace and the docs', async ({ page, baseURL }) => {
+    const errors = watchForErrors(page);
+    const outside: string[] = [];
+    page.on('request', (request) => {
+      if (!request.url().startsWith(new URL(baseURL!).origin + '/') && !request.url().startsWith('data:')) outside.push(request.url());
+    });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/');
+    await expect(page).toHaveTitle('redline — generate free legal-quality redlines in seconds');
+    await expect(page.locator('link[rel="icon"]')).toHaveAttribute('href', '/redline-favicon.svg');
+    expect((await page.request.get('/redline-favicon.svg')).headers()['content-type']).toContain('image/svg+xml');
+    const headline = page.getByRole('heading', { level: 1 });
+    await expect(headline).toHaveText('generate free legal-quality redlines in seconds');
+    await expect(headline).toHaveCSS('font-family', /Newsreader/);
+    await expect(headline).toHaveCSS('font-size', '60px');
+    await expect(headline.locator('span')).toHaveCSS('white-space', 'nowrap');
+    await expect(page.getByRole('img', { name: 'redline' })).toBeVisible();
+
+    // Two links of exactly the same size.
+    const start = page.getByRole('link', { name: 'get started' });
+    const docs = page.getByRole('link', { name: 'docs', exact: true });
+    await expect(start).toHaveAttribute('href', '/app');
+    await expect(docs).toHaveAttribute('href', '/docs');
+    for (const link of [start, docs]) {
+      const box = (await link.boundingBox())!;
+      expect([box.width, box.height]).toEqual([132, 40]);
+    }
+    await start.focus();
+    await expect(start).toHaveCSS('outline-color', 'rgb(85, 133, 255)');
+
+    // The fonts come from this site, and both grids are drawn and moving.
+    await page.evaluate(() => document.fonts.ready);
+    expect(await page.evaluate(() => document.fonts.check("500 60px 'Newsreader'") && document.fonts.check("500 14px 'Geist'"))).toBe(true);
+    for (const id of ['grid-top', 'grid-bottom']) {
+      const before = await inkOf(page, id);
+      expect(before.lit).toBeGreaterThan(10_000);
+      await expect.poll(async () => (await inkOf(page, id)).sum, { timeout: 5_000 }).not.toBe(before.sum);
+    }
+    await expect(page.locator('.rl-hero').first()).toHaveCSS('height', '560px');
+    expect(outside).toEqual([]);
+    expect(errors).toEqual([]);
+
+    await start.click();
+    await expect(page).toHaveURL(/\/app$/);
+    await expect(page.getByRole('heading', { name: 'create a redline' })).toBeVisible();
+    // The workspace's logo leads back.
+    await page.getByRole('link', { name: 'redline home' }).click();
+    await expect(page).toHaveURL(/\/$/);
+    await page.getByRole('link', { name: 'docs', exact: true }).click();
+    await expect(page).toHaveURL(/\/docs$/);
+    await expect(page.getByRole('heading', { level: 1, name: 'Overview' })).toBeVisible();
+  });
+
+  test('on a phone: smaller logo, buttons and grids, three headline lines at most, and no sideways scrolling', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await expect(page.locator('.rl-hero').first()).toHaveCSS('height', '400px');
+    expect((await page.getByRole('link', { name: 'get started' }).boundingBox())!.width).toBe(104);
+    expect((await page.getByRole('img', { name: 'redline' }).boundingBox())!.height).toBe(24);
+    const headline = page.getByRole('heading', { level: 1 });
+    await expect(headline).toHaveCSS('font-size', '32px');
+    expect((await headline.boundingBox())!.height).toBeLessThanOrEqual(32 * 1.06 * 3 + 1);
+  });
+
+  test('with reduced motion the grids are drawn once and stay still', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto('/');
+    const before = await inkOf(page, 'grid-top');
+    expect(before.lit).toBeGreaterThan(10_000);
+    await page.waitForTimeout(700);
+    expect((await inkOf(page, 'grid-top')).sum).toBe(before.sum);
+  });
+});
+
+const ARTICLES = [
+  ['overview', 'get started', 'Overview'],
+  ['quick-start', 'get started', 'Quick start'],
+  ['reading-a-redline', 'get started', 'Reading a redline'],
+  ['downloads', 'get started', 'Downloads'],
+  ['why-it-works-this-way', 'how it works', 'Why it works this way'],
+  ['the-checks', 'how it works', 'The checks'],
+  ['privacy', 'how it works', 'Privacy'],
+  ['supported-documents', 'reference', 'Supported documents'],
+  ['keyboard-shortcuts', 'reference', 'Keyboard shortcuts'],
+] as const;
+const SECTION_COLOURS = { 'get started': 'rgb(255, 142, 144)', 'how it works': 'rgb(111, 221, 174)', reference: 'rgb(169, 193, 255)' };
+
+test.describe('the docs', () => {
+  test('every article has its own address, its section colour in the menu, and previous/next in menu order', async ({ page }) => {
+    const errors = watchForErrors(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    for (const [index, [slug, section, title]] of ARTICLES.entries()) {
+      await page.goto(`/docs/${slug}`);
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText(title);
+      await expect(page).toHaveTitle(`${title} — redline docs`);
+      await expect(page.locator('#eyebrow')).toHaveText(section);
+      await expect(page.locator('#eyebrow')).toHaveCSS('color', SECTION_COLOURS[section]);
+      await expect(page.locator('#crumb-section')).toHaveText(section);
+      const current = page.locator('#docs-nav [aria-current="page"]');
+      await expect(current).toHaveCount(1);
+      await expect(current).toHaveText(new RegExp(`^${title}`, 'i'));
+      await expect(current).toHaveCSS('color', SECTION_COLOURS[section]);
+      await expect(page.locator('#crumb-title')).toHaveText((await current.locator('span').first().textContent())!);
+      const previous = page.locator('#prev-article');
+      const next = page.locator('#next-article');
+      if (index === 0) await expect(previous).toBeHidden();
+      else await expect(previous).toHaveAttribute('href', index === 1 ? '/docs' : `/docs/${ARTICLES[index - 1]![0]}`);
+      if (index === ARTICLES.length - 1) await expect(next).toBeHidden();
+      else await expect(next).toHaveAttribute('href', `/docs/${ARTICLES[index + 1]![0]}`);
+      // "On this page" lists the article's headings; the first is marked.
+      const toc = page.locator('#toc a');
+      expect(await toc.count()).toBeGreaterThan(0);
+      await expect(toc.first()).toHaveAttribute('aria-current', 'true');
+      expect(await page.locator('#article-body h2, #article-body [data-toc]').count()).toBe(await toc.count());
+    }
+    expect(errors).toEqual([]);
+  });
+
+  test('moving between articles changes the address, returns to the top, and the back button works', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/docs');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Overview');
+    await page.locator('#reader').evaluate((reader) => reader.scrollTo(0, 400));
+    await page.locator('#docs-nav').getByRole('link', { name: 'privacy' }).click();
+    await expect(page).toHaveURL(/\/docs\/privacy$/);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Privacy');
+    expect(await page.locator('#reader').evaluate((reader) => reader.scrollTop)).toBe(0);
+    await page.locator('#next-article').click();
+    await expect(page).toHaveURL(/\/docs\/supported-documents$/);
+    await page.goBack();
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Privacy');
+    await page.goBack();
+    await expect(page).toHaveURL(/\/docs$/);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Overview');
+    // The overview's cards and the links in the text lead to articles too.
+    await page.getByRole('link', { name: /Checked before you download/ }).click();
+    await expect(page).toHaveURL(/\/docs\/the-checks$/);
+    await page.goBack();
+    await page.locator('#article-body').getByRole('link', { name: 'privacy' }).click();
+    await expect(page).toHaveURL(/\/docs\/privacy$/);
+    // Out of the docs: the workspace, the source code, the landing page.
+    await expect(page.getByRole('link', { name: 'open redline' })).toHaveAttribute('href', '/app');
+    await expect(page.getByRole('link', { name: 'source', exact: true })).toHaveAttribute('href', 'https://github.com/awaisleghari/redline');
+    await expect(page.getByRole('link', { name: 'source code' })).toHaveAttribute('href', 'https://github.com/awaisleghari/redline');
+    await expect(page.getByRole('link', { name: 'redline home' })).toHaveAttribute('href', '/');
+    await expect(page.locator('#docs-nav .rl-badge')).toHaveText('soon');
+  });
+
+  test('the checks article lists the app\'s real checks, and the placeholders the owner will fill are left in place', async ({ page }) => {
+    await page.goto('/docs/the-checks');
+    await expect(page.locator('[data-checks="static-redline"] > div')).toHaveText(CHECKS_FOR['static-redline'].map((id) => CHECK_TITLES[id]));
+    await expect(page.locator('[data-checks="tracked-changes"] > div')).toHaveText(CHECKS_FOR['tracked-changes'].map((id) => CHECK_TITLES[id]));
+    await page.goto('/docs/privacy');
+    await expect(page.locator('#article-body')).toContainText('[Confirm: does the site use analytics or cookies? Say so here either way.]');
+    await page.goto('/docs/supported-documents');
+    await expect(page.locator('#article-body')).toContainText('[Confirm which parts to list by name, for example headers, footers, footnotes, tables and comments.]');
+    await page.goto('/docs/why-it-works-this-way');
+    await expect(page.locator('#article-body')).toContainText('[Optional, in your own words: anything about your background as a corporate lawyer that shaped these choices.]');
+  });
+
+  test('"on this page" follows the reader down the article, and a click scrolls to the heading', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 700 });
+    await page.goto('/docs/why-it-works-this-way');
+    const toc = page.locator('#toc a');
+    await expect(toc).toHaveText(['In the browser', 'No AI', 'A separate checker', 'Marks lawyers know', 'Open source']);
+    await expect(toc.nth(0)).toHaveAttribute('aria-current', 'true');
+    await toc.nth(2).click();
+    await expect(toc.nth(2)).toHaveAttribute('aria-current', 'true');
+    await expect(toc.nth(0)).not.toHaveAttribute('aria-current', 'true');
+    await expect(page.getByRole('heading', { name: 'A checker that is separate from the redline maker' })).toBeInViewport();
+    await expect(page).toHaveURL(/\/docs\/why-it-works-this-way$/);
+    await page.locator('#reader').evaluate((reader) => reader.scrollTo(0, reader.scrollHeight));
+    await expect(toc.nth(4)).toHaveAttribute('aria-current', 'true');
+    await page.locator('#reader').evaluate((reader) => reader.scrollTo(0, 0));
+    await expect(toc.nth(0)).toHaveAttribute('aria-current', 'true');
+    // Narrower than 1180 px there is no such column.
+    await page.setViewportSize({ width: 1100, height: 700 });
+    await expect(page.locator('.rl-tocwrap')).toBeHidden();
+  });
+
+  test('search opens with Ctrl+K (⌘+K on a Mac) and finds articles by title and by text', async ({ page }) => {
+    await page.goto('/docs');
+    const search = page.getByRole('combobox', { name: 'Search the docs' });
+    const hint = (await page.locator('#search-hint').textContent())!;
+    expect(hint).toMatch(/^(Ctrl|⌘) K$/);
+    await page.keyboard.press(hint.startsWith('⌘') ? 'Meta+K' : 'Control+K');
+    await expect(search).toBeFocused();
+    // By title.
+    await search.fill('privacy');
+    const results = page.getByRole('listbox', { name: 'Search results' });
+    await expect(results.getByRole('option').first()).toContainText('Privacy');
+    // By words that are only in an article's text.
+    await search.fill('struck through');
+    await expect(results.getByRole('option')).toHaveCount(1);
+    await expect(results.getByRole('option')).toContainText('Reading a redline');
+    await search.fill('zzzz');
+    await expect(results).toContainText('Nothing found in the docs.');
+    await search.fill('25 MB');
+    await expect(results.getByRole('option').first()).toHaveAttribute('aria-selected', 'true');
+    await page.keyboard.press('ArrowDown');
+    await expect(results.getByRole('option').nth(1)).toHaveAttribute('aria-selected', 'true');
+    const chosen = (await results.getByRole('option').nth(1).locator('.rl-resulttitle').textContent())!;
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(chosen);
+    await expect(results).toBeHidden();
+    await expect(search).toHaveValue('');
+    // Escape closes the list; a click on a result opens it.
+    await search.fill('download');
+    await page.keyboard.press('Escape');
+    await expect(results).toBeHidden();
+    await search.fill('accept or reject');
+    await results.getByRole('option').first().click();
+    await expect(page).toHaveURL(/\/docs\/downloads$/);
+  });
+
+  test('on a phone the menu folds into one button, cards and marks stack, and nothing scrolls sideways', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/docs');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    const toggle = page.getByRole('button', { name: 'docs menu' });
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.locator('#docs-nav')).toBeHidden();
+    await expect(page.locator('.rl-crumb')).toBeHidden();
+    // The three cards sit one above the other.
+    const cards = await page.locator('.doc-card').evaluateAll((all) => all.map((card) => card.getBoundingClientRect().left));
+    expect(new Set(cards).size).toBe(1);
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await page.locator('#docs-nav').getByRole('link', { name: 'reading a redline' }).click();
+    await expect(page).toHaveURL(/\/docs\/reading-a-redline$/);
+    await expect(page.locator('#docs-nav')).toBeHidden();
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Reading a redline');
+    expect(await page.evaluate(() => window.scrollY)).toBe(0);
+    const row = page.locator('.doc-marks > div').first();
+    expect(await row.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(1);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  });
+
+  test('the bitmap band is drawn and does not move', async ({ page }) => {
+    await page.goto('/docs');
+    const before = await inkOf(page, 'band');
+    expect(before.lit).toBeGreaterThan(5_000);
+    await page.waitForTimeout(600);
+    expect((await inkOf(page, 'band')).sum).toBe(before.sum);
+  });
+});
+
+test('the fonts and their licences are served from this site', async ({ page }) => {
+  for (const file of ['Geist-Regular.woff2', 'Geist-Medium.woff2', 'GeistMono-Regular.woff2', 'GeistMono-Medium.woff2', 'Newsreader-Regular.woff2', 'Newsreader-Medium.woff2', 'Geist-OFL.txt', 'Newsreader-OFL.txt']) {
+    expect((await page.request.get(`/fonts/${file}`)).status(), file).toBe(200);
+  }
+});

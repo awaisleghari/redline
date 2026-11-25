@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Nothing is loaded from, or sent to, anywhere but this site. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data: blob:; connect-src 'self' ws://localhost:* ws://127.0.0.1:*; frame-src 'self'; form-action 'none'; base-uri 'none'; object-src 'none'"
+    />
+    <title>redline — docs</title>
+    <link rel="icon" href="/redline-favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/src/app/styles/docs.css" />
+  </head>
+  <body>
+    <div class="rl-app">
+      <!-- ============ SIDEBAR ============ -->
+      <aside class="rl-side rl-scroll">
+        <div class="rl-siderow">
+          <a class="rl-home" href="/" aria-label="redline home"><img src="/brand/redline-logo-for-dark-ui.svg" alt="redline" width="104" height="22" /></a>
+          <span class="rl-siderule" aria-hidden="true"></span>
+          <span class="rl-sidename">docs</span>
+        </div>
+
+        <div class="rl-searchwrap">
+          <label class="rl-search">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#8B9099" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="6.25" cy="6.25" r="4.25"></circle><path d="M9.5 9.5 12.5 12.5"></path></svg>
+            <input id="search" type="search" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="false" aria-controls="search-results" aria-autocomplete="list" />
+            <kbd class="rl-kbd rl-kbd-light" id="search-hint" aria-hidden="true">⌘ K</kbd>
+          </label>
+          <div class="rl-results" id="search-results" role="listbox" aria-label="Search results" hidden></div>
+        </div>
+
+        <button class="rl-btn rl-menubtn" id="menu-toggle" type="button" aria-expanded="false" aria-controls="docs-nav">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"></path></svg>
+          <span>docs menu</span>
+          <svg class="rl-chev" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#8B9099" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 5.25 7 8.75l3.5-3.5"></path></svg>
+        </button>
+
+        <nav class="rl-docsnav" id="docs-nav" aria-label="Docs"></nav>
+
+        <div class="rl-spacer"></div>
+        <footer class="rl-foot">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#8B9099" stroke-width="1.3" stroke-linejoin="round" aria-hidden="true"><rect x="2.75" y="6.25" width="8.5" height="6" rx="1.5"></rect><path d="M4.75 6.25V4.5a2.25 2.25 0 0 1 4.5 0v1.75"></path></svg>
+          <p>Free and open source. Compared in your browser. No AI is used.</p>
+        </footer>
+      </aside>
+
+      <!-- ============ MAIN ============ -->
+      <main class="rl-main">
+        <canvas class="rl-band rl-fade" id="band" aria-hidden="true"></canvas>
+
+        <header class="rl-topbar rl-glass">
+          <div class="rl-crumb">
+            <span class="rl-crumbsection" id="crumb-section"></span>
+            <span class="rl-crumbslash" aria-hidden="true">/</span>
+            <span class="rl-crumbtitle" id="crumb-title"></span>
+          </div>
+          <div class="rl-topactions">
+            <a class="rl-btn rl-ghost rl-sourcelink" href="https://github.com/awaisleghari/redline">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 4.5 2 8l3.5 3.5M10.5 4.5 14 8l-3.5 3.5"></path></svg>source</a>
+            <a class="rl-btn rl-open" href="/app">open redline</a>
+          </div>
+        </header>
+
+        <div class="rl-reader rl-scroll" id="reader" tabindex="0" aria-label="Article">
+          <div class="rl-readerrow">
+            <article class="rl-article rl-prose" id="article">
+              <p class="rl-eyebrow" id="eyebrow"></p>
+              <h1 id="article-title"></h1>
+              <p class="rl-intro" id="article-intro"></p>
+              <div class="rl-body" id="article-body"></div>
+              <nav class="rl-pn" aria-label="More articles">
+                <a class="rl-btn rl-pnlink" id="prev-article" href="/docs"><span class="rl-pnlabel">previous</span><span class="rl-pnname">← <span id="prev-name"></span></span></a>
+                <span id="prev-gap" hidden></span>
+                <a class="rl-btn rl-pnlink rl-pnnext" id="next-article" href="/docs"><span class="rl-pnlabel">next</span><span class="rl-pnname"><span id="next-name"></span> →</span></a>
+              </nav>
+            </article>
+
+            <aside class="rl-tocwrap" aria-label="On this page">
+              <div class="rl-tocbox">
+                <span class="rl-toclabel">on this page</span>
+                <div id="toc"></div>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </main>
+    </div>
+    <script type="module" src="/src/app/docs/main.ts"></script>
+  </body>
+</html>

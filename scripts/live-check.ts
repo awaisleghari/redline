@@ -36,7 +36,7 @@ const mb = (bytes: number): string => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 // 1. The page and its headers.
 const page = await fetch(`${site}/`);
 const html = await page.text();
-result(page.status === 200 && html.includes('<title>Redline'), 'the page is served');
+result(page.status === 200 && html.includes('<title>redline'), 'the page is served');
 result(html.includes('Content-Security-Policy'), "the page carries its content-security policy (nothing loaded from or sent to another site)");
 for (const [name, value] of [['x-content-type-options', 'nosniff'], ['x-frame-options', 'DENY'], ['referrer-policy', 'no-referrer']] as const) {
   result(page.headers.get(name) === value, `header ${name}: ${value}`, `got ${page.headers.get(name)}`);
