@@ -36,11 +36,12 @@ interface Outputs {
 }
 
 /** Both Word files, as the product makes them, each required to pass every one of its checks. */
-async function bothPass(original: Uint8Array, modified: Uint8Array): Promise<Outputs> {
+async function bothPass(original: Uint8Array, modified: Uint8Array, trackedChangesIn?: 'original' | 'modified' | 'both'): Promise<Outputs> {
   const tracked = await produceTrackedChanges(original, modified);
   const trackedReport = await checkTrackedChanges({ original, modified, output: tracked });
   expect(trackedReport.checks.filter((c) => !c.passed)).toEqual([]);
-  const made = await makeStaticRedline(tracked, original, COVER);
+  // (An upload that carried tracked changes is named on the cover page.)
+  const made = await makeStaticRedline(tracked, original, trackedChangesIn ? { ...COVER, trackedChangesIn } : COVER);
   const staticReport = await checkStaticRedline({ original, modified, output: made.docx, ...COVER });
   expect(staticReport.checks.filter((c) => !c.passed)).toEqual([]);
   return { tracked, staticRedline: made.docx, counts: made.counts };
@@ -1376,5 +1377,24 @@ describe('a numbered list that runs through a text box and on into the main text
     const boxed = await oldNumberIn((await bothPass(await withBoxedItem(pair.original), await withBoxedItem(pair.modified))).staticRedline);
     expect(plain).toBe('(b)');
     expect(boxed).toBe('(c)');
+  });
+});
+
+/**
+ * Found on a real contract (held-out run 1, an NHS agreement published with tracked changes in it): a footnote
+ * emptied in the draft, its one paragraph mark flagged as removed. Word keeps that paragraph (a note cannot lose
+ * its last one). The Checker read the note as holding no paragraph at all, so no output could ever match it.
+ */
+describe('an upload whose emptied footnote has its only paragraph mark flagged as removed', () => {
+  it('both Word files pass', async () => {
+    const pair = await buildPair(pairById('footnote-change'));
+    const emptied = '<w:footnote w:id="1"><w:p><w:pPr><w:pStyle w:val="FootnoteText"/><w:rPr><w:del w:id="900" w:author="A" w:date="2026-01-01T00:00:00Z"/></w:rPr></w:pPr></w:p></w:footnote>';
+    const original = await editPart(pair.original, /^word\/footnotes\.xml$/, (xml) => {
+      const out = xml.replace(/<w:footnote w:id="1">.*?<\/w:footnote>/s, emptied);
+      if (out === xml) throw new Error('the fixture has no footnote 1');
+      return out;
+    });
+    await bothPass(original, pair.modified, 'original');
+    await bothPass(original, original, 'both');
   });
 });

@@ -1067,6 +1067,10 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
       idsRead.add(ref.id);
       const context = newContext(view, problems, { ...shared, part: partName });
       readBlocks(note, context);
+      // A note always holds at least one paragraph, as a cell does: Word never lets a note lose its last paragraph
+      // mark. (Found on a real contract: a draft whose emptied footnote had its one paragraph mark flagged as
+      // removed. Read as no paragraph at all, it could never match the same note in the other files.)
+      if (context.paragraphs.length === 0) context.paragraphs.push(marker(''));
       // Always keep the note's story, even if blank, so a missing note cannot hide.
       stories.push(storyOf(`${kind}/${index + 1}`, kind, label, context.paragraphs));
       add(`${kind}/${index + 1}/text boxes`, 'text box', `text boxes in ${label}`, context.textBoxes);
