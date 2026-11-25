@@ -21,7 +21,12 @@ const isSvg = (name: string): boolean => /\.svg$/i.test(name);
 /** What an SVG picture says, whatever its layout: undefined if it cannot be read. */
 function saidBy(bytes: Uint8Array): string | undefined {
   let broken = false;
-  const root = new DOMParser({ onError: () => (broken = true) }).parseFromString(decoder.decode(bytes).replace(/^﻿/, ''), 'application/xml').documentElement;
+  let root: Element | null | undefined;
+  try {
+    root = new DOMParser({ onError: () => (broken = true) }).parseFromString(decoder.decode(bytes).replace(/^\uFEFF/, ''), 'application/xml').documentElement as unknown as Element | null;
+  } catch {
+    return undefined; // not readable as XML (the parser throws on a fatal fault): left exactly as it is
+  }
   if (broken || !root) return undefined;
   const say = (node: Node): unknown => {
     if (node.nodeType === 3 || node.nodeType === 4) return (node.nodeValue ?? '').replace(/\r\n?/g, '\n');

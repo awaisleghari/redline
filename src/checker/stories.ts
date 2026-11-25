@@ -114,6 +114,8 @@ export interface StoryReading {
   links: string[];
   /** Handwriting (pen strokes) the document holds, in reading order: a fingerprint of each. */
   inks: string[];
+  /** Templates that legacy shapes in the document ask for and the document does not define: such a shape may not be drawn as intended. */
+  missingShapeTypes: string[];
   /** The text of each table row marked to repeat at the top of every page the table runs onto. */
   repeatRows: string[];
   /** How the pages are set up: sections, their headers and footers, page numbering, note numbering. */
@@ -297,6 +299,8 @@ interface Source {
   partsRead: Set<string>;
   links: string[];
   inks: string[];
+  /** Shape templates (legacy drawings) defined anywhere in the document, and those its shapes ask for. */
+  shapeTypes: { defined: Set<string>; used: Set<string> };
   markup: Markup;
   styles: Styles;
   numbering: Numbering;
@@ -500,7 +504,16 @@ function inlineText(element: XmlElement, context: Context): string {
     }
     // A shape type is a template for shapes (a definition, like a style): it draws nothing itself, and a file may
     // carry the same definition more than once. Only an actual shape's text is shown.
-    if (node.ns === V_NS && node.name === 'shapetype') continue;
+    if (node.ns === V_NS && node.name === 'shapetype') {
+      const id = attribute(node, '', 'id');
+      if (id) context.source.shapeTypes.defined.add(id);
+      continue;
+    }
+    // A legacy shape drawn from a template must still have its template (see missingShapeTypes).
+    if (node.ns === V_NS) {
+      const type = attribute(node, '', 'type');
+      if (type?.startsWith('#')) context.source.shapeTypes.used.add(type.slice(1));
+    }
     if (node.ns === V_NS && node.name === 'textpath') {
       text += emit(context, `⟦shape text: ${attribute(node, '', 'string') ?? ''}⟧`);
       continue;
@@ -594,7 +607,14 @@ function inlineText(element: XmlElement, context: Context): string {
           // A legacy picture element holding nothing but shape types (templates for shapes, see below) draws
           // nothing: it is a place where definitions are kept. Found on real contracts: a program that rewrites the
           // file may gather a definition into such an element of its own, and a reader sees no difference.
-          if (node.name === 'pict' && node.children.length > 0 && node.children.every((child) => child.ns === V_NS && child.name === 'shapetype')) continue;
+          if (node.name === 'pict' && node.children.length > 0 && node.children.every((child) => child.ns === V_NS && child.name === 'shapetype')) {
+            // What it defines is still noted: shapes elsewhere may be drawn from it (see missingShapeTypes).
+            for (const definition of node.children) {
+              const id = attribute(definition, '', 'id');
+              if (id) context.source.shapeTypes.defined.add(id);
+            }
+            continue;
+          }
           // The marker, then any text shown inside the object (watermark or shape text).
           // Text boxes inside it are read into the text-box story as they are met.
           text += emit(context, MARK.object);
@@ -887,6 +907,7 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
   const problems: string[] = [];
   const links: string[] = [];
   const inks: string[] = [];
+  const shapeTypes = { defined: new Set<string>(), used: new Set<string>() };
   const cover: string[] = [];
   const coverLooks: string[] = [];
   const repeatRows: string[] = [];
@@ -899,10 +920,10 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
   let body = child(pkg.xml(main), W, 'body');
   if (!body) {
     problems.push('The main document has no body.');
-    return { stories, partsRead, noteIdsRead, problems, links, inks, cover, coverLooks, repeatRows, layout, colours };
+    return { stories, partsRead, noteIdsRead, problems, links, inks, missingShapeTypes: [...shapeTypes.used].filter((id) => !shapeTypes.defined.has(id)).sort(), cover, coverLooks, repeatRows, layout, colours };
   }
   partsRead.add(main);
-  const shared = { pkg, partsRead, links, inks, markup, styles: new Styles(pkg, main), numbering: new Numbering(pkg, main), repeatRows, colours };
+  const shared = { pkg, partsRead, links, inks, shapeTypes, markup, styles: new Styles(pkg, main), numbering: new Numbering(pkg, main), repeatRows, colours };
 
   if (markup === 'static' && view !== 'all') {
     // The cover page: the leading paragraphs in the cover styles. It is the
@@ -1079,5 +1100,5 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
     if (stated.size > 1 || restarts) layout.noteFormat[kind] = 'mixed';
   }
 
-  return { stories, partsRead, noteIdsRead, problems, links, inks, cover, coverLooks, repeatRows, layout, colours };
+  return { stories, partsRead, noteIdsRead, problems, links, inks, missingShapeTypes: [...shapeTypes.used].filter((id) => !shapeTypes.defined.has(id)).sort(), cover, coverLooks, repeatRows, layout, colours };
 }

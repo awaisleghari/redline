@@ -895,3 +895,29 @@ describe('a kept line between two removed paragraphs at the end of a cell', () =
     });
   }
 });
+
+/** Review findings on the first batch of held-out fixes. */
+describe('held-out fixes, review findings', () => {
+  it('an SVG picture that cannot be read as XML does not stop the comparison: it is left as it is', async () => {
+    const pair = await buildPair(pairById('one-word-change'));
+    const broken = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"><path></svg>');
+    await expect(produceTrackedChanges(await withSvgPicture(pair.original, broken), await withSvgPicture(pair.modified, broken))).resolves.toBeInstanceOf(Uint8Array);
+    await expect(produceTrackedChanges(await withSvgPicture(pair.original, new Uint8Array()), await withSvgPicture(pair.modified, new Uint8Array()))).resolves.toBeInstanceOf(Uint8Array);
+  });
+
+  it('a legacy shape must keep the template it is drawn from: an output that loses the template is refused', async () => {
+    const V = 'xmlns:v="urn:schemas-microsoft-com:vml"';
+    const template = `<w:r><w:pict><v:shapetype ${V} id="_x0000_t202" coordsize="21600,21600" path="m,l,21600r21600,l21600,xe"/></w:pict></w:r>`;
+    const shape = `<w:r><w:pict><v:shape ${V} type="#_x0000_t202" style="width:10pt;height:10pt"/></w:pict></w:r>`;
+    const pair = await buildPair(pairById('one-word-change'));
+    const add = (docx: Uint8Array): Promise<Uint8Array> => editPart(docx, /^word\/document\.xml$/, (xml) => xml.replace('<w:r>', `${template}${shape}<w:r>`));
+    const original = await add(pair.original);
+    const modified = await add(pair.modified);
+    const whole = await add(await produceTrackedChanges(pair.original, pair.modified));
+    expect(await failed(checkTrackedChanges({ original, modified, output: whole }))).toEqual([]);
+    const lost = await editPart(whole, /^word\/document\.xml$/, (xml) => xml.replace(template, ''));
+    const failures = await failed(checkTrackedChanges({ original, modified, output: lost }));
+    expect(failures).toContain('accept-all');
+    expect(failures).toContain('reject-all');
+  });
+});
