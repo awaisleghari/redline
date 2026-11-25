@@ -729,6 +729,10 @@ class PartConverter {
       // whole. The clause that went is the last one, so it gives up its number and this paragraph keeps its own.
       this.removedAtCellEnd.set(paragraph.nextSibling as Element, markKind);
       keepsNumber = true;
+      // The number it keeps is the one the joined paragraph has in the modified document, and the engine states
+      // that on the paragraph whose mark stays, the last one (found on real contracts: this paragraph still had
+      // the properties of an unnumbered line that was replaced, and the clause lost its number).
+      this.takeNumberingFrom(paragraph.nextSibling as Element, paragraph);
     }
 
     if (pPr) this.convert(pPr, kind);

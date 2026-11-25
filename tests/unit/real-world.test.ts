@@ -1014,3 +1014,38 @@ describe('a table that comes or goes inside a kept cell, review findings', () =>
     });
   }
 });
+
+/**
+ * Found on real contracts (held-out run 1, ADB procurement documents carrying tracked changes): at the end of a
+ * cell an unnumbered line is replaced by a numbered clause, and the line after it removed. The engine writes the
+ * new clause into the old line's paragraph (old properties, mark removed) and states the clause's numbering on
+ * the cell's last paragraph, whose text is all removed. The clause must show its number where its text is.
+ */
+describe('a numbered clause that replaces the last two lines of a cell', () => {
+  it('the static redline passes and the clause carries its number', async () => {
+    const base = (await buildPair(pairById('numbered-clause-deleted'))).original;
+    const numPr = /<w:numPr>.*?<\/w:numPr>/s.exec(decoder.decode((await unzip(base)).get('word/document.xml')!))![0];
+    const OLD1 = 'Authorised representative of the partner (name and address, and';
+    const OLD2 = 'e-mail address)';
+    const NEW = 'Organisational chart and a list of the board of directors.';
+    const run = (text: string): string => `<w:r><w:t xml:space="preserve">${text}</w:t></w:r>`;
+    const change = (tag: string, id: number): string => `<w:${tag} w:id="${9100 + id}" w:author="Redline" w:date="2026-11-25T00:00:00Z"`;
+    const gone = (text: string, id: number): string => `${change('del', id)}><w:r><w:delText xml:space="preserve">${text}</w:delText></w:r></w:del>`;
+    const inCell = (docx: Uint8Array, paragraphs: string): Promise<Uint8Array> =>
+      editPart(docx, /^word\/document\.xml$/, (xml) => xml.replace(/<w:p>.*?<\/w:p>/s, (first) => `<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="9000" w:type="dxa"/></w:tcPr>${first}${paragraphs}</w:tc></w:tr></w:tbl>`));
+    const original = await inCell(base, `<w:p>${run(OLD1)}</w:p><w:p>${run(OLD2)}</w:p>`);
+    const modified = await inCell(base, `<w:p><w:pPr>${numPr}</w:pPr>${run(NEW)}</w:p>`);
+    const tracked = await inCell(
+      base,
+      `<w:p><w:pPr><w:rPr>${change('del', 1)}/></w:rPr></w:pPr>${change('ins', 2)}>${run(NEW)}</w:ins>${gone(OLD1, 3)}</w:p>` +
+        `<w:p><w:pPr>${numPr}${change('pPrChange', 4)}><w:pPr/></w:pPrChange></w:pPr>${gone(OLD2, 5)}</w:p>`,
+    );
+    expect(await failed(checkTrackedChanges({ original, modified, output: tracked }))).toEqual([]);
+    const made = await makeStaticRedline(tracked, original, COVER);
+    const report = await checkStaticRedline({ original, modified, output: made.docx, ...COVER });
+    expect(report.checks.filter((c) => !c.passed)).toEqual([]);
+    const xml = decoder.decode((await unzip(made.docx)).get('word/document.xml')!);
+    const clause = xml.split('<w:p>').find((p) => p.includes(NEW))!;
+    expect(clause).toContain(numPr);
+  });
+});
