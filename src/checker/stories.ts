@@ -435,6 +435,10 @@ function alternateContentBranch(element: XmlElement, context: Context, read: (br
       const inline = context.source.numbering.withoutCounting(() => read(branch, probe));
       // Pictures are stored differently in the modern and legacy forms, so linked files are left out of this comparison.
       const texts = (list: Para[]): string[] => list.map((entry) => entry.text);
+      // Clause numbers too: each form is read from the same starting count, so a paragraph numbered in one form
+      // and not in the other (or numbered differently) shows here. Otherwise a program showing the other form
+      // would print numbers nothing has checked (review finding).
+      const numbers = (list: Para[]): string[] => list.map((entry) => `${entry.number}|${entry.listed ? 'listed' : ''}|${entry.bullet}`);
       // A text box holding nothing but empty paragraphs shows no text: a drawing saved as shapes with such a box
       // and, for older programs, as a flat picture of itself reads the same either way.
       const shown = (list: Para[]): string[] => {
@@ -445,7 +449,8 @@ function alternateContentBranch(element: XmlElement, context: Context, read: (br
         }
         return boxes.filter((box) => box.some((text) => text.trim() !== '')).flatMap((box) => ['⟦text box⟧', ...box]);
       };
-      return JSON.stringify([inline, texts(probe.paragraphs), probe.pending, shown(probe.textBoxes), probe.notes]).replace(/⟦file [^⟧]*⟧/g, '');
+      const boxNumbers = numbers(probe.textBoxes.filter((entry) => entry.text.trim() !== '' && entry.text !== '⟦text box⟧'));
+      return JSON.stringify([inline, texts(probe.paragraphs), probe.pending, shown(probe.textBoxes), probe.notes, numbers(probe.paragraphs), boxNumbers]).replace(/⟦file [^⟧]*⟧/g, '');
     });
     if (new Set(readings).size > 1) {
       context.problems.push('A drawing or text box is stored in alternative forms whose text differs, so what a reader would see cannot be verified.');
@@ -1070,7 +1075,8 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
       // A note always holds at least one paragraph, as a cell does: Word never lets a note lose its last paragraph
       // mark. (Found on a real contract: a draft whose emptied footnote had its one paragraph mark flagged as
       // removed. Read as no paragraph at all, it could never match the same note in the other files.)
-      if (context.paragraphs.length === 0) context.paragraphs.push(marker(''));
+      // (Only a note that does hold a paragraph: one with none at all is damaged, and must still show as different.)
+      if (context.paragraphs.length === 0 && note.children.some((c) => w(c, 'p'))) context.paragraphs.push(marker(''));
       // Always keep the note's story, even if blank, so a missing note cannot hide.
       stories.push(storyOf(`${kind}/${index + 1}`, kind, label, context.paragraphs));
       add(`${kind}/${index + 1}/text boxes`, 'text box', `text boxes in ${label}`, context.textBoxes);

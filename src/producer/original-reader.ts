@@ -313,7 +313,9 @@ export function readOriginal(parts: { xml: string; isMain: boolean }[], stylesXm
       // into the main text, where every later clause was counted two too high).
       const inFallback = (paragraph: El): boolean => {
         for (let up = paragraph.parentNode as El | null; up && up.nodeType === 1; up = up.parentNode as El | null) {
-          if (up.namespaceURI === MC && up.localName === 'Fallback') return true;
+          // Any form but the first (there may be several mc:Choice forms before the mc:Fallback).
+          const holder = up.parentNode as El | null;
+          if (up.namespaceURI === MC && holder && holder.namespaceURI === MC && holder.localName === 'AlternateContent' && kids(holder).find((c) => c.namespaceURI === MC) !== up) return true;
         }
         return false;
       };

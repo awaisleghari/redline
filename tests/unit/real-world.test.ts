@@ -1378,6 +1378,22 @@ describe('a numbered list that runs through a text box and on into the main text
     expect(plain).toBe('(b)');
     expect(boxed).toBe('(c)');
   });
+
+  it('an output whose legacy form of the box has lost its numbering is caught (review finding)', async () => {
+    const pair = await buildPair(pairById('numbered-clause-deleted'));
+    const original = await withBoxedItem(pair.original);
+    const modified = await withBoxedItem(pair.modified);
+    const { tracked, staticRedline } = await bothPass(original, modified);
+    const damage = (docx: Uint8Array): Promise<Uint8Array> =>
+      editPart(docx, /^word\/document\.xml$/, (xml) => {
+        const out = xml.replace(/(<mc:Fallback\b[^>]*>(?:(?!<\/mc:Fallback>).)*?)<w:numPr>.*?<\/w:numPr>/s, '$1');
+        if (out === xml) throw new Error('nothing was damaged');
+        return out;
+      });
+    expect(await failed(checkTrackedChanges({ original, modified, output: await damage(tracked) }))).not.toEqual([]);
+    const report = await checkStaticRedline({ original, modified, output: await damage(staticRedline), ...COVER });
+    expect(report.checks.filter((c) => !c.passed)).not.toEqual([]);
+  });
 });
 
 /**
@@ -1396,5 +1412,19 @@ describe('an upload whose emptied footnote has its only paragraph mark flagged a
     });
     await bothPass(original, pair.modified, 'original');
     await bothPass(original, original, 'both');
+  });
+
+  it('an output whose footnote has lost its paragraph altogether is still caught (review finding)', async () => {
+    const pair = await buildPair(pairById('footnote-change'));
+    const blank = (docx: Uint8Array): Promise<Uint8Array> => editPart(docx, /^word\/footnotes\.xml$/, (xml) => xml.replace(/<w:footnote w:id="1">.*?<\/w:footnote>/s, '<w:footnote w:id="1"><w:p><w:pPr><w:pStyle w:val="FootnoteText"/></w:pPr></w:p></w:footnote>'));
+    const original = await blank(pair.original);
+    const modified = await blank(pair.modified);
+    const { tracked } = await bothPass(original, modified);
+    const damaged = await editPart(tracked, /^word\/footnotes\.xml$/, (xml) => {
+      const out = xml.replace(/(<w:footnote\b(?![^>]*w:type=)[^>]*>).*?(<\/w:footnote>)/s, '$1$2');
+      if (out === xml) throw new Error('nothing was damaged');
+      return out;
+    });
+    expect(await failed(checkTrackedChanges({ original, modified, output: damaged }))).not.toEqual([]);
   });
 });
