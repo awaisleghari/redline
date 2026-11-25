@@ -237,6 +237,8 @@ export async function mutate(original: Uint8Array, seed: number, wanted = 160): 
 
   /** A table row it is safe to remove or copy: plain paragraphs only (no note marks, bookmarks, pictures, fields, nested or merged cells). */
   const plainRow = (row: El): boolean => {
+    // Not inside a text box, which is stored twice: an edit to one copy alone makes a file no word processor would write.
+    if (inTextBox(row)) return false;
     if (row.getElementsByTagNameNS(W, 'tbl').length > 0 || row.getElementsByTagNameNS(W, 'vMerge').length > 0) return false;
     for (const tag of ['footnoteReference', 'endnoteReference', 'bookmarkStart', 'commentRangeStart', 'drawing', 'pict', 'fldChar', 'fldSimple', 'sdt', 'hyperlink']) if (row.getElementsByTagNameNS(W, tag).length > 0) return false;
     const inside = row.getElementsByTagNameNS(W, 'p');
