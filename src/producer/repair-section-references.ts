@@ -12,7 +12,8 @@
  * every later section showed the header of the section after it.
  *
  * The repair, on the engine's output, only where the output holds a different
- * number of section breaks from the uploads: the section breaks that remain
+ * number of section breaks from the uploads and the two uploads arrange their
+ * headers and footers identically (the same sections naming the same ones): the section breaks that remain
  * when every change is accepted are, in order, the modified document's; each
  * is given the headers and footers the modified document shows in that
  * section (those it names there, or carries over from an earlier section). A
@@ -127,6 +128,13 @@ export function repairSectionReferences(tracked: string, trackedRels: string, or
   if (breaks.length === inModified.length && breaks.length === inOriginal.length) return undefined;
 
   const here = namedIn(trackedRels);
+  // Only where nothing about the headers and footers changed between the uploads: the same sections naming the
+  // same ones under the same names, and the output holding exactly those. Where a section or a header came, went
+  // or changed, the engine builds header parts of its own and points sections at them deliberately; what each
+  // section should then name cannot be told from the uploads, and its output is left as it is (review finding).
+  const sameMap = (a: Map<string, string>, b: Map<string, string>): boolean => a.size === b.size && [...a].every(([id, target]) => b.get(id) === target);
+  if (inOriginal.length !== inModified.length || !inOriginal.every((b, i) => same(b.references, inModified[i]!.references))) return undefined;
+  if (!sameMap(here, namedIn(modified.rels)) || !sameMap(here, namedIn(original.rels))) return undefined;
   const inUpload = { modified: namedIn(modified.rels), original: namedIn(original.rels) };
   /** Is every header and footer in the list in the output under the same name, pointing at the same part? */
   const present = (list: Reference[], upload: Map<string, string>): boolean => list.every((r) => r.id !== '' && here.has(r.id) && here.get(r.id) === upload.get(r.id));

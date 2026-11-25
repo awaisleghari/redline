@@ -28,6 +28,9 @@ const OFFICE_NAMESPACE = 'urn:schemas-microsoft-com:office:office';
 const DECLARATION = /\sxmlns:([\w.-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
 const ID_IN_RELS = /(<Relationship\b[^>]*?\sId\s*=\s*)(?:"([^"]*)"|'([^']*)')/g;
 
+/** Comments, CDATA, processing instructions, declarations and closing tags are stepped over; an opening tag's attributes are captured. */
+const TAG = /<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<\?[\s\S]*?\?>|<![^>]*>|<\/[^>]*>|<[^\s\/>]+((?:"[^"]*"|'[^']*'|[^>"'])*)>/g;
+
 const escapeForPattern = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /** The new names for one part's relationships: engine-style names only, each mapped to a name not in use. */
@@ -67,10 +70,15 @@ export function renameInPart(xml: string, renamed: Map<string, string>): string 
   }
   if (names.length === 0) return xml;
   const use = new RegExp(`(\\s(?:${[...new Set(names)].join('|')})\\s*=\\s*)(?:"([^"]*)"|'([^']*)')`, 'g');
-  return xml.replace(use, (whole, before: string, double: string | undefined, single: string | undefined) => {
-    const to = renamed.get(double ?? single ?? '');
-    return to ? `${before}"${to}"` : whole;
-  });
+  // Only inside opening tags: the same characters in the document's text are text, and stay as they are.
+  return xml.replace(TAG, (tag, attributes: string | undefined) =>
+    attributes === undefined
+      ? tag
+      : tag.replace(use, (whole, before: string, double: string | undefined, single: string | undefined) => {
+          const to = renamed.get(double ?? single ?? '');
+          return to ? `${before}"${to}"` : whole;
+        }),
+  );
 }
 
 /** The document with engine-style relationship names replaced. A document without any is returned as the very same bytes. */

@@ -1030,6 +1030,31 @@ describe('the one line of a cell replaced by several paragraphs', () => {
   }
 });
 
+/** Review finding on the third batch: the replaced line and the new paragraphs numbered. The joined paragraph stays, so it shows no old number. */
+describe('the one numbered line of a cell replaced by several numbered paragraphs', () => {
+  it('the static redline passes, and the joined paragraph carries no old clause number', async () => {
+    const base = (await buildPair(pairById('numbered-clause-deleted'))).original;
+    const numPr = /<w:numPr>.*?<\/w:numPr>/s.exec(decoder.decode((await unzip(base)).get('word/document.xml')!))![0];
+    const OLD = 'The scope of requirements is defined elsewhere';
+    const NEW = ['Details of shipping documents follow', 'Three copies of the invoice', 'One certificate of origin'];
+    const run = (text: string): string => `<w:r><w:t xml:space="preserve">${text}</w:t></w:r>`;
+    const change = (tag: string, id: number): string => `<w:${tag} w:id="${9400 + id}" w:author="Redline" w:date="2026-11-25T00:00:00Z"`;
+    const P = (text: string): string => `<w:p><w:pPr>${numPr}</w:pPr>${run(text)}</w:p>`;
+    const removed = `<w:p><w:pPr>${numPr}<w:rPr>${change('del', 1)}/></w:rPr></w:pPr>${change('del', 2)}><w:r><w:delText xml:space="preserve">${OLD}</w:delText></w:r></w:del></w:p>`;
+    const added = (text: string, id: number): string => `<w:p><w:pPr>${numPr}<w:rPr>${change('ins', id)}/></w:rPr></w:pPr>${change('ins', id + 1)}>${run(text)}</w:ins></w:p>`;
+    const withCell = (paragraphs: string): Promise<Uint8Array> =>
+      editPart(base, /^word\/document\.xml$/, (xml) => xml.replace(/<w:p>.*?<\/w:p>/s, (first) => `${first}<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="9000" w:type="dxa"/></w:tcPr>${paragraphs}</w:tc></w:tr></w:tbl>`));
+    const original = await withCell(P(OLD));
+    const modified = await withCell(NEW.map(P).join(''));
+    const tracked = await withCell(removed + added(NEW[0]!, 10) + added(NEW[1]!, 20) + added(NEW[2]!, 30));
+    expect(await failed(checkTrackedChanges({ original, modified, output: tracked }))).toEqual([]);
+    const made = await makeStaticRedline(tracked, original, COVER);
+    expect((await checkStaticRedline({ original, modified, output: made.docx, ...COVER })).checks.filter((c) => !c.passed)).toEqual([]);
+    const cell = /<w:tc>.*?<\/w:tc>/s.exec(decoder.decode((await unzip(made.docx)).get('word/document.xml')!))![0];
+    expect(cell).not.toContain('RedlineOldNumber');
+  });
+});
+
 /** Review findings on the second batch of held-out fixes: a table in a kept cell that comes or goes, with what follows it. */
 describe('a table that comes or goes inside a kept cell, review findings', () => {
   const P = (text: string): string => (text === '' ? '<w:p/>' : `<w:p><w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`);
@@ -1201,10 +1226,10 @@ describe('a document whose internal reference names look like the engine\'s own'
     const names = new Map([['R1', 'rIdU1'], ['R2a', 'rIdU2']]);
     const part =
       `<w:document xmlns:w="w" xmlns:rel='http://schemas.openxmlformats.org/officeDocument/2006/relationships' xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:v="v">` +
-      `<w:hyperlink rel:id="R1" w:anchor="R1"><w:t>R1 and "R2a"</w:t></w:hyperlink><v:imagedata o:relid='R2a' o:title="R1"/><a:blip rel:embed="rId7" rel:link = "R2a"/></w:document>`;
+      `<w:hyperlink rel:id="R1" w:anchor="R1"><w:t>R1 and "R2a" and the words rel:id="R1" typed as text</w:t></w:hyperlink><v:imagedata o:relid='R2a' o:title="R1"/><a:blip rel:embed="rId7" rel:link = "R2a"/></w:document>`;
     expect(renameInPart(part, names)).toBe(
       `<w:document xmlns:w="w" xmlns:rel='http://schemas.openxmlformats.org/officeDocument/2006/relationships' xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:v="v">` +
-        `<w:hyperlink rel:id="rIdU1" w:anchor="R1"><w:t>R1 and "R2a"</w:t></w:hyperlink><v:imagedata o:relid="rIdU2" o:title="R1"/><a:blip rel:embed="rId7" rel:link = "rIdU2"/></w:document>`,
+        `<w:hyperlink rel:id="rIdU1" w:anchor="R1"><w:t>R1 and "R2a" and the words rel:id="R1" typed as text</w:t></w:hyperlink><v:imagedata o:relid="rIdU2" o:title="R1"/><a:blip rel:embed="rId7" rel:link = "rIdU2"/></w:document>`,
     );
   });
 });
@@ -1242,6 +1267,14 @@ describe('a section break shown removed and added again', () => {
 
   it('nothing is touched where the output has as many section breaks as the uploads', () => {
     expect(repairSectionReferences(upload.main.replace(C, DE), RELS, upload, upload)).toBeUndefined();
+  });
+
+  it('nothing is touched where the uploads arrange their headers differently (review finding: the engine then points sections at parts of its own)', () => {
+    const rearranged = { main: upload.main.replace(C, ref('default', 'rIdD')), rels: RELS };
+    expect(repairSectionReferences(engine, RELS, upload, rearranged)).toBeUndefined();
+    expect(repairSectionReferences(engine, RELS, rearranged, upload)).toBeUndefined();
+    const extra = RELS.replace('</Relationships>', '<Relationship Id="rIdHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header99.xml"/></Relationships>');
+    expect(repairSectionReferences(engine, extra, upload, upload)).toBeUndefined();
   });
 
   it('nothing is touched where the breaks cannot be paired off, or a header is not in the output under the same name', () => {

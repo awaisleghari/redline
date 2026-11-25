@@ -801,7 +801,11 @@ class PartConverter {
       // or the first of the run of added paragraphs above it) and goes; so does its mark.
       const into = joinInto ?? paragraph;
       const firstOwn = kids(into).find((c) => !isWord(c, 'pPr')) ?? null;
-      for (const child of kids(joinWith)) if (!isWord(child, 'pPr')) into.insertBefore(child, firstOwn);
+      // (The old clause number typed in front of the removed line goes too: the joined paragraph is one that stays,
+      // with a live number of its own where the new line is numbered. Review finding.)
+      const isOldNumber = (c: Element): boolean =>
+        isWord(c, 'r') && kids(c).some((x) => isWord(x, 'rPr') && kids(x).some((y) => isWord(y, 'rStyle') && y.getAttributeNS(W, 'val') === OLD_NUMBER_STYLE));
+      for (const child of kids(joinWith)) if (!isWord(child, 'pPr') && !isOldNumber(child)) into.insertBefore(child, firstOwn);
       const gone = this.markToken.get(joinWith)!;
       this.tokens.splice(gone, 1);
       this.markToken.delete(joinWith);
