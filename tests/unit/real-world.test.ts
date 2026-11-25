@@ -953,3 +953,38 @@ describe('a table inside the last row of a table, with rows added or removed aro
     });
   }
 });
+
+/**
+ * Found on a real contract (held-out run 1, a draft carrying tracked changes): a cell's one line is replaced, and
+ * the engine writes the old line removed together with its mark, then the new line added with the cell's last mark.
+ * The cell has one paragraph in each version; shown as two paragraphs, one version always read as two.
+ */
+describe('the one line of a cell replaced, written as a removed paragraph and an added one', () => {
+  const OLD = 'Total exercise price of the option';
+  const NEW = 'Type of option granted to the holder';
+  const run = (text: string): string => `<w:r><w:t xml:space="preserve">${text}</w:t></w:r>`;
+  const change = (tag: 'ins' | 'del', id: number): string => `<w:${tag} w:id="${9000 + id}" w:author="Redline" w:date="2026-11-25T00:00:00Z"`;
+  const removed = (text: string): string => `<w:p><w:pPr><w:rPr>${change('del', 1)}/></w:rPr></w:pPr>${change('del', 2)}><w:r><w:delText xml:space="preserve">${text}</w:delText></w:r></w:del></w:p>`;
+  const added = (text: string): string => `<w:p><w:pPr><w:rPr>${change('ins', 3)}/></w:rPr></w:pPr>${change('ins', 4)}>${run(text)}</w:ins></w:p>`;
+
+  for (const [name, first, second, before, after] of [
+    ['old line removed, new line added', removed(OLD), added(NEW), OLD, NEW],
+    ['new line added, old line removed', added(NEW), removed(OLD), OLD, NEW],
+  ] as const) {
+    it(`the static redline passes and shows one paragraph: ${name}`, async () => {
+      const pair = await buildPair(pairById('one-word-change'));
+      const original = await withParagraphsAtCellEnd(pair.original, [before]);
+      const modified = await withParagraphsAtCellEnd(pair.original, [after]);
+      const tracked = await editPart(await withParagraphsAtCellEnd(pair.original, [OLD, NEW]), /^word\/document\.xml$/, (xml) => xml.replace(`<w:p>${run(OLD)}</w:p><w:p>${run(NEW)}</w:p>`, first + second));
+      expect(await failed(checkTrackedChanges({ original, modified, output: tracked }))).toEqual([]);
+      const made = await makeStaticRedline(tracked, original, COVER);
+      const report = await checkStaticRedline({ original, modified, output: made.docx, ...COVER });
+      expect(report.checks.filter((c) => !c.passed)).toEqual([]);
+      const xml = decoder.decode((await unzip(made.docx)).get('word/document.xml')!);
+      const cell = /<w:tc>.*?<\/w:tc>/s.exec(xml)![0];
+      expect(cell.match(/<w:p[ >]/g)).toHaveLength(2); // the cell's first paragraph, and the replaced line as one
+      expect(cell.indexOf(OLD)).toBeGreaterThan(-1);
+      expect(cell.indexOf(NEW)).toBeGreaterThan(-1);
+    });
+  }
+});
