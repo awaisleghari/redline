@@ -60,6 +60,13 @@ function compareInks(expected: string[], found: string[], expectedName: string):
   return { message: `Handwriting (pen strokes) differs from the ${expectedName}.`, expected: `${expected.length} pen mark(s), unchanged`, found: `${found.length} pen mark(s), not the same` };
 }
 
+/** A legacy shape drawn from a template must find its template in the output wherever it did in the document being reproduced. */
+function compareShapeTypes(expected: string[], found: string[], expectedName: string): CheckFailure | undefined {
+  const lost = found.filter((id) => !expected.includes(id));
+  if (lost.length === 0) return undefined;
+  return { message: `A drawing has lost the template it is drawn from, which it has in the ${expectedName}, so it may not look the same.`, expected: 'every shape template present', found: `missing: ${lost.join(', ')}` };
+}
+
 function compareLinks(expected: string[], found: string[], expectedName: string): CheckFailure | undefined {
   for (let i = 0; i < Math.max(expected.length, found.length); i++) {
     if (expected[i] === found[i]) continue;
@@ -122,11 +129,11 @@ export async function checkTrackedChanges(input: CheckInput): Promise<CheckRepor
 
   const checks: CheckResult[] = [
     guarded('accept-all', () => {
-      const failure = compareStories(modifiedText().stories, accepted().stories, 'modified document') ?? compareLinks(modifiedText().links, accepted().links, 'modified document') ?? compareInks(modifiedText().inks, accepted().inks, 'modified document');
+      const failure = compareStories(modifiedText().stories, accepted().stories, 'modified document') ?? compareLinks(modifiedText().links, accepted().links, 'modified document') ?? compareInks(modifiedText().inks, accepted().inks, 'modified document') ?? compareShapeTypes(modifiedText().missingShapeTypes, accepted().missingShapeTypes, 'modified document');
       return failure ? fail('accept-all', failure) : pass('accept-all', hadTrackedChanges(modified) ? ACCEPTED_READING.modified : undefined);
     }),
     guarded('reject-all', () => {
-      const failure = compareStories(originalText().stories, rejected().stories, 'original document') ?? compareLinks(originalText().links, rejected().links, 'original document') ?? compareInks(originalText().inks, rejected().inks, 'original document');
+      const failure = compareStories(originalText().stories, rejected().stories, 'original document') ?? compareLinks(originalText().links, rejected().links, 'original document') ?? compareInks(originalText().inks, rejected().inks, 'original document') ?? compareShapeTypes(originalText().missingShapeTypes, rejected().missingShapeTypes, 'original document');
       return failure ? fail('reject-all', failure) : pass('reject-all', hadTrackedChanges(original) ? ACCEPTED_READING.original : undefined);
     }),
     guarded('formatting', () => verdict('formatting', formattingFailure(modifiedText().stories, accepted().stories, false))),
@@ -266,8 +273,8 @@ export async function checkStaticRedline(input: StaticCheckInput): Promise<Check
   const oldSide = (): StoryReading => reading('old', () => readStories(output, 'rejected', 'static', colours));
 
   const checks: CheckResult[] = [
-    guarded('static-new', () => verdict('static-new', compareStories(modifiedText().stories, newSide().stories, 'modified document') ?? compareLinks(modifiedText().links, newSide().links, 'modified document') ?? compareInks(modifiedText().inks, newSide().inks, 'modified document'), hadTrackedChanges(modified) ? ACCEPTED_READING.modified : undefined)),
-    guarded('static-old', () => verdict('static-old', compareStories(originalText().stories, oldSide().stories, 'original document') ?? compareLinks(originalText().links, oldSide().links, 'original document') ?? compareInks(originalText().inks, oldSide().inks, 'original document'), hadTrackedChanges(original) ? ACCEPTED_READING.original : undefined)),
+    guarded('static-new', () => verdict('static-new', compareStories(modifiedText().stories, newSide().stories, 'modified document') ?? compareLinks(modifiedText().links, newSide().links, 'modified document') ?? compareInks(modifiedText().inks, newSide().inks, 'modified document') ?? compareShapeTypes(modifiedText().missingShapeTypes, newSide().missingShapeTypes, 'modified document'), hadTrackedChanges(modified) ? ACCEPTED_READING.modified : undefined)),
+    guarded('static-old', () => verdict('static-old', compareStories(originalText().stories, oldSide().stories, 'original document') ?? compareLinks(originalText().links, oldSide().links, 'original document') ?? compareInks(originalText().inks, oldSide().inks, 'original document') ?? compareShapeTypes(originalText().missingShapeTypes, oldSide().missingShapeTypes, 'original document'), hadTrackedChanges(original) ? ACCEPTED_READING.original : undefined)),
     guarded('no-tracked-changes', () => verdict('no-tracked-changes', firstOf(leftoverTrackedChanges(output)))),
     guarded('cover-page', () => {
       const counts = countStaticChanges(output, colours);

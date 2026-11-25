@@ -245,3 +245,35 @@ export function withParagraphsAtCellEnd(docx: Uint8Array, added: string[]): Prom
     return xml.slice(0, first.index) + table + xml.slice(first.index + first[0].length);
   });
 }
+
+/** An SVG picture as Word writes one: no heading line, Windows line ends, a style block. */
+export const SVG_PICTURE = encoder.encode(
+  '<svg viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" id="Icons_Information" overflow="hidden"><style>\r\n.Fill {\r\n fill:#558ED5; \r\n}\r\n</style>\r\n<path d="M48 10C27 10 10 27 10 48 10 69 27 86 48 86 69 86 86 69 86 48 86 27 69 10 48 10Z" fill="#558ED5"/></svg>',
+);
+
+/**
+ * Put an icon at the start of the first paragraph, as Word stores one: a picture stored as text (SVG), with an
+ * ordinary picture alongside for programs that cannot draw SVG.
+ */
+export async function withSvgPicture(docx: Uint8Array, svg: Uint8Array = SVG_PICTURE): Promise<Uint8Array> {
+  const files = await unzip(docx);
+  const REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+  const run =
+    `<w:r><w:drawing xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" xmlns:r="${REL}">` +
+    '<wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="180000" cy="180000"/><wp:docPr id="911" name="Graphic 1"/><wp:cNvGraphicFramePr/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+    '<pic:pic><pic:nvPicPr><pic:cNvPr id="911" name="Graphic 1"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdIconPicture"><a:extLst><a:ext uri="{96DAC541-7B7A-43D3-8B79-37D633B846F1}">' +
+    '<asvg:svgBlip xmlns:asvg="http://schemas.microsoft.com/office/drawing/2016/SVG/main" r:embed="rIdIconSvg"/></a:ext></a:extLst></a:blip><a:stretch><a:fillRect/></a:stretch></pic:blipFill>' +
+    '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="180000" cy="180000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>';
+  const xml = decoder.decode(files.get('word/document.xml')!);
+  const at = xml.indexOf('<w:r>');
+  if (at < 0) throw new Error('withSvgPicture: the document has no text run to put the icon before');
+  files.set('word/document.xml', encoder.encode(xml.slice(0, at) + run + xml.slice(at)));
+  files.set('word/media/icon1.png', DOT_PNG);
+  files.set('word/media/icon1.svg', svg);
+  files.set('[Content_Types].xml', encoder.encode(decoder.decode(files.get('[Content_Types].xml')!).replace('</Types>', '<Override PartName="/word/media/icon1.png" ContentType="image/png"/><Override PartName="/word/media/icon1.svg" ContentType="image/svg+xml"/></Types>')));
+  files.set(
+    'word/_rels/document.xml.rels',
+    encoder.encode(decoder.decode(files.get('word/_rels/document.xml.rels')!).replace('</Relationships>', `<Relationship Id="rIdIconPicture" Type="${REL}/image" Target="media/icon1.png"/><Relationship Id="rIdIconSvg" Type="${REL}/image" Target="media/icon1.svg"/></Relationships>`)),
+  );
+  return zip(files);
+}

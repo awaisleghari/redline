@@ -10,6 +10,7 @@ import { makeSpacesExplicit } from './explicit-spaces';
 import { dropUnusedHeadersAndFooters } from './drop-unused-headers';
 import { labelAuthors } from './label-authors';
 import { repairNotes } from './repair-notes';
+import { restorePictures } from './restore-pictures';
 import { unwrapRowControls } from './unwrap-row-controls';
 import { repairParagraphProperties } from './repair-paragraphs';
 import { REVISION_AUTHOR } from './protocol';
@@ -21,7 +22,8 @@ export async function produceTrackedChanges(original: Uint8Array, modified: Uint
   // ...and table rows wrapped in content controls are unwrapped, which the engine cannot handle (unwrap-row-controls.ts).
   const prepare = async (upload: Uint8Array): Promise<Uint8Array> => makeSpacesExplicit(await unwrapRowControls(await acceptTrackedChanges(upload)));
   const preparedModified = await prepare(modified);
-  const result = await compareDocuments(await prepare(original), preparedModified, { authorName: REVISION_AUTHOR });
+  const preparedOriginal = await prepare(original);
+  const result = await compareDocuments(preparedOriginal, preparedModified, { authorName: REVISION_AUTHOR });
   const files = await unzip(result);
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
@@ -29,7 +31,10 @@ export async function produceTrackedChanges(original: Uint8Array, modified: Uint
   const parts = new Map<string, string>();
   for (const [name, bytes] of files) if (/^word\/[^/]+\.xml$/.test(name)) parts.set(name, decoder.decode(bytes));
   for (const [name, xml] of repairNotes(parts)) parts.set(name, xml);
-  const modifiedMain = (await unzip(preparedModified)).get('word/document.xml');
+  const modifiedFiles = await unzip(preparedModified);
+  // Pictures stored as text come out rewritten; they are given back the uploaded bytes (restore-pictures.ts).
+  restorePictures(files, [await unzip(preparedOriginal), modifiedFiles]);
+  const modifiedMain = modifiedFiles.get('word/document.xml');
   const trackedMain = parts.get('word/document.xml');
   if (modifiedMain && trackedMain) {
     const repaired = repairParagraphProperties(trackedMain, decoder.decode(modifiedMain));

@@ -237,6 +237,8 @@ export async function mutate(original: Uint8Array, seed: number, wanted = 160): 
 
   /** A table row it is safe to remove or copy: plain paragraphs only (no note marks, bookmarks, pictures, fields, nested or merged cells). */
   const plainRow = (row: El): boolean => {
+    // Not inside a text box, which is stored twice: an edit to one copy alone makes a file no word processor would write.
+    if (inTextBox(row)) return false;
     if (row.getElementsByTagNameNS(W, 'tbl').length > 0 || row.getElementsByTagNameNS(W, 'vMerge').length > 0) return false;
     for (const tag of ['footnoteReference', 'endnoteReference', 'bookmarkStart', 'commentRangeStart', 'drawing', 'pict', 'fldChar', 'fldSimple', 'sdt', 'hyperlink']) if (row.getElementsByTagNameNS(W, tag).length > 0) return false;
     const inside = row.getElementsByTagNameNS(W, 'p');
@@ -415,7 +417,11 @@ export async function mutate(original: Uint8Array, seed: number, wanted = 160): 
     const candidates: El[] = [];
     for (let i = 0; i < paragraphs.length; i++) {
       const p = paragraphs.item(i) as El;
-      if (simple(p) && textOfParagraph(p).trim().length >= 25) candidates.push(p);
+      // Not inside a text box: Word stores a text box twice (a modern and a legacy form), and an edit to one copy
+      // alone makes a file no word processor would write (found on the held-out run: 21 documents so spoiled).
+      let boxed = false;
+      for (let n: Node | null = p.parentNode; n; n = n.parentNode) if (isW(n, 'txbxContent')) boxed = true;
+      if (!boxed && simple(p) && textOfParagraph(p).trim().length >= 25) candidates.push(p);
     }
     let changed = false;
     for (let n = 0; n < Math.min(2, candidates.length); n++) {
