@@ -686,6 +686,7 @@ class PartConverter {
     let numberLostAtCellEnd: ChangeKind | undefined;
     let keepsNumber = false;
     let joinWith: Element | undefined;
+    let joinInto: Element | undefined;
     const cell = paragraph.parentNode as Element;
     if (!kind && isWord(cell, 'tc') && kids(cell).filter((c) => isWord(c, 'p') || isWord(c, 'tbl')).pop() === paragraph) {
       // The cell's row: its parent, or further up when the cell sits in a content control (a tick-box cell) or custom XML wrapper.
@@ -702,12 +703,32 @@ class PartConverter {
         // its mark and the new line added with the cell's last mark). The cell has one paragraph in each version,
         // and two marks cannot say so: whichever is shown changed, one version reads as two paragraphs. The two
         // are therefore shown as the one paragraph they are in both versions (joined below).
-        const neighbour = before[before.length - 2];
-        const neighbourIndex = neighbour && isWord(neighbour, 'p') ? this.markToken.get(neighbour) : undefined;
+        // The new line may also be several (found on a real contract: one line replaced by twenty paragraphs,
+        // every mark of them added). The old line is then joined to the first of those in the same way.
+        // This holds only where the last paragraph came or went whole: if part of it stays, its mark is one
+        // that both versions have, and the mark above shows a plain join or split.
         const removes = (k: string | undefined): boolean => k === 'deleted' || k === 'movedFrom';
         const adds = (k: string | undefined): boolean => k === 'inserted' || k === 'movedTo';
-        const neighbourKind = neighbourIndex === undefined ? undefined : this.tokens[neighbourIndex];
-        if (neighbourIndex === this.tokens.length - 1 && ((removes(neighbourKind) && adds(markKind)) || (adds(neighbourKind) && removes(markKind)))) joinWith = neighbour;
+        const tokenOf = (block: Element | undefined): Token | undefined => (block && isWord(block, 'p') && this.markToken.has(block) ? this.tokens[this.markToken.get(block)!] : undefined);
+        const wrappers = removes(markKind) ? ['del', 'moveFrom'] : ['ins', 'moveTo'];
+        const lastWhole = content.length > 0 && content.every((c) => wrappers.some((name) => isW(c, name)));
+        const neighbour = before[before.length - 2];
+        if (lastWhole && ((removes(tokenOf(neighbour)) && adds(markKind)) || (adds(tokenOf(neighbour)) && removes(markKind)))) {
+          joinWith = neighbour;
+        } else if (lastWhole && adds(markKind)) {
+          // The run of added paragraphs above this one, each added whole, and the removed paragraph above the run.
+          let top = before.length - 1;
+          const addedWhole = (block: Element): boolean => {
+            const end = this.markToken.get(block)!;
+            const start = this.markToken.get(before[before.indexOf(block) - 1]!);
+            return start !== undefined && this.tokens.slice(start + 1, end).every((t) => adds(t));
+          };
+          while (top >= 2 && adds(tokenOf(before[top - 1])) && tokenOf(before[top - 2]) !== undefined && addedWhole(before[top - 1]!)) top--;
+          if (top < before.length - 1 && removes(tokenOf(before[top - 1]))) {
+            joinWith = before[top - 1];
+            joinInto = before[top]!;
+          }
+        }
         // Several paragraphs in a row may have been added or removed at the end of the cell (found on a real
         // contract: twelve added after the one that was there). The marks before the last already show the
         // change, so the whole run moves up by one: the mark to show as changed is the one before the run.
@@ -776,13 +797,15 @@ class PartConverter {
     if (this.options.deletionBeforeInsertion) this.putDeletionsFirst(paragraph);
     for (const child of elementChildren(paragraph)) if (!isW(child, 'pPr')) this.visit(child, kind);
     if (joinWith) {
-      // The paragraph before, already converted, gives its content to this one and goes; so does its mark.
-      const firstOwn = kids(paragraph).find((c) => !isWord(c, 'pPr')) ?? null;
-      for (const child of kids(joinWith)) if (!isWord(child, 'pPr')) paragraph.insertBefore(child, firstOwn);
-      const ownTokens = this.tokens.splice(this.markToken.get(joinWith)! + 1);
-      this.tokens.pop();
-      this.tokens.push(...ownTokens);
+      // The removed paragraph, already converted, gives its content to the paragraph it is joined to (this one,
+      // or the first of the run of added paragraphs above it) and goes; so does its mark.
+      const into = joinInto ?? paragraph;
+      const firstOwn = kids(into).find((c) => !isWord(c, 'pPr')) ?? null;
+      for (const child of kids(joinWith)) if (!isWord(child, 'pPr')) into.insertBefore(child, firstOwn);
+      const gone = this.markToken.get(joinWith)!;
+      this.tokens.splice(gone, 1);
       this.markToken.delete(joinWith);
+      for (const [block, index] of this.markToken) if (index > gone) this.markToken.set(block, index - 1);
       cell.removeChild(joinWith);
     }
 

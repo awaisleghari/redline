@@ -991,6 +991,44 @@ describe('the one line of a cell replaced, written as a removed paragraph and an
   }
 });
 
+/**
+ * Found on a real contract (held-out run 1, an ADB document carrying tracked changes): a cell's one line replaced
+ * by twenty paragraphs. The engine writes the old line removed with its mark, then every new paragraph added with
+ * its mark, the cell's last included. Left as written, the original read as two paragraphs (the old line, and an
+ * empty one where the cell's last mark stayed), and the redline was withheld.
+ */
+describe('the one line of a cell replaced by several paragraphs', () => {
+  const OLD = 'The scope of requirements is defined elsewhere';
+  const NEW = ['Details of shipping documents follow', 'Three copies of the invoice', 'One certificate of origin'];
+  const run = (text: string): string => `<w:r><w:t xml:space="preserve">${text}</w:t></w:r>`;
+  const change = (tag: string, id: number): string => `<w:${tag} w:id="${9300 + id}" w:author="Redline" w:date="2026-11-25T00:00:00Z"`;
+  const removed = (text: string): string => `<w:p><w:pPr><w:rPr>${change('del', 1)}/></w:rPr></w:pPr>${change('del', 2)}><w:r><w:delText xml:space="preserve">${text}</w:delText></w:r></w:del></w:p>`;
+  const added = (text: string, id: number, wrapper = 'ins'): string => `<w:p><w:pPr><w:rPr>${change('ins', id)}/></w:rPr></w:pPr>${change(wrapper, id + 1)}>${run(text)}</w:${wrapper}></w:p>`;
+  const P = (text: string): string => `<w:p>${run(text)}</w:p>`;
+  const cellOf = (paragraphs: string): string => `<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="9000" w:type="dxa"/></w:tcPr>${paragraphs}</w:tc></w:tr></w:tbl>`;
+
+  for (const [name, lead] of [
+    ['the line is all the cell held', ''],
+    ['another line stands above it', P('Payment terms')],
+  ] as const) {
+    it(`the static redline passes and the old line shares a paragraph with the first new one: ${name}`, async () => {
+      const base = (await buildPair(pairById('one-word-change'))).original;
+      const withCell = (paragraphs: string): Promise<Uint8Array> => editPart(base, /^word\/document\.xml$/, (xml) => xml.replace(/<w:p>.*?<\/w:p>/s, (first) => first + cellOf(lead + paragraphs)));
+      const original = await withCell(P(OLD));
+      const modified = await withCell(NEW.map(P).join(''));
+      const tracked = await withCell(removed(OLD) + added(NEW[0]!, 10) + added(NEW[1]!, 20) + added(NEW[2]!, 30));
+      expect(await failed(checkTrackedChanges({ original, modified, output: tracked }))).toEqual([]);
+      const made = await makeStaticRedline(tracked, original, COVER);
+      const report = await checkStaticRedline({ original, modified, output: made.docx, ...COVER });
+      expect(report.checks.filter((c) => !c.passed)).toEqual([]);
+      const cell = /<w:tc>.*?<\/w:tc>/s.exec(decoder.decode((await unzip(made.docx)).get('word/document.xml')!))![0];
+      expect(cell.match(/<w:p[ >]/g)).toHaveLength(NEW.length + (lead === '' ? 0 : 1));
+      const joined = cell.split(/<w:p[ >]/).find((p) => p.includes(OLD))!;
+      expect(joined.indexOf(OLD)).toBeLessThan(joined.indexOf(NEW[0]!));
+    });
+  }
+});
+
 /** Review findings on the second batch of held-out fixes: a table in a kept cell that comes or goes, with what follows it. */
 describe('a table that comes or goes inside a kept cell, review findings', () => {
   const P = (text: string): string => (text === '' ? '<w:p/>' : `<w:p><w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`);
