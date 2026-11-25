@@ -123,8 +123,8 @@ export async function checkTrackedChanges(input: CheckInput): Promise<CheckRepor
     guarded('numbering', () => verdict('numbering', numberingFailure(modifiedText().stories, accepted().stories))),
     guarded('completeness', () => {
       const problems = [
-        ...unreadText(original, [originalText()], 'original document', deletedSide(original)),
-        ...unreadText(modified, [modifiedText()], 'modified document', deletedSide(modified)),
+        ...unreadText(original, [originalText()], 'original document', deletedSide(original), true),
+        ...unreadText(modified, [modifiedText()], 'modified document', deletedSide(modified), true),
         ...unreadText(output, [accepted(), rejected()], 'output'),
       ];
       const failure = completenessFailure(problems);
@@ -235,8 +235,8 @@ export async function checkStaticRedline(input: StaticCheckInput): Promise<Check
     guarded('numbering', () => verdict('numbering', numberingFailure(modifiedText().stories, newSide().stories) ?? oldNumberFailure(originalText().stories, oldSide().stories))),
     guarded('completeness', () => {
       const problems = [
-        ...unreadText(original, [originalText()], 'original document', deletedSide(original)),
-        ...unreadText(modified, [modifiedText()], 'modified document', deletedSide(modified)),
+        ...unreadText(original, [originalText()], 'original document', deletedSide(original), true),
+        ...unreadText(modified, [modifiedText()], 'modified document', deletedSide(modified), true),
         ...unreadText(output, [newSide(), oldSide()], 'output'),
       ];
       const failure = completenessFailure(problems);

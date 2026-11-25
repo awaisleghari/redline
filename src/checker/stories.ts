@@ -456,6 +456,9 @@ function inlineText(element: XmlElement, context: Context): string {
       text += emit(context, node.text, true);
       continue;
     }
+    // A shape type is a template for shapes (a definition, like a style): it draws nothing itself, and a file may
+    // carry the same definition more than once. Only an actual shape's text is shown.
+    if (node.ns === V_NS && node.name === 'shapetype') continue;
     if (node.ns === V_NS && node.name === 'textpath') {
       text += emit(context, `⟦shape text: ${attribute(node, '', 'string') ?? ''}⟧`);
       continue;

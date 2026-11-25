@@ -15,7 +15,8 @@ import { buildPair, pairById } from '../fixtures/pairs';
 import { compareDocuments } from 'docxodus/core';
 import { repairNotes } from '../../src/producer/repair-notes';
 import { repairParagraphProperties } from '../../src/producer/repair-paragraphs';
-import { withBlueDoubleUnderline, withCellsInContentControls, withClauseStyle, withNumberedClausesInCell, withDocumentWideSpaces, withNoteInTable, withSections } from '../fixtures/real-world';
+import { unwrapRowControls, unwrapRowControlsInPart } from '../../src/producer/unwrap-row-controls';
+import { withBlueDoubleUnderline, withCellsInContentControls, withClauseStyle, withRowsInContentControls, withNumberedClausesInCell, withDocumentWideSpaces, withNoteInTable, withSections } from '../fixtures/real-world';
 
 const COVER = { originalName: 'original.docx', modifiedName: 'modified.docx', comparedAt: '24 November 2026 at 10:00 (UTC+00:00)' };
 const decoder = new TextDecoder();
@@ -466,5 +467,80 @@ describe('table rows whose cells sit in content controls', () => {
     const pair = await buildPair(pairById(id));
     const { counts } = await bothPass(await withCellsInContentControls(pair.original), await withCellsInContentControls(pair.modified));
     expect(counts.insertions + counts.deletions).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * Found on real contracts (Stage 7): a table whose rows sit in "repeating section" content controls. The engine
+ * loses the table's ordinary rows and does not mark changes in the wrapped ones.
+ */
+describe('table rows wrapped in content controls', () => {
+  it('the wrappers are taken off the copy given to the engine, and nothing else is touched', async () => {
+    const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+    const row = (text: string): string => `<w:tr><w:tc><w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:tc></w:tr>`;
+    const control = (inner: string, id: number): string => `<w:sdt><w:sdtPr><w:id w:val="${id}"/></w:sdtPr><w:sdtContent>${inner}</w:sdtContent></w:sdt>`;
+    const inCell = `<w:tr><w:tc>${control('<w:p><w:r><w:t>kept control</w:t></w:r></w:p>', 3)}</w:tc></w:tr>`;
+    const part = `<w:document ${W}><w:body><w:tbl>${row('Heading')}${control(control(row('One'), 2), 1)}${inCell}</w:tbl>${control('<w:p><w:r><w:t>outside</w:t></w:r></w:p>', 4)}</w:body></w:document>`;
+    const out = unwrapRowControlsInPart(part);
+    expect(out).toContain(`<w:tbl>${row('Heading')}${row('One')}${inCell}</w:tbl>`);
+    expect(out).toContain('w:val="3"'); // a control inside a cell stays
+    expect(out).toContain('w:val="4"'); // and one round a paragraph
+    const plain = (await buildPair(pairById('table-row-added'))).original;
+    expect(await unwrapRowControls(plain)).toBe(plain);
+  });
+
+  it.each(['table-row-added', 'table-row-deleted', 'table-cell-change'])('%s: the engine goes wrong on such a table; the product passes both Word files', async (id) => {
+    const pair = await buildPair(pairById(id));
+    const original = await withRowsInContentControls(pair.original);
+    const modified = await withRowsInContentControls(pair.modified);
+    const { counts } = await bothPass(original, modified);
+    expect(counts.insertions + counts.deletions).toBeGreaterThan(0);
+    // The same changes are counted as for the same tables without the wrappers.
+    expect(counts).toEqual((await bothPass(pair.original, pair.modified)).counts);
+  });
+
+  it('the fault is real: straight from the engine, at least one of these tables is refused by the Checker', async () => {
+    let refused = 0;
+    for (const id of ['table-row-added', 'table-row-deleted', 'table-cell-change']) {
+      const pair = await buildPair(pairById(id));
+      const original = await withRowsInContentControls(pair.original);
+      const modified = await withRowsInContentControls(pair.modified);
+      const raw = await compareDocuments(original, modified, { authorName: 'Redline' });
+      if ((await failed(checkTrackedChanges({ original, modified, output: raw }))).length > 0) refused++;
+    }
+    expect(refused).toBeGreaterThan(0);
+  });
+});
+
+/** Found on a real document (Stage 7): headers and footers left in the file that no section refers to any more. */
+describe('a footer that no section refers to', () => {
+  const withLeftover = async (docx: Uint8Array): Promise<Uint8Array> => {
+    const files = await unzip(docx);
+    files.set('word/footer9.xml', encoder.encode('<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>Left over from a deleted section</w:t></w:r></w:p></w:ftr>'));
+    files.set('[Content_Types].xml', encoder.encode(decoder.decode(files.get('[Content_Types].xml')!).replace('</Types>', '<Override PartName="/word/footer9.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>')));
+    const rels = decoder.decode(files.get('word/_rels/document.xml.rels')!);
+    files.set('word/_rels/document.xml.rels', encoder.encode(rels.replace('</Relationships>', '<Relationship Id="rIdLeft" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer9.xml"/></Relationships>')));
+    return zip(files);
+  };
+
+  it('in an upload it is not document content: both Word files pass, and neither carries the leftover', async () => {
+    const pair = await buildPair(pairById('footer-change'));
+    for (const [original, modified] of [[await withLeftover(pair.original), pair.modified], [pair.original, await withLeftover(pair.modified)], [await withLeftover(pair.original), await withLeftover(pair.modified)]] as const) {
+      const { tracked, staticRedline } = await bothPass(original, modified);
+      for (const output of [tracked, staticRedline]) {
+        const files = await unzip(output);
+        expect([...files.keys()].filter((name) => /footer9/.test(name))).toEqual([]);
+        expect(decoder.decode(files.get('word/_rels/document.xml.rels')!)).not.toContain('footer9');
+        expect(decoder.decode(files.get('[Content_Types].xml')!)).not.toContain('footer9');
+      }
+    }
+  });
+
+  it('in an output it is still refused, and so is an output that loses a footer that is in use', async () => {
+    const pair = await buildPair(pairById('footer-change'));
+    const { tracked } = await bothPass(pair.original, pair.modified);
+    expect(await failed(checkTrackedChanges({ original: pair.original, modified: pair.modified, output: await withLeftover(tracked) }))).toContain('completeness');
+    const dropped = await editPart(tracked, /^word\/document\.xml$/, (xml) => xml.replace(/<w:footerReference\b[^>]*\/>/g, ''));
+    expect(await failed(checkTrackedChanges({ original: pair.original, modified: pair.modified, output: dropped }))).toContain('accept-all');
   });
 });
