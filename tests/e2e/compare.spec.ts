@@ -425,9 +425,10 @@ test.describe('reading the redline', () => {
     await expect(page.locator('.rl-main')).toHaveCSS('background-color', 'rgb(17, 18, 21)');
     // The legend in the bar stays in its dark-mode colours.
     await expect(page.locator('.rl-legend .rl-ins')).toHaveCSS('color', 'rgb(169, 193, 255)');
-    await page.getByRole('button', { name: 'pages' }).click();
     await pickFormat(page, 'static');
     await expect(page.locator('#download')).toHaveText('download word · static');
+    await page.getByRole('button', { name: 'pages' }).click();
+    await expect(page.locator('#doc .rl-sheet')).toHaveCount(2, { timeout: 60_000 });
 
     await page.reload();
     await chooseFiles(page, pair.original, pair.modified);
@@ -501,10 +502,8 @@ test.describe('the PDF', () => {
     await expect(page.locator('#pdf-note')).toContainText('Making a PDF sends the static redline to our server, where it is deleted straight after conversion.');
     await page.keyboard.press('Escape');
     await page.setViewportSize({ width: 1280, height: 720 });
-    // Choosing "pages" sends nothing either: it asks first.
-    await page.getByRole('button', { name: 'pages' }).click();
-    await expect(page.locator('#pages-notice')).toContainText('Making a PDF sends the static redline to our server, where it is deleted straight after conversion.');
-    await expect(page.locator('#doc .rl-sheet')).toHaveCount(1);
+    // The pages button says, before it is pressed, that it makes the PDF and what that sends.
+    await expect(page.getByRole('button', { name: 'pages' })).toHaveAttribute('title', /Makes the PDF: the static redline is sent to our server, and deleted there straight after conversion\./);
     // Both Word files: still nothing has left the browser.
     await download(page, 'static');
     await download(page, 'tracked');
@@ -519,7 +518,8 @@ test.describe('the PDF', () => {
     await expect(page.locator('#verdict-pdf')).toHaveText('all passed');
     await expect(page.locator('#checks-summary')).toHaveText('17 of 17 checks passed');
 
-    // The pages view now breaks where the PDF does: the cover page, then the document.
+    // The pages view breaks where the PDF does: the cover page, then the document. The PDF is there already, so nothing more is sent.
+    await page.getByRole('button', { name: 'pages' }).click();
     await expect(page.locator('#pages-notice')).toBeHidden();
     await expect(page.locator('#doc .rl-sheet')).toHaveCount(2);
     await expect(page.locator('#doc .rl-sheet').nth(0)).toContainText('Comparison of documents');
@@ -548,7 +548,7 @@ test.describe('the PDF', () => {
     expect(report).toContain("The PDF's text matches the static redline, complete and in order: passed");
   });
 
-  test('the pages view can make the PDF itself, when asked, and downloads nothing by doing so', async ({ page }) => {
+  test('pressing "pages" makes the PDF, saying so, and downloads nothing; a remembered choice of pages sends nothing until asked', async ({ page }) => {
     const sent: string[] = [];
     let downloads = 0;
     page.on('request', (request) => {
@@ -557,11 +557,30 @@ test.describe('the PDF', () => {
     page.on('download', () => downloads++);
     const pair = await buildPair(pairById('several-changes'));
     await compare(page, pair.original, pair.modified);
-    await page.getByRole('button', { name: 'pages' }).click();
     expect(sent).toEqual([]);
-    await page.getByRole('button', { name: 'make the pdf' }).click();
+    await page.getByRole('button', { name: 'pages' }).click();
     await expect(page.locator('#doc .rl-sheet')).toHaveCount(2, { timeout: 60_000 });
     expect(sent).toEqual(['POST /api/pdf']);
+    expect(downloads).toBe(0);
+    await expect(page.locator('#verdict-pdf')).toHaveText('all passed');
+    // Pressing it again, or going back and forth, sends nothing more.
+    await page.getByRole('button', { name: 'continuous' }).click();
+    await page.getByRole('button', { name: 'pages' }).click();
+    await expect(page.locator('#doc .rl-sheet')).toHaveCount(2);
+    expect(sent).toEqual(['POST /api/pdf']);
+
+    // A new comparison with "pages" remembered: nothing is sent until the user asks.
+    await page.reload();
+    await chooseFiles(page, pair.original, pair.modified);
+    await page.locator('#create').click();
+    await expect(page.locator('#status')).toHaveAttribute('data-state', 'done', { timeout: 60_000 });
+    await expect(page.getByRole('button', { name: 'pages' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('#pages-notice')).toContainText('Making a PDF sends the static redline to our server, where it is deleted straight after conversion.');
+    await expect(page.locator('#doc .rl-sheet')).toHaveCount(1);
+    expect(sent).toEqual(['POST /api/pdf']);
+    await page.getByRole('button', { name: 'make the pdf' }).click();
+    await expect(page.locator('#doc .rl-sheet')).toHaveCount(2, { timeout: 60_000 });
+    expect(sent).toEqual(['POST /api/pdf', 'POST /api/pdf']);
     expect(downloads).toBe(0);
   });
 
@@ -575,7 +594,6 @@ test.describe('the PDF', () => {
     await compare(page, original, modified);
     const whole = await page.locator('#doc').evaluate((doc) => doc.textContent!.replace(/\s+/g, ''));
     await page.getByRole('button', { name: 'pages' }).click();
-    await page.getByRole('button', { name: 'make the pdf' }).click();
     const sheets = page.locator('#doc .rl-sheet');
     await expect(sheets.first()).toContainText('page 1 of', { timeout: 60_000 });
     const count = await sheets.count();

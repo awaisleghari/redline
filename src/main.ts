@@ -579,7 +579,7 @@ function renderPagesNotice(): void {
   element('pages-notice-text').textContent = failed
     ? 'Pages are not available for this redline, because its PDF could not be made or did not pass its checks.'
     : makingPdf
-      ? 'Making the PDF…'
+      ? 'Making the PDF, so each page breaks where the downloaded file does. The static redline is sent to our server for this, and deleted there straight after conversion.'
       : 'Pages follow the PDF, so each page breaks where the downloaded file does. Making a PDF sends the static redline to our server, where it is deleted straight after conversion.';
   setHidden('pages-make', failed);
   element<HTMLButtonElement>('pages-make').disabled = running;
@@ -603,6 +603,10 @@ for (const [id, value] of [['view-continuous', 'continuous'], ['view-pages', 'pa
     view = value;
     remember('redline.view', value);
     applyLayout();
+    // Pressing "pages" is a request for the PDF, which sets the page breaks (owner's decision, 2026-11-25): the static
+    // redline is sent for conversion at once. A remembered choice of pages does not send anything by itself: after a
+    // new comparison the notice and its button are shown, and the PDF is made when the user presses one of them.
+    if (value === 'pages' && released?.staticRedline && !released.pdf && !released.pdfFailed) void makePdf();
   });
 }
 for (const [id, value] of [['page-dark', 'dark'], ['page-light', 'light']] as const) {
