@@ -20,26 +20,32 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, de
 const shot = (name: string): Promise<Buffer> => page.screenshot({ path: join(folder, name), fullPage: true });
 
 await page.goto('http://localhost:4173/');
-await shot('1 - empty page.png');
+await page.waitForTimeout(1000);
+await shot('1 - landing page.png');
+await page.goto('http://localhost:4173/docs');
+await shot('2 - docs.png');
 
+await page.goto('http://localhost:4173/app');
+await shot('3 - empty workspace.png');
 const pair = await buildPair(pairById('several-changes'));
 await page.locator('#original').setInputFiles({ name: 'Services Agreement v1.docx', mimeType: DOCX, buffer: Buffer.from(pair.original) });
 await page.locator('#modified').setInputFiles({ name: 'Services Agreement v2.docx', mimeType: DOCX, buffer: Buffer.from(pair.modified) });
-await shot('2 - files chosen.png');
-await page.getByRole('button', { name: 'Compare' }).click();
+await page.locator('#file-modified').waitFor();
+await shot('4 - files added.png');
+await page.locator('#create').click();
 await page.locator('#status[data-state="done"]').waitFor({ timeout: 60_000 });
-await page.frameLocator('#viewer').getByText('Comparison of documents').waitFor();
-await shot('3 - after comparing.png');
+await page.locator('#doc').getByText('Comparison of documents').waitFor();
+await shot('5 - the redline.png');
+await page.locator('#checks-toggle').click();
+await shot('6 - checks open.png');
 
-await page.goto('http://localhost:4173/');
+await page.goto('http://localhost:4173/app');
 await page.locator('#original').setInputFiles({ name: 'Old contract.doc', mimeType: 'application/msword', buffer: Buffer.from('x') });
-await page.locator('#modified').setInputFiles({ name: 'Services Agreement v2.docx', mimeType: DOCX, buffer: Buffer.from(pair.modified) });
-await page.getByRole('button', { name: 'Compare' }).click();
 await page.locator('#status[data-state="refused"]').waitFor();
-await shot('4 - a refused file.png');
+await shot('7 - a refused file.png');
 
 await page.setViewportSize({ width: 420, height: 900 });
-await page.goto('http://localhost:4173/');
-await shot('5 - narrow screen.png');
+await page.goto('http://localhost:4173/app');
+await shot('8 - narrow screen.png');
 await browser.close();
 console.log(`screenshots written to ${folder}`);

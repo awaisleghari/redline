@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Nothing is loaded from, or sent to, anywhere but this site. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data: blob:; connect-src 'self' ws://localhost:* ws://127.0.0.1:*; frame-src 'self'; form-action 'none'; base-uri 'none'; object-src 'none'"
+    />
+    <title>redline — workspace</title>
+    <link rel="icon" href="/redline-favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/src/app/styles/workspace.css" />
+  </head>
+  <body>
+    <div class="rl-app">
+      <!-- ============ SIDEBAR ============ -->
+      <aside class="rl-side rl-scroll" aria-label="Redline controls">
+        <div class="rl-siderow">
+          <a class="rl-home" href="/" aria-label="redline home"><img src="/brand/redline-logo-for-dark-ui.svg" alt="redline" width="104" height="22" /></a>
+          <button class="rl-btn rl-ghost rl-iconbtn" id="new-redline" type="button" aria-label="Start a new redline" title="New redline">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9"></path></svg>
+          </button>
+        </div>
+
+        <!-- documents -->
+        <section class="rl-group" aria-labelledby="rl-docs">
+          <h2 class="rl-label rl-label-docs" id="rl-docs">documents</h2>
+
+          <div class="rl-slotwrap" id="slot-original" data-role="original">
+            <input class="sr-only" id="original" type="file" tabindex="-1" aria-label="Original document" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+            <button class="rl-btn rl-slot" id="pick-original" type="button" aria-describedby="error-original">
+              <span class="rl-sloticon rl-sloticon-red" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M7 2.5v9M2.5 7h9"></path></svg></span>
+              <span class="rl-slottext">
+                <span class="rl-slottitle">original</span>
+                <span class="rl-slothint">Drop the earlier version, or browse</span>
+              </span>
+            </button>
+            <div class="rl-file" id="file-original" hidden>
+              <div class="rl-fileicon rl-fileicon-red" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M4 1.75h5.25L12.5 5v9.25h-8.5z"></path><path d="M9 1.75V5.25h3.5"></path><path d="M6 8.5h4.5M6 11h3" stroke-linecap="round"></path></svg>
+              </div>
+              <div class="rl-filetext">
+                <span class="rl-filename" id="name-original"></span>
+                <span class="rl-filemeta">original <span class="rl-dot">·</span> docx <span class="rl-dot">·</span> <span id="size-original"></span></span>
+              </div>
+              <button class="rl-btn rl-ghost rl-remove" id="remove-original" type="button" aria-label="Remove the original document">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M3.5 3.5l7 7M10.5 3.5l-7 7"></path></svg>
+              </button>
+            </div>
+            <p class="rl-sloterror" id="error-original" role="alert" hidden></p>
+          </div>
+
+          <div class="rl-slotwrap" id="slot-modified" data-role="modified">
+            <input class="sr-only" id="modified" type="file" tabindex="-1" aria-label="Modified document" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+            <button class="rl-btn rl-slot" id="pick-modified" type="button" aria-describedby="error-modified">
+              <span class="rl-sloticon rl-sloticon-blue" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M7 2.5v9M2.5 7h9"></path></svg></span>
+              <span class="rl-slottext">
+                <span class="rl-slottitle">modified</span>
+                <span class="rl-slothint">Drop the later version, or browse</span>
+              </span>
+            </button>
+            <div class="rl-file" id="file-modified" hidden>
+              <div class="rl-fileicon rl-fileicon-blue" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M4 1.75h5.25L12.5 5v9.25h-8.5z"></path><path d="M9 1.75V5.25h3.5"></path><path d="M6 8.5h4.5M6 11h3" stroke-linecap="round"></path></svg>
+              </div>
+              <div class="rl-filetext">
+                <span class="rl-filename" id="name-modified"></span>
+                <span class="rl-filemeta">modified <span class="rl-dot">·</span> docx <span class="rl-dot">·</span> <span id="size-modified"></span></span>
+              </div>
+              <button class="rl-btn rl-ghost rl-remove" id="remove-modified" type="button" aria-label="Remove the modified document">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M3.5 3.5l7 7M10.5 3.5l-7 7"></path></svg>
+              </button>
+            </div>
+            <p class="rl-sloterror" id="error-modified" role="alert" hidden></p>
+          </div>
+
+          <button class="rl-btn rl-primary rl-create" id="create" type="button" disabled>
+            <svg class="rl-spin" id="create-spinner" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true" hidden><circle cx="7" cy="7" r="5.5" stroke="rgba(14,15,18,0.2)" stroke-width="1.6"></circle><path d="M12.5 7A5.5 5.5 0 0 0 7 1.5" stroke="#0E0F12" stroke-width="1.6" stroke-linecap="round"></path></svg>
+            <span id="create-label">create redline</span>
+            <kbd class="rl-kbd rl-kbd-dark" id="create-hint" aria-hidden="true">⌘ ↵</kbd>
+          </button>
+          <button class="rl-btn rl-outline rl-again" id="create-again" type="button" hidden>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 7a5 5 0 1 1-1.46-3.54"></path><path d="M12 2.5v3h-3"></path></svg>
+            <span>create redline again</span>
+          </button>
+          <p class="rl-sloterror" id="flow-error" role="alert" hidden></p>
+        </section>
+
+        <!-- results -->
+        <section class="rl-group" id="section-changes" aria-labelledby="rl-changes" hidden>
+          <div class="rl-labelrow">
+            <h2 class="rl-label" id="rl-changes">changes</h2>
+            <span class="rl-total" id="changes-total">0</span>
+          </div>
+          <div class="rl-cards" id="summary" aria-label="Summary of changes">
+            <div class="rl-card">
+              <div class="rl-cardtop"><svg width="14" height="9" viewBox="0 0 14 9" aria-hidden="true"><path d="M1 1.5h12M1 7.5h12" stroke="#5585FF" stroke-width="2" stroke-linecap="round"></path></svg><span class="rl-count" data-count="insertions">0</span></div>
+              <span class="rl-cardlabel">inserted</span>
+            </div>
+            <div class="rl-card">
+              <div class="rl-cardtop"><svg width="14" height="9" viewBox="0 0 14 9" aria-hidden="true"><path d="M1 1.5h12M1 7.5h12" stroke="#FF5A5C" stroke-width="2" stroke-linecap="round"></path></svg><span class="rl-count" data-count="deletions">0</span></div>
+              <span class="rl-cardlabel">deleted</span>
+            </div>
+            <div class="rl-card">
+              <div class="rl-cardtop"><svg width="14" height="9" viewBox="0 0 14 9" aria-hidden="true"><path d="M1 1.5h12M1 7.5h12" stroke="#2CC285" stroke-width="2" stroke-linecap="round"></path></svg><span class="rl-count" data-count="moves">0</span></div>
+              <span class="rl-cardlabel">moved</span>
+            </div>
+            <div class="rl-card">
+              <div class="rl-cardtop"><svg width="14" height="9" viewBox="0 0 14 9" aria-hidden="true"><path d="M1 1.5h12M1 7.5h12" stroke="#5D626B" stroke-width="2" stroke-linecap="round"></path></svg><span class="rl-count" data-count="formattingChanges">0</span></div>
+              <span class="rl-cardlabel">formatting</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="rl-group" id="section-export" aria-labelledby="rl-export" hidden>
+          <h2 class="rl-label" id="rl-export">export</h2>
+          <div class="rl-exportwrap">
+            <div class="rl-split">
+              <button class="rl-btn rl-primary rl-download" id="download" type="button">
+                <svg id="download-icon" width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 2v8M4 6.75 7.5 10.25 11 6.75M2.5 12.75h10"></path></svg>
+                <svg class="rl-spin" id="download-spinner" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true" hidden><circle cx="7" cy="7" r="5.5" stroke="rgba(14,15,18,0.2)" stroke-width="1.6"></circle><path d="M12.5 7A5.5 5.5 0 0 0 7 1.5" stroke="#0E0F12" stroke-width="1.6" stroke-linecap="round"></path></svg>
+                <span id="download-label">download pdf</span>
+              </button>
+              <button class="rl-btn rl-primary rl-more" id="download-more" type="button" aria-label="More download formats" aria-haspopup="menu" aria-expanded="false" aria-controls="download-menu">
+                <svg class="rl-chev" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 5.25 7 8.75l3.5-3.5"></path></svg>
+              </button>
+            </div>
+            <div class="rl-menu" id="download-menu" role="menu" aria-label="Download formats" hidden>
+              <button class="rl-btn rl-item" type="button" role="menuitemradio" aria-checked="false" data-format="pdf" tabindex="-1">
+                <span class="rl-tag" aria-hidden="true" style="color: #FF8E90">PDF</span>
+                <span class="rl-itemtext"><span class="rl-itemlabel">pdf</span><span class="rl-itemsub" data-sub="Static redline, ready to share">Static redline, ready to share</span></span>
+                <svg class="rl-tick" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#F4F4F2" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7.25 5.75 10 11 4.25"></path></svg>
+              </button>
+              <button class="rl-btn rl-item" type="button" role="menuitemradio" aria-checked="false" data-format="static" tabindex="-1">
+                <span class="rl-tag" aria-hidden="true" style="color: #A9C1FF">DOC</span>
+                <span class="rl-itemtext"><span class="rl-itemlabel">word · static redline</span><span class="rl-itemsub" data-sub="Marked up, no tracked changes">Marked up, no tracked changes</span></span>
+                <svg class="rl-tick" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#F4F4F2" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7.25 5.75 10 11 4.25"></path></svg>
+              </button>
+              <button class="rl-btn rl-item" type="button" role="menuitemradio" aria-checked="false" data-format="tracked" tabindex="-1">
+                <span class="rl-tag" aria-hidden="true" style="color: #6FDDAE">DOC</span>
+                <span class="rl-itemtext"><span class="rl-itemlabel">word · tracked changes</span><span class="rl-itemsub" data-sub="Accept or reject each change in Word">Accept or reject each change in Word</span></span>
+                <svg class="rl-tick" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#F4F4F2" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7.25 5.75 10 11 4.25"></path></svg>
+              </button>
+              <div class="rl-menurule"></div>
+              <p class="rl-menunote" id="pdf-note">A format is offered only when every check on it has passed. Making a PDF sends the static redline to our server, where it is deleted straight after conversion.</p>
+            </div>
+          </div>
+          <p class="rl-sloterror" id="withheld-note" hidden></p>
+          <p class="rl-sloterror" id="pdf-status" role="status" aria-live="polite"></p>
+        </section>
+
+        <section class="rl-group" id="section-checks" aria-labelledby="rl-checks" hidden>
+          <h2 class="rl-label" id="rl-checks">checks</h2>
+          <button class="rl-btn rl-outline rl-checksbtn" id="checks-toggle" type="button" aria-expanded="false" aria-controls="rl-checklist">
+            <svg id="checks-ok" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="rgba(44,194,133,0.16)"></circle><path d="M5 8.2 7 10.2 11 6" fill="none" stroke="#2CC285" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <svg id="checks-bad" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" hidden><circle cx="8" cy="8" r="7" fill="rgba(255,90,92,0.16)"></circle><path d="M5.75 5.75l4.5 4.5M10.25 5.75l-4.5 4.5" fill="none" stroke="#FF5A5C" stroke-width="1.6" stroke-linecap="round"></path></svg>
+            <span class="rl-checkssummary" id="checks-summary"></span>
+            <svg class="rl-chev" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#8B9099" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 5.25 7 8.75l3.5-3.5"></path></svg>
+          </button>
+          <div class="rl-checklist" id="rl-checklist" hidden>
+            <div class="rl-checkgroup" id="group-static">
+              <div class="rl-checkhead"><span class="rl-checktitle" id="heading-static">static redline · pdf</span><span class="rl-verdict" id="verdict-static"></span></div>
+              <ul class="rl-report" id="report-static" aria-labelledby="heading-static"></ul>
+            </div>
+            <div class="rl-checkgroup" id="group-tracked">
+              <div class="rl-checkhead"><span class="rl-checktitle" id="heading-tracked">tracked changes</span><span class="rl-verdict" id="verdict-tracked"></span></div>
+              <ul class="rl-report" id="report-tracked" aria-labelledby="heading-tracked"></ul>
+            </div>
+            <div class="rl-checkgroup" id="group-pdf" hidden>
+              <div class="rl-checkhead"><span class="rl-checktitle" id="heading-pdf">pdf</span><span class="rl-verdict" id="verdict-pdf"></span></div>
+              <ul class="rl-report" id="report-pdf" aria-labelledby="heading-pdf"></ul>
+            </div>
+            <a class="rl-reportlink" id="download-report" download="redline-check-report.txt" hidden>Download the check report</a>
+          </div>
+        </section>
+
+        <p class="rl-sidehint" id="side-hint">Changes, downloads and checks appear here once the redline is made.</p>
+
+        <div class="rl-spacer"></div>
+        <footer class="rl-foot">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#8B9099" stroke-width="1.3" stroke-linejoin="round" aria-hidden="true"><rect x="2.75" y="6.25" width="8.5" height="6" rx="1.5"></rect><path d="M4.75 6.25V4.5a2.25 2.25 0 0 1 4.5 0v1.75"></path></svg>
+          <p>Compared in your browser. Nothing is uploaded, except to make a PDF, which is deleted at once. No AI is used. <a href="https://github.com/awaisleghari/redline">Source code</a></p>
+        </footer>
+      </aside>
+
+      <!-- ============ VIEWER ============ -->
+      <main class="rl-main">
+        <canvas class="rl-band rl-fade" id="band" aria-hidden="true"></canvas>
+
+        <header class="rl-topbar rl-glass">
+          <div class="rl-titlewrap">
+            <span class="rl-title" id="viewer-title">new redline</span>
+            <span class="rl-subtitle" id="viewer-subtitle" hidden>original → modified</span>
+          </div>
+          <div class="rl-tools" id="viewer-tools" hidden>
+            <div class="rl-legend" aria-label="Legend">
+              <span class="rl-ins">inserted</span><span class="rl-del">deleted</span><span class="rl-mvt">moved</span>
+            </div>
+            <div class="rl-vrule rl-legendrule" aria-hidden="true"></div>
+            <div class="rl-switch" role="group" aria-label="Document layout">
+              <button class="rl-btn rl-seg rl-seg-text" id="view-continuous" type="button" aria-pressed="true" title="Continuous scroll">
+                <svg width="12" height="14" viewBox="0 0 12 14" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><rect x="1.5" y="0.75" width="9" height="12.5" rx="1.5"></rect><path d="M4 4.5h4M4 7h4M4 9.5h2.5" stroke-linecap="round"></path></svg>continuous</button>
+              <button class="rl-btn rl-seg rl-seg-text" id="view-pages" type="button" aria-pressed="false" title="Separate pages, like Word. Makes the PDF: the static redline is sent to our server, and deleted there straight after conversion.">
+                <svg width="12" height="14" viewBox="0 0 12 14" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><rect x="1.5" y="0.75" width="9" height="5.5" rx="1"></rect><rect x="1.5" y="7.75" width="9" height="5.5" rx="1"></rect></svg>pages</button>
+            </div>
+            <div class="rl-switch" role="group" aria-label="Page colour">
+              <button class="rl-btn rl-seg rl-seg-icon" id="page-dark" type="button" aria-pressed="true" aria-label="Dark page" title="Dark page">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" aria-hidden="true"><path d="M11.75 8.6A5 5 0 0 1 5.4 2.25a5 5 0 1 0 6.35 6.35z"></path></svg></button>
+              <button class="rl-btn rl-seg rl-seg-icon" id="page-light" type="button" aria-pressed="false" aria-label="Light page" title="Light page">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="2.6"></circle><path d="M7 1v1.4M7 11.6V13M1 7h1.4M11.6 7H13M2.75 2.75l1 1M10.25 10.25l1 1M11.25 2.75l-1 1M3.75 10.25l-1 1"></path></svg></button>
+            </div>
+            <div class="rl-vrule" aria-hidden="true"></div>
+            <div class="rl-changenav">
+              <span class="rl-counter" id="change-counter" aria-live="polite">0 / 0</span>
+              <button class="rl-btn rl-ghost rl-navbtn" id="prev-change" type="button" aria-label="Previous change"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 11.5v-9M3.5 6 7 2.5 10.5 6"></path></svg></button>
+              <button class="rl-btn rl-ghost rl-navbtn" id="next-change" type="button" aria-label="Next change"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 2.5v9M3.5 8 7 11.5 10.5 8"></path></svg></button>
+            </div>
+          </div>
+        </header>
+
+        <div class="rl-viewer rl-scroll" id="viewer" tabindex="0" aria-label="Redline" hidden>
+          <div class="rl-notice" id="tracked-notice" role="status" hidden>
+            <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="#5585FF" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><circle cx="7.5" cy="7.5" r="6"></circle><path d="M7.5 6.75v3.75M7.5 4.6v.1"></path></svg>
+            <span id="tracked-notice-text"></span>
+          </div>
+          <div class="rl-notice" id="pages-notice" hidden>
+            <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="#5585FF" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><circle cx="7.5" cy="7.5" r="6"></circle><path d="M7.5 6.75v3.75M7.5 4.6v.1"></path></svg>
+            <span id="pages-notice-text"></span>
+            <button class="rl-btn rl-outline rl-noticebtn" id="pages-make" type="button">make the pdf</button>
+          </div>
+          <div class="rl-doc" id="doc"></div>
+        </div>
+
+        <div class="rl-center" id="idle">
+          <img src="/brand/redline-mark-for-dark-ui.svg" alt="" width="44" height="44" />
+          <h2 class="rl-centertitle rl-centertitle-idle">create a redline</h2>
+          <p class="rl-centertext">Add the original and the modified version of a Word document on the left, then press create redline.</p>
+          <p class="rl-centersmall">.docx only, up to 25 MB each</p>
+        </div>
+
+        <div class="rl-center rl-center-loading" id="loading" role="status" hidden>
+          <h2 class="rl-centertitle rl-centertitle-loading">creating redline</h2>
+          <p class="rl-loadingtext">Comparing two documents in your browser</p>
+        </div>
+
+        <div class="rl-center" id="withheld" hidden>
+          <svg width="44" height="44" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="rgba(255,90,92,0.16)"></circle><path d="M5.75 5.75l4.5 4.5M10.25 5.75l-4.5 4.5" fill="none" stroke="#FF5A5C" stroke-width="1.2" stroke-linecap="round"></path></svg>
+          <h2 class="rl-centertitle rl-centertitle-idle" id="withheld-title">redline not shown</h2>
+          <p class="rl-centertext" id="viewer-message"></p>
+        </div>
+      </main>
+    </div>
+    <p class="sr-only" id="status" role="status" aria-live="polite"></p>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

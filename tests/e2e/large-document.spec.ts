@@ -13,7 +13,7 @@ test('a 100-page contract compares in the browser', async ({ page }) => {
   const contract = await buildLargeContract();
   expect(contract.words).toBeGreaterThan(45_000); // about 100 pages at 450 words a page
 
-  await page.goto('/');
+  await page.goto('/app');
   await page.locator('#original').setInputFiles({ name: 'original.docx', mimeType: DOCX_MIME, buffer: Buffer.from(contract.original) });
   await page.locator('#modified').setInputFiles({ name: 'modified.docx', mimeType: DOCX_MIME, buffer: Buffer.from(contract.modified) });
 
@@ -32,12 +32,12 @@ test('a 100-page contract compares in the browser', async ({ page }) => {
   });
 
   const started = Date.now();
-  await page.getByRole('button', { name: 'Compare' }).click();
+  await page.locator('#create').click();
   await expect(page.locator('#status')).toHaveAttribute('data-state', 'done', { timeout: 60_000 });
   // 'done' means the independent Checker also read all 100 pages and passed the output.
   await expect(page.locator('#report-tracked li[data-passed="true"]')).toHaveCount(6);
   await expect(page.locator('#report-static li[data-passed="true"]')).toHaveCount(9);
-  await expect(page.frameLocator('#viewer').getByText('Comparison of documents')).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('#doc').getByText('Comparison of documents')).toBeVisible({ timeout: 30_000 });
   const wallMs = Date.now() - started;
   const engineMs = Number(await page.locator('#status').getAttribute('data-engine-ms'));
   const longestGapMs = await page.evaluate(() => (window as unknown as { longestGapMs: number }).longestGapMs);
@@ -50,13 +50,31 @@ test('a 100-page contract compares in the browser', async ({ page }) => {
 
   // The PDF of the whole contract: converted by the server, read back and checked page by page in the browser.
   const pdfStarted = Date.now();
-  await page.getByRole('button', { name: 'Make PDF' }).click();
-  await expect(page.locator('#pdf-status')).toHaveText('The PDF passed its checks.', { timeout: 120_000 });
-  console.log(`100-page contract: PDF made, checked and drawn in ${Date.now() - pdfStarted} ms (${await page.locator('#pdf-viewer canvas').count()} pages)`);
+  const pdfDownload = page.waitForEvent('download', { timeout: 180_000 });
+  await page.locator('#download').click();
+  expect((await pdfDownload).suggestedFilename()).toBe('redline.pdf');
+  await expect(page.locator('#pdf-status')).toHaveText('The PDF passed its checks.');
   await expect(page.locator('#report-pdf li[data-passed="true"]')).toHaveCount(2);
+  // The pages view breaks the redline where the PDF does: one sheet per page of the PDF, each with words on it.
+  const pagesStarted = Date.now();
+  await page.locator('#view-pages').click();
+  const sheets = page.locator('#doc .rl-sheet');
+  await expect(sheets.first()).toContainText('page 1 of');
+  const count = await sheets.count();
+  console.log(`100-page contract: PDF made, checked and downloaded in ${pagesStarted - pdfStarted} ms; ${count} pages laid out in ${Date.now() - pagesStarted} ms`);
+  expect(count).toBeGreaterThan(40);
+  const lengths = await sheets.evaluateAll((all) => all.map((sheet) => sheet.textContent!.length));
+  expect(lengths.filter((length) => length < 200).length).toBeLessThanOrEqual(2);
+  // No words were lost or repeated by cutting the document into pages.
+  const paged = await page.locator('#doc').evaluate((doc) => Array.from(doc.querySelectorAll('.rl-sheet')).map((sheet) => { const copy = sheet.cloneNode(true) as HTMLElement; copy.querySelector('.rl-pagelabel')?.remove(); return copy.textContent; }).join('').replace(/\s+/g, ''));
+  await page.locator('#view-continuous').click();
+  const whole = await page.locator('#doc').evaluate((doc) => doc.textContent!.replace(/\s+/g, ''));
+  expect(paged).toBe(whole);
 
+  await page.locator('#download-more').click();
+  await page.locator('#download-menu [data-format="tracked"]').click();
   const downloadPromise = page.waitForEvent('download');
-  await page.locator('#download-tracked').click();
+  await page.locator('#download').click();
   const redline = new Uint8Array(await readFile(await (await downloadPromise).path()));
   const found = await readTrackedChanges(redline);
   // Every edit made to the modified version shows up as some tracked change.

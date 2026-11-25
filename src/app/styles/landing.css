@@ -1,0 +1,37 @@
+/* The landing page. Values copied from the design reference (reference/index.html). */
+@import './base.css';
+
+html, body { margin: 0; background: #0E0F12; }
+a { color: #F4F4F2; }
+a:hover { color: #FFFFFF; }
+
+.rl-page { position: relative; background: #0E0F12; color: #F4F4F2; font-family: 'Geist', system-ui, sans-serif; display: flex; flex-direction: column; overflow: hidden; }
+
+.rl-bar { position: absolute; top: 0; left: 0; right: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; padding: 20px clamp(20px, 4vw, 48px); background: rgba(14,15,18,0.46); -webkit-backdrop-filter: blur(14px) saturate(150%); backdrop-filter: blur(14px) saturate(150%); }
+.rl-logo { display: block; text-decoration: none; }
+.rl-logo img { width: 142.15px; height: 30px; display: block; }
+.rl-nav { display: flex; align-items: center; gap: 12px; }
+
+.rl-cta { width: 132px; height: 40px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; border-radius: 10px; font-size: 14px; font-weight: 500; text-decoration: none; letter-spacing: -0.005em; transition: background-color .15s ease, border-color .15s ease, color .15s ease; }
+.rl-cta:focus-visible { outline: 2px solid #5585FF; outline-offset: 2px; }
+.rl-cta-primary { background: #F4F4F2; color: #0E0F12; border: 1px solid #F4F4F2; }
+.rl-cta-primary:hover { background: #FFFFFF; color: #0E0F12; }
+.rl-cta-secondary { background: transparent; color: #F4F4F2; border: 1px solid rgba(255,255,255,0.16); }
+.rl-cta-secondary:hover { background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.28); color: #FFFFFF; }
+
+.rl-hero { position: relative; height: 560px; }
+.rl-hero canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: block; }
+.rl-grid { -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 30%, transparent 100%); mask-image: linear-gradient(to bottom, #000 0%, #000 30%, transparent 100%); }
+.rl-grid-b { -webkit-mask-image: linear-gradient(to top, #000 0%, #000 30%, transparent 100%); mask-image: linear-gradient(to top, #000 0%, #000 30%, transparent 100%); }
+
+.rl-headline { position: relative; z-index: 1; margin: -220px 0 -220px; padding: 0 24px; display: flex; justify-content: center; }
+.rl-headline-box { position: relative; max-width: 880px; box-sizing: border-box; padding: 40px clamp(24px, 4vw, 60px); }
+.rl-veil { position: absolute; top: -48px; right: -120px; bottom: -48px; left: -120px; -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); -webkit-mask-image: radial-gradient(closest-side, #000 35%, transparent 100%); mask-image: radial-gradient(closest-side, #000 35%, transparent 100%); }
+.rl-headline h1 { position: relative; margin: 0; max-width: 760px; text-shadow: 0 10px 40px rgba(14,15,18,0.85), 0 2px 10px rgba(14,15,18,0.6); text-align: center; font-family: 'Newsreader', Georgia, serif; font-weight: 500; font-size: clamp(32px, 4.2vw, 60px); line-height: 1.06; letter-spacing: -0.022em; color: #F4F4F2; text-wrap: balance; }
+.rl-nowrap { white-space: nowrap; }
+
+@media (max-width: 640px) {
+  .rl-hero { height: 400px; }
+  .rl-logo img { width: 113.72px; height: 24px; }
+  .rl-cta { width: 104px; }
+}
