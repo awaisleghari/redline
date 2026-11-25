@@ -277,3 +277,28 @@ export async function withSvgPicture(docx: Uint8Array, svg: Uint8Array = SVG_PIC
   );
   return zip(files);
 }
+
+/**
+ * Put the first paragraph into the first row of a one-column table whose next rows hold `outerRows`, and whose
+ * last row holds nothing but a table of two columns with `innerRows` and the empty paragraph that must follow it
+ * (a table inside a table, as on the front page of a lease).
+ */
+export function withNestedTable(docx: Uint8Array, outerRows: string[], innerRows: string[]): Promise<Uint8Array> {
+  return editParts(docx, (name, xml) => {
+    if (name !== 'word/document.xml') return xml;
+    const first = /<w:p>.*?<\/w:p>/s.exec(xml);
+    if (!first) throw new Error('withNestedTable: the document has no paragraph');
+    const paragraph = (text: string): string => (text === '' ? '<w:p/>' : `<w:p><w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`);
+    const cell = (width: number, content: string): string => `<w:tc><w:tcPr><w:tcW w:w="${width}" w:type="dxa"/></w:tcPr>${content}</w:tc>`;
+    const inner =
+      '<w:tbl><w:tblPr><w:tblW w:w="8000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="4000"/><w:gridCol w:w="4000"/></w:tblGrid>' +
+      innerRows.map((text) => `<w:tr>${cell(4000, paragraph(text))}${cell(4000, paragraph(`[${text} value]`))}</w:tr>`).join('') +
+      '</w:tbl>';
+    const table =
+      '<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid>' +
+      `<w:tr>${cell(9000, first[0])}</w:tr>` +
+      outerRows.map((text) => `<w:tr>${cell(9000, paragraph(text))}</w:tr>`).join('') +
+      `<w:tr>${cell(9000, inner + '<w:p/>')}</w:tr></w:tbl>`;
+    return xml.slice(0, first.index) + table + xml.slice(first.index + first[0].length);
+  });
+}

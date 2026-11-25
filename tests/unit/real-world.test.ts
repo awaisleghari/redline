@@ -16,7 +16,7 @@ import { compareDocuments } from 'docxodus/core';
 import { repairNotes } from '../../src/producer/repair-notes';
 import { repairParagraphProperties } from '../../src/producer/repair-paragraphs';
 import { unwrapRowControls, unwrapRowControlsInPart } from '../../src/producer/unwrap-row-controls';
-import { withBlueDoubleUnderline, withCellsInContentControls, withGlossary, withInk, withSvgPicture, SVG_PICTURE, withParagraphsAtCellEnd, withRedStrikethrough, withClauseStyle, withRowsInContentControls, withNumberedClausesInCell, withDocumentWideSpaces, withNoteInTable, withSections } from '../fixtures/real-world';
+import { withBlueDoubleUnderline, withCellsInContentControls, withGlossary, withInk, withNestedTable, withSvgPicture, SVG_PICTURE, withParagraphsAtCellEnd, withRedStrikethrough, withClauseStyle, withRowsInContentControls, withNumberedClausesInCell, withDocumentWideSpaces, withNoteInTable, withSections } from '../fixtures/real-world';
 
 const COVER = { originalName: 'original.docx', modifiedName: 'modified.docx', comparedAt: '24 November 2026 at 10:00 (UTC+00:00)' };
 const decoder = new TextDecoder();
@@ -920,4 +920,29 @@ describe('held-out fixes, review findings', () => {
     expect(failures).toContain('accept-all');
     expect(failures).toContain('reject-all');
   });
+});
+
+/**
+ * Found on real contracts (held-out run 1, seven leases): the front page is a table whose last row holds a table.
+ * When a row is added above it, the engine removes the inner table from that row (leaving the new row's text
+ * there) and puts it back in a new row of its own. The inner table's rows then carry no flag of their own, and the
+ * empty paragraph after the removed table has no neighbouring paragraph mark to show its removal on.
+ */
+describe('a table inside the last row of a table, with rows added or removed around it', () => {
+  const OUTER = ['Dated', '', 'The landlord and the tenant and the guarantor', '', 'Lease relating to premises known as the address', '', 'Whole office open market rent'];
+  const INNER = ['Term of years', 'Initial rent payable', 'Rent free period', 'Rent review pattern', 'Rent review basis'];
+  const INNER_MORE = [INNER[0]!, 'Foregoing stated that notwithstanding law', ...INNER.slice(1)];
+  const NEW_ROW = 'Liability in schedule without notice writing';
+  for (const [name, before, after] of [
+    ['a row added above it and a row added inside it', [OUTER, INNER], [[...OUTER, NEW_ROW], INNER_MORE]],
+    ['the reverse: both rows removed', [[...OUTER, NEW_ROW], INNER_MORE], [OUTER, INNER]],
+    ['rows added, removed and emptied above it', [OUTER, INNER], [[OUTER[0]!, OUTER[1]!, OUTER[2]!, 'To provided writing', '', '', OUTER[6]!, 'Liability in schedule'], INNER_MORE]],
+    ['two rows added above it', [OUTER, INNER], [[...OUTER, NEW_ROW, 'Second new row here'], INNER_MORE]],
+    ['the inner table rewritten', [OUTER, INNER], [[...OUTER, 'Liability'], ['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon', 'Zeta']]],
+  ] as const) {
+    it(`both Word files pass: ${name}`, async () => {
+      const pair = await buildPair(pairById('one-word-change'));
+      await bothPass(await withNestedTable(pair.original, [...before[0]], [...before[1]]), await withNestedTable(pair.original, [...after[0]], [...after[1]]));
+    });
+  }
 });

@@ -575,6 +575,17 @@ class PartConverter {
         const deleted = hasFlag(flags, name === 'tr' ? ['del'] : ['cellDel']);
         const inserted = hasFlag(flags, name === 'tr' ? ['ins'] : ['cellIns']);
         if (deleted || inserted) this.cellChange.set(element, deleted ? 'deleted' : 'inserted');
+        else {
+          // A table inside a row or cell that came or went whole (found on real contracts: a table within a table,
+          // on the front page of a lease) came or went with it: its own rows and cells carry no flag of their own.
+          for (let outer = element.parentNode as Element | null; outer && outer.nodeType === 1; outer = outer.parentNode as Element | null) {
+            const inherited = this.cellChange.get(outer);
+            if (inherited) {
+              this.cellChange.set(element, inherited);
+              break;
+            }
+          }
+        }
         this.convert(element, kind);
         return;
       }
@@ -661,6 +672,13 @@ class PartConverter {
         const removal = markKind === 'deleted' || markKind === 'movedFrom';
         const whollyRemoved = removal && content.length > 0 && content.every((c) => isW(c, markKind === 'deleted' ? 'del' : 'moveFrom'));
         const previous = before[at];
+        // The block before may instead be a table that came or went whole, with this paragraph the empty one
+        // that must follow a table in a cell (found on real contracts: a table within a table, replaced). There
+        // is then no paragraph mark next to it to show the change on, and the cell's last mark in the other
+        // version is a different paragraph's. So the change is shown on this empty paragraph's own mark.
+        const tableBefore = before[before.length - 2];
+        const rowsBefore = tableBefore && isWord(tableBefore, 'tbl') ? kids(tableBefore).filter((c) => isWord(c, 'tr')) : [];
+        const followsChangedTable = content.length === 0 && rowsBefore.length > 0 && rowsBefore.every((r) => this.cellChange.get(r) === (removal ? 'deleted' : 'inserted'));
         const index = previous && isWord(previous, 'p') ? this.markToken.get(previous) : undefined;
         // (A run of removed paragraphs ending in one of which part remains is left as it is: which clause number
         // the remaining part should carry cannot be told here, and the Checker judges the result.)
@@ -685,7 +703,7 @@ class PartConverter {
             }
           }
         }
-        markKind = undefined;
+        if (!followsChangedTable) markKind = undefined;
       } else if (markKind === 'movedFrom' || markKind === 'movedTo') markKind = cellKind ? markKind : undefined;
       else {
         if (!cellKind) numberLostAtCellEnd = this.removedAtCellEnd.get(paragraph);
