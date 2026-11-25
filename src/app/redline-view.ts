@@ -88,12 +88,19 @@ function keptDeclarations(style: CSSStyleDeclaration, isChange: boolean): string
   return out.join('; ');
 }
 
+/**
+ * Which change a piece of text is, from how it is formatted. The text may carry a line of its own as well
+ * (a deleted underlined heading is underlined and struck), so the strike is looked for first.
+ */
 function kindOfLook(look: Look, inserted: string, deleted: string): MarkKind | undefined {
   const double = look.style === 'double';
-  if (look.line === 'underline' && double && look.color === inserted) return 'ins';
-  if (look.line === 'underline' && double && look.color === REDLINE_LOOK.moved) return 'mvt';
-  if (look.line === 'line-through' && double && look.color === REDLINE_LOOK.moved) return 'mvf';
-  if (look.line === 'line-through' && !double && look.color === deleted) return 'del';
+  const lines = (look.line ?? '').split(/\s+/);
+  const struck = lines.includes('line-through');
+  const underlined = lines.includes('underline');
+  if (struck && double && look.color === REDLINE_LOOK.moved) return 'mvf';
+  if (struck && !double && look.color === deleted) return 'del';
+  if (underlined && double && look.color === inserted) return 'ins';
+  if (underlined && double && look.color === REDLINE_LOOK.moved) return 'mvt';
   if (look.fill === REDLINE_LOOK.formatFill) return 'fmt';
   return undefined;
 }
@@ -105,7 +112,10 @@ function parse(html: string): Document {
   return new DOMParser().parseFromString(html, 'text/html');
 }
 
-const classesOf = (element: Element): string[] => (element.getAttribute('class') ?? '').split(/\s+/).filter((token) => /^[A-Za-z0-9_-]+$/.test(token) && !token.startsWith('rl-') && !token.startsWith('is-'));
+/** Only the engine's own class names are kept, so nothing in a document can borrow one of this page's. */
+const classesOf = (element: Element): string[] => (element.getAttribute('class') ?? '').split(/\s+/).filter((token) => /^(docx-[A-Za-z0-9_-]+|footnote-ref|fn-backref|footnotes|endnotes|endnote-ref|document-header|document-footer)$/.test(token));
+/** The engine's attributes that its own layout rules rely on. */
+const KEPT_DATA = new Set(['data-list-marker', 'data-docx-tab', 'data-docx-tab-width', 'data-note-run', 'data-footnote-separator']);
 const isCover = (classes: string[]): boolean => classes.some((token) => token.startsWith('docx-RedlineCover'));
 const isHeadingClass = (classes: string[]): boolean => classes.some((token) => /^docx-(heading|title|subtitle)/i.test(token));
 
@@ -157,10 +167,13 @@ export function buildRedline(html: string): RedlineModel {
     .map(({ selector, style, className }) => {
       const body = keptDeclarations(style, !!className && kindOfClass.has(className) && kindOfClass.get(className) !== 'fmt');
       if (!body) return '';
-      const scoped = selector.split(',').map((part) => {
-        const one = part.trim();
-        return /^(html|body)\b/.test(one) ? one.replace(/^(html|body)\b/, ':where(.rl-sheet)') : `:where(.rl-sheet) ${one}`;
-      });
+      // Every rule is confined to what is inside a sheet: no rule may reach the sheet's siblings or the page around it.
+      const scoped = selector
+        .split(',')
+        .map((part) => part.trim().replace(/^(html|body)(?![\w-])\s*/, ''))
+        .filter((one) => one && !/^[>~+]/.test(one) && !/[~+]/.test(one) && !/\b(html|body)\b|:root|:host|\.rl-|\.is-|\.sr-only|#/.test(one))
+        .map((one) => `:where(.rl-sheet) ${one}`);
+      if (!scoped.length) return '';
       return `${scoped.join(', ')} { ${body} }`;
     })
     .filter(Boolean)
@@ -169,7 +182,7 @@ export function buildRedline(html: string): RedlineModel {
   // 3. The document itself, element by element.
   const master = document.createElement('div');
   const scratch = document.createElement('span');
-  const copy = (node: Node, into: Node, inCover: boolean): void => {
+  const copy = (node: Node, into: Node, inCover: boolean, inherited: string | undefined): void => {
     if (node.nodeType === Node.TEXT_NODE) {
       if (node.nodeValue) into.appendChild(document.createTextNode(node.nodeValue));
       return;
@@ -182,7 +195,7 @@ export function buildRedline(html: string): RedlineModel {
     // The "back to the text" arrow of a footnote leads nowhere here.
     if (tag === 'a' && classes.includes('fn-backref')) return;
     if (!ALLOWED_TAGS.has(tag)) {
-      for (const child of Array.from(from.childNodes)) copy(child, into, inCover);
+      for (const child of Array.from(from.childNodes)) copy(child, into, inCover, inherited);
       return;
     }
     const part = tag === 'header' ? 'rl-part rl-part-header' : tag === 'footer' ? 'rl-part rl-part-footer' : tag === 'section' ? 'rl-notes' : '';
@@ -205,9 +218,16 @@ export function buildRedline(html: string): RedlineModel {
       if (kept) to.setAttribute('style', kept);
       scratch.removeAttribute('style');
     }
+    // The element's whole look: its classes' rules, then its own style; its colour may come from the span around it
+    // (the engine wraps a moved-away underlined phrase as a green underlined span around a double-struck one).
+    for (const token of classes) {
+      const rule = looks.get(token);
+      if (rule) look = { color: look.color ?? rule.color, line: look.line ?? rule.line, style: look.style ?? rule.style, fill: look.fill ?? rule.fill };
+    }
+    const color = look.color ?? inherited;
     let kind: MarkKind | undefined;
     for (const token of classes) kind ??= kindOfClass.get(token);
-    kind ??= look.line || look.fill ? kindOfLook(look, inserted, deleted) : undefined;
+    kind ??= look.line || look.fill ? kindOfLook({ ...look, color }, inserted, deleted) : undefined;
     if (kind) {
       mine.push(`rl-${kind}`);
       if (cover) to.setAttribute('data-legend', '');
@@ -217,7 +237,7 @@ export function buildRedline(html: string): RedlineModel {
     if (!to.className) to.removeAttribute('class');
     for (const attribute of Array.from(from.attributes)) {
       const name = attribute.name.toLowerCase();
-      if (KEPT_ATTRIBUTES.has(name) || /^data-[a-z0-9-]+$/.test(name)) to.setAttribute(name, attribute.value);
+      if (KEPT_ATTRIBUTES.has(name) || KEPT_DATA.has(name)) to.setAttribute(name, attribute.value);
     }
     if (tag === 'img') {
       const src = from.getAttribute('src') ?? '';
@@ -226,9 +246,9 @@ export function buildRedline(html: string): RedlineModel {
       to.setAttribute('src', src);
     }
     into.appendChild(to);
-    for (const child of Array.from(from.childNodes)) copy(child, to, cover);
+    for (const child of Array.from(from.childNodes)) copy(child, to, cover, color);
   };
-  for (const child of Array.from(source.body.childNodes)) copy(child, master, false);
+  for (const child of Array.from(source.body.childNodes)) copy(child, master, false, undefined);
 
   // The cover page is set apart from the document by a rule under its last line.
   const coverLines = master.querySelectorAll('p.rl-cover');
@@ -360,6 +380,7 @@ export function layOut(container: HTMLElement, model: RedlineModel, pdf?: PdfPag
 
   // Where each page after the first begins: the first run of its text found in the document, near where it is due.
   const PROBE = 24;
+  const CONFIRM = 72;
   const starts: number[] = [];
   let previous = 0;
   let previousLength = 0;
@@ -371,9 +392,11 @@ export function layOut(container: HTMLElement, model: RedlineModel, pdf?: PdfPag
       let found = -1;
       for (let o = 0; o + PROBE <= page.length && o < 4000 && found < 0; o++) {
         const probe = page.slice(o, o + PROBE);
-        // Of the places the probe occurs, the one nearest to where the page is due.
+        // Of the places the probe occurs and the page's next words follow, the one nearest to where the page is due.
+        const need = Math.min(CONFIRM, page.length - o);
         let best = -1;
         for (let at = window.indexOf(probe); at >= 0; at = window.indexOf(probe, at + 1)) {
+          if (window.slice(at, at + need) !== page.slice(o, o + need) && at + need <= window.length) continue;
           if (best < 0 || Math.abs(previous + at - due) < Math.abs(previous + best - due)) best = at;
         }
         if (best >= 0) found = previous + best;
@@ -394,12 +417,8 @@ export function layOut(container: HTMLElement, model: RedlineModel, pdf?: PdfPag
       const range = document.createRange();
       const node = nodes[nodeOf[at]!]!;
       range.setStart(node, offsetOf[at]!);
-      // Never cut through a table row or a clause number: start the page before it.
-      let row: Element | null = null;
-      for (let up = node.parentElement; up && up !== sheet; up = up.parentElement) if (up.localName === 'tr') row = up;
       const block = node.parentElement!.closest(BLOCKS);
-      if (row) range.setStartBefore(row);
-      else if (block && sheet.contains(block)) {
+      if (block && sheet.contains(block)) {
         // Nothing but the clause number before the cut: the whole paragraph belongs to the new page.
         const before = document.createRange();
         before.setStartBefore(block);
@@ -407,13 +426,54 @@ export function layOut(container: HTMLElement, model: RedlineModel, pdf?: PdfPag
         const lead = before.toString().trim();
         if (!lead || lead === (block.querySelector('[data-list-marker]')?.textContent ?? '').trim()) range.setStartBefore(block);
       }
+      // The table rows and tables the cut passes through, outermost first.
+      const crossed = (name: string): Element[] => {
+        const found: Element[] = [];
+        const from = range.startContainer;
+        for (let up = from.nodeType === Node.ELEMENT_NODE ? (from as Element) : from.parentElement; up && up !== sheet; up = up.parentElement) if (up.localName === name) found.unshift(up);
+        return found;
+      };
+      // Nothing of the outermost row before the cut: the page starts with that row, whole.
+      const outer = crossed('tr')[0];
+      if (outer) {
+        const before = document.createRange();
+        before.setStartBefore(outer);
+        before.setEnd(range.startContainer, range.startOffset);
+        if (!before.toString().trim()) range.setStartBefore(outer);
+      }
+      const rows = crossed('tr');
+      const tables = crossed('table');
       const cutIn = range.startContainer;
       range.setEndAfter(sheet.lastChild);
       next.appendChild(range.extractContents());
-      // The cut can leave an empty shell of the paragraph it fell at the start of.
+
+      // A row that runs over the page is now in two halves, as in Word. Give both halves all their columns:
+      // the second half gets empty cells for the columns before the cut, the first for those after it.
+      const halves = (name: string): Element[] => {
+        const found: Element[] = [];
+        for (let down = next.firstElementChild; down; down = down.firstElementChild) if (down.localName === name) found.push(down);
+        return found;
+      };
+      const rowHalves = halves('tr');
+      rows.forEach((first, index) => {
+        const second = rowHalves[index];
+        if (!second) return;
+        const later = Array.from(second.children).slice(1);
+        for (const cell of Array.from(first.children).slice(0, -1).reverse()) second.prepend(cell.cloneNode(false));
+        for (const cell of later) first.append(cell.cloneNode(false));
+      });
+      const tableHalves = halves('table');
+      tables.forEach((first, index) => {
+        const widths = Array.from(first.children).find((child) => child.localName === 'colgroup');
+        const second = tableHalves[index];
+        if (widths && second && !Array.from(second.children).some((child) => child.localName === 'colgroup')) second.prepend(widths.cloneNode(true));
+      });
+
+      // The cut can leave an empty shell of the paragraph it fell at the start of (a table cell is kept: it holds its column).
       for (let shell: Node | null = cutIn; shell && shell !== sheet; ) {
         const parent: Node | null = shell.parentNode;
         const element = shell.nodeType === Node.ELEMENT_NODE ? (shell as Element) : null;
+        if (element && /^(td|th|tr)$/.test(element.localName)) break;
         const empty = shell.nodeType === Node.TEXT_NODE ? !(shell as Text).data : !!element && !element.textContent && !element.querySelector('img, br, hr');
         if (!empty) break;
         parent?.removeChild(shell);

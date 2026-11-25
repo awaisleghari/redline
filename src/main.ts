@@ -129,8 +129,8 @@ function render(): void {
   }
   createButton.hidden = done;
   createAgain.hidden = !done;
-  createButton.disabled = !both || running;
-  createAgain.disabled = !both || running;
+  createButton.disabled = !both || running || validating > 0;
+  createAgain.disabled = !both || running || validating > 0;
   setHidden('create-spinner', !loading);
   setHidden('create-hint', loading);
   element('create-label').textContent = loading ? 'creating redline' : 'create redline';
@@ -176,6 +176,7 @@ function clearResults(): void {
   setHidden('tracked-notice', true);
   pdfStatus.textContent = '';
   pdfStatus.dataset.state = '';
+  setHidden('withheld-note', true);
   flowError.hidden = true;
   flowError.textContent = '';
   closeMenu(false);
@@ -183,6 +184,8 @@ function clearResults(): void {
 }
 
 const choiceId = { original: 0, modified: 0 };
+/** Files being read to see whether they can be compared. Nothing is created until each has its answer. */
+let validating = 0;
 async function choose(role: Role, file: File | undefined): Promise<void> {
   if (running) return;
   const id = ++choiceId[role];
@@ -190,7 +193,17 @@ async function choose(role: Role, file: File | undefined): Promise<void> {
   problem.hidden = true;
   problem.textContent = '';
   // A file that cannot be compared is refused here, in plain English, and not kept.
-  const refusal = file ? await refusalFor({ name: file.name, size: file.size, bytes: async () => new Uint8Array(await file.arrayBuffer()) }, role) : undefined;
+  let refusal: string | undefined;
+  validating++;
+  render();
+  try {
+    refusal = file ? await refusalFor({ name: file.name, size: file.size, bytes: async () => new Uint8Array(await file.arrayBuffer()) }, role) : undefined;
+  } catch {
+    refusal = `${role === 'original' ? 'The original' : 'The modified document'} could not be read.`;
+  } finally {
+    validating--;
+    render();
+  }
   if (id !== choiceId[role] || running) return;
   chosen[role] = refusal ? undefined : file;
   clearResults();
@@ -657,7 +670,7 @@ async function show(result: FlowResult, names: { originalName: string; modifiedN
 
 async function create(): Promise<void> {
   const { original, modified } = chosen;
-  if (!original || !modified || running) return;
+  if (!original || !modified || running || validating > 0) return;
   running = true;
   clearResults();
   setStage('loading');
@@ -703,7 +716,13 @@ async function create(): Promise<void> {
       viewer.scrollTop = 0;
       const count = [result.tracked.file, result.staticRedline.file].filter(Boolean).length;
       if (count === 2) say('done', 'Done. Every check passed.');
-      else say('withheld', count === 0 ? 'The redline did not pass its checks, so it has been withheld. See the checks.' : 'One of the two Word files did not pass its checks and has been withheld. See the checks.');
+      else {
+        // Said in plain sight, beside the downloads, as well as to screen readers.
+        const text = count === 0 ? 'The redline did not pass its checks, so it has been withheld. See the checks.' : 'One of the two Word files did not pass its checks and has been withheld. See the checks.';
+        element('withheld-note').textContent = text;
+        setHidden('withheld-note', false);
+        say('withheld', text);
+      }
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

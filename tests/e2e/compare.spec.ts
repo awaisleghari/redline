@@ -248,6 +248,26 @@ test('showing the redline in the page never changes its words', async ({ page })
   await expect(viewer.locator('.rl-del', { hasText: 'thirty' })).toBeVisible();
 });
 
+test('a deletion and a move of underlined text are marked and counted like any other', async ({ page }) => {
+  const under = (text: string) => ({ kind: 'rich' as const, text, runs: [{ text, underline: true }] });
+  const moved = under('Each party shall keep the Confidential Information of the other party secret.');
+  const filler = ['The Supplier shall provide the Services with reasonable skill and care.', 'The Customer shall pay the Fees within thirty days of the date of each invoice.', 'This Agreement is governed by the laws of England and Wales.'].map((text) => ({ kind: 'p' as const, text }));
+  const original = await buildDocx({ blocks: [under('Governing law and jurisdiction of the courts'), moved, ...filler] });
+  const modified = await buildDocx({ blocks: [under('Governing law and jurisdiction'), ...filler, moved] });
+  await compare(page, original, modified);
+  await expect(page.locator('#doc').getByText('Comparison of documents')).toBeVisible();
+  const total = Number(await page.locator('#changes-total').textContent());
+  expect(total).toBeGreaterThanOrEqual(2);
+  await expect(page.locator('#change-counter')).toHaveText(`1 / ${total}`);
+  await expect(page.locator('#doc .rl-del[data-chg]', { hasText: 'of the courts' })).toHaveCSS('color', 'rgb(255, 142, 144)');
+  // Both ends of the move are found, and they are one change.
+  const from = page.locator('#doc .rl-mvf[data-chg]', { hasText: 'Each party shall keep' });
+  const to = page.locator('#doc .rl-mvt[data-chg]', { hasText: 'Each party shall keep' });
+  await expect(from).toHaveCSS('color', 'rgb(111, 221, 174)');
+  await expect(to).toHaveCSS('color', 'rgb(111, 221, 174)');
+  expect(await from.first().getAttribute('data-chg')).toBe(await to.first().getAttribute('data-chg'));
+});
+
 test('files cannot be changed while a comparison runs, and choosing a new file clears the old results', async ({ page }) => {
   const pair = await buildPair(PAIR_SPECS[0]!);
   await page.goto('/app');
@@ -374,7 +394,18 @@ test.describe('reading the redline', () => {
     await expect(page.locator('#doc .rl-cur')).toHaveCount(0);
     const here = Number((await counter.textContent())!.split(' / ')[0]);
     expect(here).toBeGreaterThan(10);
-    await expect(page.locator(`#doc [data-chg="${here}"]`).first()).toBeInViewport();
+    // It is the change nearest the top third of the view (worked out here independently).
+    const nearest = await page.evaluate(() => {
+      const viewer = document.getElementById('viewer')!;
+      const line = viewer.getBoundingClientRect().top + viewer.clientHeight / 3;
+      const firstOf = new Map<number, number>();
+      for (const mark of Array.from(document.querySelectorAll<HTMLElement>('#doc [data-chg]'))) {
+        const number = Number(mark.dataset.chg);
+        if (!firstOf.has(number)) firstOf.set(number, Math.abs(mark.getBoundingClientRect().top - line));
+      }
+      return [...firstOf.entries()].sort((a, b) => a[1] - b[1])[0]![0];
+    });
+    expect(here).toBe(nearest);
     await page.getByRole('button', { name: 'Next change' }).click();
     await expect(counter).toHaveText(new RegExp(`^${here + 1} /`));
     await expect(page.locator(`#doc [data-chg="${here + 1}"]`).first()).toHaveClass(/rl-cur/);
@@ -459,9 +490,17 @@ test.describe('the PDF', () => {
     await compare(page, pair.original, pair.modified);
     await expect(page.locator('#download')).toBeEnabled();
     await expect(page.locator('#download')).toHaveText('download pdf');
-    // The notice is in view before the button is pressed.
-    await expect(page.locator('.rl-foot')).toBeInViewport();
-    await expect(page.locator('.rl-foot')).toContainText('Nothing is uploaded, except to make a PDF, which is deleted at once.');
+    // The notice is in view, whole, before the button is pressed, even in a short window.
+    await page.setViewportSize({ width: 1366, height: 650 });
+    await expect(page.locator('.rl-foot')).toBeInViewport({ ratio: 1 });
+    await expect(page.locator('.rl-foot').getByText('Compared in your browser. Nothing is uploaded, except to make a PDF, which is deleted at once. No AI is used.')).toBeVisible();
+    await expect(page.locator('#download')).toBeInViewport({ ratio: 1 });
+    // The fuller sentence is in the menu the button opens.
+    await page.locator('#download-more').click();
+    await expect(page.locator('#pdf-note')).toBeVisible();
+    await expect(page.locator('#pdf-note')).toContainText('Making a PDF sends the static redline to our server, where it is deleted straight after conversion.');
+    await page.keyboard.press('Escape');
+    await page.setViewportSize({ width: 1280, height: 720 });
     // Choosing "pages" sends nothing either: it asks first.
     await page.getByRole('button', { name: 'pages' }).click();
     await expect(page.locator('#pages-notice')).toContainText('Making a PDF sends the static redline to our server, where it is deleted straight after conversion.');
@@ -524,6 +563,37 @@ test.describe('the PDF', () => {
     await expect(page.locator('#doc .rl-sheet')).toHaveCount(2, { timeout: 60_000 });
     expect(sent).toEqual(['POST /api/pdf']);
     expect(downloads).toBe(0);
+  });
+
+  test('a table row that runs over several pages is split across them, with its columns kept and no page left blank', async ({ page }) => {
+    // (The second column of the long row is left empty: the Checker at present withholds the PDF of a row with words in two columns that runs over a page.)
+    const sentence = (n: number): string => `Item ${n}: the Supplier shall deliver the services described in schedule ${n} within ${n + 10} Business Days of the request. `;
+    const long = (from: number): string => Array.from({ length: 70 }, (_, i) => sentence(from + i)).join('');
+    const blocks = (fee: string) => ({ blocks: [{ kind: 'p' as const, text: 'Schedule of services.' }, { kind: 'table' as const, rows: [['Services', 'Notes'], [long(1) + long(500), ''], ['Monthly fee', fee]] }, { kind: 'p' as const, text: 'End of schedule.' }] });
+    const original = await buildDocx(blocks('USD 1,500'));
+    const modified = await buildDocx(blocks('USD 2,500'));
+    await compare(page, original, modified);
+    const whole = await page.locator('#doc').evaluate((doc) => doc.textContent!.replace(/\s+/g, ''));
+    await page.getByRole('button', { name: 'pages' }).click();
+    await page.getByRole('button', { name: 'make the pdf' }).click();
+    const sheets = page.locator('#doc .rl-sheet');
+    await expect(sheets.first()).toContainText('page 1 of', { timeout: 60_000 });
+    const count = await sheets.count();
+    expect(count).toBeGreaterThanOrEqual(4); // the cover page, then a row several pages long
+    const pages = await sheets.evaluateAll((all) =>
+      all.map((sheet) => {
+        const copy = sheet.cloneNode(true) as HTMLElement;
+        copy.querySelector('.rl-pagelabel')?.remove();
+        return { text: copy.textContent!.replace(/\s+/g, ''), cells: Array.from(copy.querySelectorAll('tr')).map((row) => row.children.length) };
+      }),
+    );
+    // Every page has words on it, every row on every page has both columns, and the pages together are the document.
+    for (const one of pages) expect(one.text.length).toBeGreaterThan(100);
+    for (const one of pages.slice(1)) expect(one.cells.length).toBeGreaterThan(0);
+    expect(pages.flatMap((one) => one.cells).every((cells) => cells === 2)).toBe(true);
+    expect(pages.map((one) => one.text).join('')).toBe(whole);
+    await expect(sheets.last()).toContainText('End of schedule.');
+    await expect(page.locator('#change-counter')).toHaveText('1 / 2');
   });
 
   test('a wrong PDF from the server is withheld: not downloaded, not offered, and no pages are drawn from it', async ({ page }) => {
@@ -804,6 +874,9 @@ for (const caseId of ['dropped-word', 'changed-digit-in-insertion', 'broken-comm
     await expect(page.locator('#verdict-tracked')).toHaveCSS('color', 'rgb(255, 142, 144)');
     await page.locator('#checks-toggle').click();
     await expect(page.locator('#report-tracked li[data-passed="false"]').first().getByRole('img', { name: 'Failed' })).toBeVisible();
+    // The page says so in plain sight, beside the downloads.
+    await expect(page.locator('#withheld-note')).toBeVisible();
+    await expect(page.locator('#withheld-note')).toHaveText(/did not pass its checks.*has been withheld\. See the checks\./);
     // Not offered: the row is greyed out and cannot be chosen, and the button downloads something else.
     await page.locator('#download-more').click();
     const item = page.locator('#download-menu [data-format="tracked"]');
@@ -871,6 +944,8 @@ for (const caseId of ['static-dropped-word', 'static-wrong-cover-count', 'static
     await expect(page.locator('#viewer-tools')).toBeHidden();
     await expect(page.getByRole('heading', { name: 'redline withheld' })).toBeVisible();
     await expect(page.locator('#viewer-message')).toContainText('did not pass its checks, so it is not shown');
+    await expect(page.locator('#withheld-note')).toBeVisible();
+    await expect(page.locator('#withheld-note')).toContainText('has been withheld');
     await expect(page.locator('#section-changes')).toBeHidden();
     // The tracked-changes file was fine and is still offered.
     await expect(page.locator('#download')).toHaveText('download word · tracked');

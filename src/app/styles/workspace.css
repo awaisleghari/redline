@@ -96,6 +96,8 @@ a:hover { color: #F4F4F2; }
 /* Not in the design: where a failed check went wrong, under its line. */
 .rl-report .failure { white-space: pre-wrap; margin-top: 4px; font-size: 12px; overflow-wrap: anywhere; }
 .rl-reportlink { font-size: 12px; padding: 0 0 4px; }
+/* The line that says what is uploaded stays in view however short the window is: it must be read before "download pdf" is pressed. */
+.rl-side .rl-foot { position: sticky; bottom: -12px; z-index: 1; margin-bottom: -12px; padding-bottom: 12px; background: #0A0B0D; }
 .rl-sidehint { margin: 0; padding: 0 4px; font-size: 12px; line-height: 1.5; color: #8B9099; }
 
 /* ---------- main panel ---------- */
