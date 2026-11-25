@@ -10,6 +10,7 @@ import { DOMParser } from '@xmldom/xmldom';
 import { NS } from '../common/namespaces';
 
 const W = NS.w;
+const MC = NS.mc;
 const XML_NS = 'http://www.w3.org/XML/1998/namespace';
 
 type El = Element;
@@ -307,7 +308,18 @@ export function readOriginal(parts: { xml: string; isMain: boolean }[], stylesXm
     for (const unit of unitsOf(root)) info.streams.push({ kind: root.localName!, stream: plainStream(unit, styles), used: false });
     if (part.isMain) {
       const counter = new NumberCounter(numberingXml);
-      info.bodyNumbers = paragraphsInCountingOrder(root).map((paragraph) => counter.label(styles.numPr(paragraph)));
+      // A text box is stored twice (a modern form and a legacy one, mc:Choice and mc:Fallback) and shown once: only
+      // the first form takes numbers (found on a real contract: a numbered list running through a text box and on
+      // into the main text, where every later clause was counted two too high).
+      const inFallback = (paragraph: El): boolean => {
+        for (let up = paragraph.parentNode as El | null; up && up.nodeType === 1; up = up.parentNode as El | null) {
+          // Any form but the first (there may be several mc:Choice forms before the mc:Fallback).
+          const holder = up.parentNode as El | null;
+          if (up.namespaceURI === MC && holder && holder.namespaceURI === MC && holder.localName === 'AlternateContent' && kids(holder).find((c) => c.namespaceURI === MC) !== up) return true;
+        }
+        return false;
+      };
+      info.bodyNumbers = paragraphsInCountingOrder(root).map((paragraph) => (inFallback(paragraph) ? '' : counter.label(styles.numPr(paragraph))));
     }
   }
   return info;

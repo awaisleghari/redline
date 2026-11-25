@@ -114,6 +114,11 @@ export interface StoryReading {
   links: string[];
   /** Handwriting (pen strokes) the document holds, in reading order: a fingerprint of each. */
   inks: string[];
+  /**
+   * Clause numbers in the stored forms of drawings and text boxes that are NOT the form read (Word stores a text
+   * box twice; a program may show either). One entry per such form, in reading order.
+   */
+  otherForms: string[];
   /** Templates that legacy shapes in the document ask for and the document does not define: such a shape may not be drawn as intended. */
   missingShapeTypes: string[];
   /** The text of each table row marked to repeat at the top of every page the table runs onto. */
@@ -299,6 +304,7 @@ interface Source {
   partsRead: Set<string>;
   links: string[];
   inks: string[];
+  otherForms: string[];
   /** Shape templates (legacy drawings) defined anywhere in the document, and those its shapes ask for. */
   shapeTypes: { defined: Set<string>; used: Set<string> };
   markup: Markup;
@@ -427,13 +433,24 @@ function absorb(outer: Context, inner: Context): void {
  */
 function alternateContentBranch(element: XmlElement, context: Context, read: (branch: XmlElement, into: Context) => string): XmlElement | undefined {
   const branches = element.children.filter((c) => c.ns === NS.mc && (c.name === 'Choice' || c.name === 'Fallback'));
+  const formNumbers: string[] = [];
   if (branches.length > 1) {
     // Every branch (there may be several Choices) must read the same: text, text boxes and note references.
     const readings = branches.map((branch) => {
       const probe = newContext(context.view, [], { ...context.source, partsRead: new Set(), links: [], inks: [], repeatRows: [] });
-      const inline = read(branch, probe);
+      // (These readings only compare the forms; they must not use up clause numbers.)
+      const inline = context.source.numbering.withoutCounting(() => read(branch, probe));
       // Pictures are stored differently in the modern and legacy forms, so linked files are left out of this comparison.
       const texts = (list: Para[]): string[] => list.map((entry) => entry.text);
+      // Clause numbers, form by form, each read from the same starting count. A published document's two forms
+      // need not agree on them (found on a real contract: the legacy form on a different list), so they are not
+      // compared with each other; the forms that are not read are recorded, and must be the same in the output
+      // as in the modified document. Otherwise a program showing the other form would print numbers nothing
+      // has checked (review finding).
+      // What is recorded is which paragraphs are in a list, not the label each prints: the label of a form Word
+      // never shows depends on list definitions that a published file may leave dangling and the engine rebuilds
+      // (found on a real contract: no label could be worked out in the upload, "1." in the output).
+      const numbers = (list: Para[]): string[] => list.map((entry) => (entry.listed ? 'listed' : ''));
       // A text box holding nothing but empty paragraphs shows no text: a drawing saved as shapes with such a box
       // and, for older programs, as a flat picture of itself reads the same either way.
       const shown = (list: Para[]): string[] => {
@@ -444,6 +461,11 @@ function alternateContentBranch(element: XmlElement, context: Context, read: (br
         }
         return boxes.filter((box) => box.some((text) => text.trim() !== '')).flatMap((box) => ['⟦text box⟧', ...box]);
       };
+      const boxNumbers = numbers(probe.textBoxes.filter((entry) => entry.text.trim() !== '' && entry.text !== '⟦text box⟧'));
+      // (Only what is numbered is of interest: a form with no numbered paragraph in this view records nothing, so
+      // a box shown removed, or a drawing with no list in it, leaves no trace.)
+      const numbered = [...numbers(probe.paragraphs), ...boxNumbers].filter((_entry, _index, all) => all.some((e) => e !== ''));
+      formNumbers.push(numbered.length > 0 ? JSON.stringify(numbered) : '');
       return JSON.stringify([inline, texts(probe.paragraphs), probe.pending, shown(probe.textBoxes), probe.notes]).replace(/⟦file [^⟧]*⟧/g, '');
     });
     if (new Set(readings).size > 1) {
@@ -459,9 +481,11 @@ function alternateContentBranch(element: XmlElement, context: Context, read: (br
     const strokes = inkIn(branches[0]!, context);
     if (strokes.length > 0) {
       context.source.inks.push(...strokes);
+      context.source.otherForms.push(...formNumbers.filter((form, i) => form !== '' && branches[i] !== fallback));
       return fallback;
     }
   }
+  context.source.otherForms.push(...formNumbers.slice(1).filter((form) => form !== ''));
   return branches[0];
 }
 
@@ -908,6 +932,7 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
   const problems: string[] = [];
   const links: string[] = [];
   const inks: string[] = [];
+  const otherForms: string[] = [];
   const shapeTypes = { defined: new Set<string>(), used: new Set<string>() };
   const cover: string[] = [];
   const coverLooks: string[] = [];
@@ -921,10 +946,10 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
   let body = child(pkg.xml(main), W, 'body');
   if (!body) {
     problems.push('The main document has no body.');
-    return { stories, partsRead, noteIdsRead, problems, links, inks, missingShapeTypes: [...shapeTypes.used].filter((id) => !shapeTypes.defined.has(id)).sort(), cover, coverLooks, repeatRows, layout, colours };
+    return { stories, partsRead, noteIdsRead, problems, links, inks, otherForms, missingShapeTypes: [...shapeTypes.used].filter((id) => !shapeTypes.defined.has(id)).sort(), cover, coverLooks, repeatRows, layout, colours };
   }
   partsRead.add(main);
-  const shared = { pkg, partsRead, links, inks, shapeTypes, markup, styles: new Styles(pkg, main), numbering: new Numbering(pkg, main), repeatRows, colours };
+  const shared = { pkg, partsRead, links, inks, otherForms, shapeTypes, markup, styles: new Styles(pkg, main), numbering: new Numbering(pkg, main), repeatRows, colours };
 
   if (markup === 'static' && view !== 'all') {
     // The cover page: the leading paragraphs in the cover styles. It is the
@@ -1066,6 +1091,11 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
       idsRead.add(ref.id);
       const context = newContext(view, problems, { ...shared, part: partName });
       readBlocks(note, context);
+      // A note always holds at least one paragraph, as a cell does: Word never lets a note lose its last paragraph
+      // mark. (Found on a real contract: a draft whose emptied footnote had its one paragraph mark flagged as
+      // removed. Read as no paragraph at all, it could never match the same note in the other files.)
+      // (Only a note that does hold a paragraph: one with none at all is damaged, and must still show as different.)
+      if (context.paragraphs.length === 0 && note.children.some((c) => w(c, 'p'))) context.paragraphs.push(marker(''));
       // Always keep the note's story, even if blank, so a missing note cannot hide.
       stories.push(storyOf(`${kind}/${index + 1}`, kind, label, context.paragraphs));
       add(`${kind}/${index + 1}/text boxes`, 'text box', `text boxes in ${label}`, context.textBoxes);
@@ -1101,5 +1131,5 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
     if (stated.size > 1 || restarts) layout.noteFormat[kind] = 'mixed';
   }
 
-  return { stories, partsRead, noteIdsRead, problems, links, inks, missingShapeTypes: [...shapeTypes.used].filter((id) => !shapeTypes.defined.has(id)).sort(), cover, coverLooks, repeatRows, layout, colours };
+  return { stories, partsRead, noteIdsRead, problems, links, inks, otherForms, missingShapeTypes: [...shapeTypes.used].filter((id) => !shapeTypes.defined.has(id)).sort(), cover, coverLooks, repeatRows, layout, colours };
 }

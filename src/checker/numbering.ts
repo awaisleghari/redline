@@ -120,6 +120,24 @@ export class Numbering {
   }
 
   /**
+   * A reading that must not count: `read` is run and the counters are then put back as they were. (The two stored
+   * forms of a text box are each read to compare them; only the one that is shown takes numbers. Found on a real
+   * contract: a numbered list running through a text box and on into the main text.)
+   */
+  withoutCounting<T>(read: () => T): T {
+    const counters = new Map([...this.counters].map(([key, values]) => [key, [...values]] as [string, (number | undefined)[]]));
+    const started = new Set(this.started);
+    try {
+      return read();
+    } finally {
+      this.counters.clear();
+      for (const [key, values] of counters) this.counters.set(key, values);
+      this.started.clear();
+      for (const id of started) this.started.add(id);
+    }
+  }
+
+  /**
    * The label of the next paragraph carrying this numbering, advancing the
    * counters. '' when the paragraph is not numbered or its label cannot be
    * worked out (bullets, unsupported formats).

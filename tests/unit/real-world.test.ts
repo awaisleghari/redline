@@ -11,7 +11,10 @@ import { unzip, zip } from '../../src/common/zip';
 import { makeSpacesExplicit, makeSpacesExplicitInPart } from '../../src/producer/explicit-spaces';
 import { makeStaticRedline } from '../../src/producer/make-static-redline';
 import { produceTrackedChanges } from '../../src/producer/produce';
-import { buildPair, pairById } from '../fixtures/pairs';
+import { buildDocx, buildPair, pairById } from '../fixtures/pairs';
+import type { DocSpec } from '../fixtures/pairs';
+import { freshRelationshipIds, renameInPart } from '../../src/producer/fresh-relationship-ids';
+import { repairSectionReferences } from '../../src/producer/repair-section-references';
 import { compareDocuments } from 'docxodus/core';
 import { repairNotes } from '../../src/producer/repair-notes';
 import { repairParagraphProperties } from '../../src/producer/repair-paragraphs';
@@ -33,11 +36,12 @@ interface Outputs {
 }
 
 /** Both Word files, as the product makes them, each required to pass every one of its checks. */
-async function bothPass(original: Uint8Array, modified: Uint8Array): Promise<Outputs> {
+async function bothPass(original: Uint8Array, modified: Uint8Array, trackedChangesIn?: 'original' | 'modified' | 'both'): Promise<Outputs> {
   const tracked = await produceTrackedChanges(original, modified);
   const trackedReport = await checkTrackedChanges({ original, modified, output: tracked });
   expect(trackedReport.checks.filter((c) => !c.passed)).toEqual([]);
-  const made = await makeStaticRedline(tracked, original, COVER);
+  // (An upload that carried tracked changes is named on the cover page.)
+  const made = await makeStaticRedline(tracked, original, trackedChangesIn ? { ...COVER, trackedChangesIn } : COVER);
   const staticReport = await checkStaticRedline({ original, modified, output: made.docx, ...COVER });
   expect(staticReport.checks.filter((c) => !c.passed)).toEqual([]);
   return { tracked, staticRedline: made.docx, counts: made.counts };
@@ -989,6 +993,69 @@ describe('the one line of a cell replaced, written as a removed paragraph and an
   }
 });
 
+/**
+ * Found on a real contract (held-out run 1, an ADB document carrying tracked changes): a cell's one line replaced
+ * by twenty paragraphs. The engine writes the old line removed with its mark, then every new paragraph added with
+ * its mark, the cell's last included. Left as written, the original read as two paragraphs (the old line, and an
+ * empty one where the cell's last mark stayed), and the redline was withheld.
+ */
+describe('the one line of a cell replaced by several paragraphs', () => {
+  const OLD = 'The scope of requirements is defined elsewhere';
+  const NEW = ['Details of shipping documents follow', 'Three copies of the invoice', 'One certificate of origin'];
+  const run = (text: string): string => `<w:r><w:t xml:space="preserve">${text}</w:t></w:r>`;
+  const change = (tag: string, id: number): string => `<w:${tag} w:id="${9300 + id}" w:author="Redline" w:date="2026-11-25T00:00:00Z"`;
+  const removed = (text: string): string => `<w:p><w:pPr><w:rPr>${change('del', 1)}/></w:rPr></w:pPr>${change('del', 2)}><w:r><w:delText xml:space="preserve">${text}</w:delText></w:r></w:del></w:p>`;
+  const added = (text: string, id: number, wrapper = 'ins'): string => `<w:p><w:pPr><w:rPr>${change('ins', id)}/></w:rPr></w:pPr>${change(wrapper, id + 1)}>${run(text)}</w:${wrapper}></w:p>`;
+  const P = (text: string): string => `<w:p>${run(text)}</w:p>`;
+  const cellOf = (paragraphs: string): string => `<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="9000" w:type="dxa"/></w:tcPr>${paragraphs}</w:tc></w:tr></w:tbl>`;
+
+  for (const [name, lead] of [
+    ['the line is all the cell held', ''],
+    ['another line stands above it', P('Payment terms')],
+  ] as const) {
+    it(`the static redline passes and the old line shares a paragraph with the first new one: ${name}`, async () => {
+      const base = (await buildPair(pairById('one-word-change'))).original;
+      const withCell = (paragraphs: string): Promise<Uint8Array> => editPart(base, /^word\/document\.xml$/, (xml) => xml.replace(/<w:p>.*?<\/w:p>/s, (first) => first + cellOf(lead + paragraphs)));
+      const original = await withCell(P(OLD));
+      const modified = await withCell(NEW.map(P).join(''));
+      const tracked = await withCell(removed(OLD) + added(NEW[0]!, 10) + added(NEW[1]!, 20) + added(NEW[2]!, 30));
+      expect(await failed(checkTrackedChanges({ original, modified, output: tracked }))).toEqual([]);
+      const made = await makeStaticRedline(tracked, original, COVER);
+      const report = await checkStaticRedline({ original, modified, output: made.docx, ...COVER });
+      expect(report.checks.filter((c) => !c.passed)).toEqual([]);
+      const cell = /<w:tc>.*?<\/w:tc>/s.exec(decoder.decode((await unzip(made.docx)).get('word/document.xml')!))![0];
+      expect(cell.match(/<w:p[ >]/g)).toHaveLength(NEW.length + (lead === '' ? 0 : 1));
+      const joined = cell.split(/<w:p[ >]/).find((p) => p.includes(OLD))!;
+      expect(joined.indexOf(OLD)).toBeLessThan(joined.indexOf(NEW[0]!));
+    });
+  }
+});
+
+/** Review finding on the third batch: the replaced line and the new paragraphs numbered. The joined paragraph stays, so it shows no old number. */
+describe('the one numbered line of a cell replaced by several numbered paragraphs', () => {
+  it('the static redline passes, and the joined paragraph carries no old clause number', async () => {
+    const base = (await buildPair(pairById('numbered-clause-deleted'))).original;
+    const numPr = /<w:numPr>.*?<\/w:numPr>/s.exec(decoder.decode((await unzip(base)).get('word/document.xml')!))![0];
+    const OLD = 'The scope of requirements is defined elsewhere';
+    const NEW = ['Details of shipping documents follow', 'Three copies of the invoice', 'One certificate of origin'];
+    const run = (text: string): string => `<w:r><w:t xml:space="preserve">${text}</w:t></w:r>`;
+    const change = (tag: string, id: number): string => `<w:${tag} w:id="${9400 + id}" w:author="Redline" w:date="2026-11-25T00:00:00Z"`;
+    const P = (text: string): string => `<w:p><w:pPr>${numPr}</w:pPr>${run(text)}</w:p>`;
+    const removed = `<w:p><w:pPr>${numPr}<w:rPr>${change('del', 1)}/></w:rPr></w:pPr>${change('del', 2)}><w:r><w:delText xml:space="preserve">${OLD}</w:delText></w:r></w:del></w:p>`;
+    const added = (text: string, id: number): string => `<w:p><w:pPr>${numPr}<w:rPr>${change('ins', id)}/></w:rPr></w:pPr>${change('ins', id + 1)}>${run(text)}</w:ins></w:p>`;
+    const withCell = (paragraphs: string): Promise<Uint8Array> =>
+      editPart(base, /^word\/document\.xml$/, (xml) => xml.replace(/<w:p>.*?<\/w:p>/s, (first) => `${first}<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="9000" w:type="dxa"/></w:tcPr>${paragraphs}</w:tc></w:tr></w:tbl>`));
+    const original = await withCell(P(OLD));
+    const modified = await withCell(NEW.map(P).join(''));
+    const tracked = await withCell(removed + added(NEW[0]!, 10) + added(NEW[1]!, 20) + added(NEW[2]!, 30));
+    expect(await failed(checkTrackedChanges({ original, modified, output: tracked }))).toEqual([]);
+    const made = await makeStaticRedline(tracked, original, COVER);
+    expect((await checkStaticRedline({ original, modified, output: made.docx, ...COVER })).checks.filter((c) => !c.passed)).toEqual([]);
+    const cell = /<w:tc>.*?<\/w:tc>/s.exec(decoder.decode((await unzip(made.docx)).get('word/document.xml')!))![0];
+    expect(cell).not.toContain('RedlineOldNumber');
+  });
+});
+
 /** Review findings on the second batch of held-out fixes: a table in a kept cell that comes or goes, with what follows it. */
 describe('a table that comes or goes inside a kept cell, review findings', () => {
   const P = (text: string): string => (text === '' ? '<w:p/>' : `<w:p><w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`);
@@ -1013,4 +1080,351 @@ describe('a table that comes or goes inside a kept cell, review findings', () =>
       await bothPass(await withBlock(pair.original, outer(before)), await withBlock(pair.original, outer(after)));
     });
   }
+});
+
+/**
+ * Found on real contracts (held-out run 1, ADB procurement documents carrying tracked changes): at the end of a
+ * cell an unnumbered line is replaced by a numbered clause, and the line after it removed. The engine writes the
+ * new clause into the old line's paragraph (old properties, mark removed) and states the clause's numbering on
+ * the cell's last paragraph, whose text is all removed. The clause must show its number where its text is.
+ */
+describe('a numbered clause that replaces the last two lines of a cell', () => {
+  it('the static redline passes and the clause carries its number', async () => {
+    const base = (await buildPair(pairById('numbered-clause-deleted'))).original;
+    const numPr = /<w:numPr>.*?<\/w:numPr>/s.exec(decoder.decode((await unzip(base)).get('word/document.xml')!))![0];
+    const OLD1 = 'Authorised representative of the partner (name and address, and';
+    const OLD2 = 'e-mail address)';
+    const NEW = 'Organisational chart and a list of the board of directors.';
+    const run = (text: string): string => `<w:r><w:t xml:space="preserve">${text}</w:t></w:r>`;
+    const change = (tag: string, id: number): string => `<w:${tag} w:id="${9100 + id}" w:author="Redline" w:date="2026-11-25T00:00:00Z"`;
+    const gone = (text: string, id: number): string => `${change('del', id)}><w:r><w:delText xml:space="preserve">${text}</w:delText></w:r></w:del>`;
+    const inCell = (docx: Uint8Array, paragraphs: string): Promise<Uint8Array> =>
+      editPart(docx, /^word\/document\.xml$/, (xml) => xml.replace(/<w:p>.*?<\/w:p>/s, (first) => `<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="9000" w:type="dxa"/></w:tcPr>${first}${paragraphs}</w:tc></w:tr></w:tbl>`));
+    const original = await inCell(base, `<w:p>${run(OLD1)}</w:p><w:p>${run(OLD2)}</w:p>`);
+    const modified = await inCell(base, `<w:p><w:pPr>${numPr}</w:pPr>${run(NEW)}</w:p>`);
+    const tracked = await inCell(
+      base,
+      `<w:p><w:pPr><w:rPr>${change('del', 1)}/></w:rPr></w:pPr>${change('ins', 2)}>${run(NEW)}</w:ins>${gone(OLD1, 3)}</w:p>` +
+        `<w:p><w:pPr>${numPr}${change('pPrChange', 4)}><w:pPr/></w:pPrChange></w:pPr>${gone(OLD2, 5)}</w:p>`,
+    );
+    expect(await failed(checkTrackedChanges({ original, modified, output: tracked }))).toEqual([]);
+    const made = await makeStaticRedline(tracked, original, COVER);
+    const report = await checkStaticRedline({ original, modified, output: made.docx, ...COVER });
+    expect(report.checks.filter((c) => !c.passed)).toEqual([]);
+    const xml = decoder.decode((await unzip(made.docx)).get('word/document.xml')!);
+    const clause = xml.split('<w:p>').find((p) => p.includes(NEW))!;
+    expect(clause).toContain(numPr);
+  });
+});
+
+/**
+ * Found on a real contract (held-out run 1, an NHS contract carrying tracked changes): every clause in a table
+ * cell removed. The engine writes that as a removal on every paragraph mark but the cell's last, whose text is
+ * removed. Read by the cell-end rule, the first paragraph of that run is the one that stays (emptied) and the
+ * ones below it went; the redline typed an old clause number on the first as well, and was withheld.
+ */
+describe('a run of numbered clauses removed at the end of a cell', () => {
+  const build = async (kept: string): Promise<{ original: Uint8Array; modified: Uint8Array; tracked: Uint8Array }> => {
+    const base = (await buildPair(pairById('numbered-clause-deleted'))).original;
+    const numPr = /<w:numPr>.*?<\/w:numPr>/s.exec(decoder.decode((await unzip(base)).get('word/document.xml')!))![0];
+    const run = (text: string): string => (text === '' ? '' : `<w:r><w:t xml:space="preserve">${text}</w:t></w:r>`);
+    const change = (tag: string, id: number): string => `<w:${tag} w:id="${9200 + id}" w:author="Redline" w:date="2026-11-25T00:00:00Z"`;
+    const gone = (text: string, id: number): string => `${change('del', id)}><w:r><w:delText xml:space="preserve">${text}</w:delText></w:r></w:del>`;
+    const markGone = (id: number): string => `<w:rPr>${change('del', id)}/></w:rPr>`;
+    const withCell = (paragraphs: string): Promise<Uint8Array> =>
+      editPart(base, /^word\/document\.xml$/, (xml) => xml.replace(/<w:p>.*?<\/w:p>/s, (first) => `${first}<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="9000" w:type="dxa"/></w:tcPr>${paragraphs}</w:tc></w:tr></w:tbl>`));
+    const numbered = (text: string): string => `<w:p><w:pPr>${numPr}</w:pPr>${run(text)}</w:p>`;
+    const A = 'give notice in writing of the change';
+    const B = 'implement the change on the date mandated';
+    const C = 'bear its own costs of the change';
+    return {
+      original: await withCell(numbered(kept === '' ? A : kept) + numbered(B) + numbered(C)),
+      modified: await withCell(numbered(kept)),
+      tracked: await withCell(
+        `<w:p><w:pPr>${numPr}${markGone(1)}</w:pPr>${kept === '' ? gone(A, 2) : run(kept)}</w:p>` +
+          `<w:p><w:pPr>${numPr}${markGone(3)}</w:pPr>${gone(B, 4)}</w:p>` +
+          `<w:p><w:pPr>${numPr}</w:pPr>${gone(C, 5)}</w:p>`,
+      ),
+    };
+  };
+  const oldNumbersIn = (xml: string): number => xml.split('RedlineOldNumber"/>').length - 1;
+
+  it('with the clause above them kept: the two that went show their old numbers, the kept one none', async () => {
+    const { original, modified, tracked } = await build('The supplier must pay the fee');
+    expect(await failed(checkTrackedChanges({ original, modified, output: tracked }))).toEqual([]);
+    const made = await makeStaticRedline(tracked, original, COVER);
+    expect((await checkStaticRedline({ original, modified, output: made.docx, ...COVER })).checks.filter((c) => !c.passed)).toEqual([]);
+    expect(oldNumbersIn(decoder.decode((await unzip(made.docx)).get('word/document.xml')!))).toBe(2);
+  });
+
+  it('with every clause in the cell removed: the first is the one emptied, the two below it went', async () => {
+    const { original, modified, tracked } = await build('');
+    expect(await failed(checkTrackedChanges({ original, modified, output: tracked }))).toEqual([]);
+    const made = await makeStaticRedline(tracked, original, COVER);
+    expect((await checkStaticRedline({ original, modified, output: made.docx, ...COVER })).checks.filter((c) => !c.passed)).toEqual([]);
+    expect(oldNumbersIn(decoder.decode((await unzip(made.docx)).get('word/document.xml')!))).toBe(2);
+  });
+});
+
+/**
+ * Found on real contracts (held-out run 1, ADB procurement documents): a text box holding a numbered note. The
+ * engine replaces a changed text box whole, so the note is shown removed and put back. Old clause numbers belong
+ * to the main text only; the removed copy inside the box was given one, and the redline was withheld.
+ */
+describe('a numbered paragraph inside a text box that is replaced', () => {
+  it('both Word files pass, and no old number is typed inside the box', async () => {
+    const base = (await buildPair(pairById('numbered-clause-deleted'))).original;
+    const numPr = /<w:numPr>.*?<\/w:numPr>/s.exec(decoder.decode((await unzip(base)).get('word/document.xml')!))![0];
+    const boxed = await buildPair(pairById('text-box-change'));
+    const withBox = async (from: Uint8Array): Promise<Uint8Array> => {
+      const xml = decoder.decode((await unzip(from)).get('word/document.xml')!);
+      const holder = xml.match(/<w:p>(?:(?!<w:p>|<\/w:p>).)*<w:pict>.*?<\/w:pict>.*?<\/w:p>/s)![0];
+      const inside = /(<w:txbxContent>)(.*?)(<\/w:txbxContent>)/gs;
+      const numbered = holder.replace(inside, (_, open: string, lines: string, close: string) => open + lines.replace(/<w:p>/g, `<w:p><w:pPr>${numPr}</w:pPr>`) + close);
+      expect(numbered).not.toBe(holder);
+      return editPart(base, /^word\/document\.xml$/, (main) => main.replace(/<w:p>.*?<\/w:p>/s, (first) => first + numbered));
+    };
+    const outputs = await bothPass(await withBox(boxed.original), await withBox(boxed.modified));
+    const xml = decoder.decode((await unzip(outputs.staticRedline)).get('word/document.xml')!);
+    for (const box of xml.match(/<w:txbxContent>.*?<\/w:txbxContent>/gs)!) expect(box).not.toContain('RedlineOldNumber');
+  });
+});
+
+/**
+ * Found on real contracts (held-out run 1, ADB procurement documents, on drafts that were themselves made by the
+ * compare engine): inside a Word file each link is tied to its address by a short internal name. The engine
+ * names what it adds R1, R2, ...; a file it produced already holds such names, the new ones collide with them,
+ * and a link came out tied to a picture, or to nothing. The names are replaced before the engine sees them.
+ */
+describe('a document whose internal reference names look like the engine\'s own', () => {
+  const link = (n: number, extra = ''): unknown => ({ kind: 'linked', text: '', before: `Clause ${n}${extra} is published at `, linkText: `site ${n}`, url: `https://example.com/page-${n}`, after: '.' });
+  const line = (text: string): unknown => ({ kind: 'paragraph', text });
+  const build = (blocks: unknown[]): Promise<Uint8Array> => buildDocx({ blocks } as DocSpec);
+  /** Rename every relationship of the main document R1, R2, ... as the engine would have. */
+  const engineNamed = async (docx: Uint8Array): Promise<Uint8Array> => {
+    const files = await unzip(docx);
+    const rels = decoder.decode(files.get('word/_rels/document.xml.rels')!);
+    const names = new Map([...rels.matchAll(/Id="([^"]+)"/g)].map((m, i) => [m[1]!, `R${i + 1}`]));
+    files.set('word/_rels/document.xml.rels', encoder.encode(rels.replace(/Id="([^"]+)"/g, (_, id: string) => `Id="${names.get(id)}"`)));
+    files.set('word/document.xml', encoder.encode(decoder.decode(files.get('word/document.xml')!).replace(/r:(id|embed)="([^"]+)"/g, (_, a: string, id: string) => `r:${a}="${names.get(id)}"`)));
+    return zip(files);
+  };
+
+  it('both Word files pass, with every link pointing where it did', async () => {
+    const original = await build([line('Heading'), link(1), link(2), link(3), link(4), link(5), line('End')]);
+    const modified = await engineNamed(await build([line('Heading'), link(1, ' as amended'), link(2), link(6), link(3, ' new'), link(4), link(5), line('End')]));
+    expect(decoder.decode((await unzip(modified)).get('word/document.xml')!)).toMatch(/<w:hyperlink [^>]*r:id="R\d+"/);
+    await bothPass(original, modified);
+    await bothPass(modified, original);
+  });
+
+  it('a document with no such name is passed on byte for byte', async () => {
+    const docx = await build([line('Heading'), link(1)]);
+    expect(await freshRelationshipIds(docx)).toBe(docx);
+  });
+
+  it('only the names are replaced, wherever a part uses them', () => {
+    const names = new Map([['R1', 'rIdU1'], ['R2a', 'rIdU2']]);
+    const part =
+      `<w:document xmlns:w="w" xmlns:rel='http://schemas.openxmlformats.org/officeDocument/2006/relationships' xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:v="v">` +
+      `<w:hyperlink rel:id="R1" w:anchor="R1"><w:t>R1 and "R2a" and the words rel:id="R1" typed as text</w:t></w:hyperlink><v:imagedata o:relid='R2a' o:title="R1"/><a:blip rel:embed="rId7" rel:link = "R2a"/></w:document>`;
+    expect(renameInPart(part, names)).toBe(
+      `<w:document xmlns:w="w" xmlns:rel='http://schemas.openxmlformats.org/officeDocument/2006/relationships' xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:v="v">` +
+        `<w:hyperlink rel:id="rIdU1" w:anchor="R1"><w:t>R1 and "R2a" and the words rel:id="R1" typed as text</w:t></w:hyperlink><v:imagedata o:relid="rIdU2" o:title="R1"/><a:blip rel:embed="rId7" rel:link = "rIdU2"/></w:document>`,
+    );
+  });
+});
+
+/**
+ * Found on a real contract (held-out run 1, an ADB document carrying tracked changes): the paragraph holding a
+ * section break changed so much that the engine showed it removed and added again. Its output then held one
+ * section break more than either document, and each later section named the header of the section after it.
+ */
+describe('a section break shown removed and added again', () => {
+  const WNS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
+  const ref = (type: string, id: string): string => `<w:headerReference w:type="${type}" r:id="${id}"/>`;
+  const PAGE = '<w:pgSz w:w="12240" w:h="15840"/>';
+  const breakWith = (refs: string, mark = '', margin = 1260): string => `<w:p><w:pPr>${mark ? `<w:rPr><w:${mark} w:id="1" w:author="x"/></w:rPr>` : ''}<w:sectPr>${refs}${PAGE}<w:pgMar w:top="${margin}"/></w:sectPr></w:pPr></w:p>`;
+  const text = (t: string): string => `<w:p><w:r><w:t>${t}</w:t></w:r></w:p>`;
+  const main = (blocks: string[], last: string): string => `<w:document ${WNS}><w:body>${blocks.join('')}<w:sectPr>${last}${PAGE}</w:sectPr></w:body></w:document>`;
+  const RELS = `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${['A', 'B', 'C', 'D', 'E'].map((n) => `<Relationship Id="rId${n}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header${n}.xml"/>`).join('')}</Relationships>`;
+  const AB = ref('even', 'rIdA') + ref('default', 'rIdB');
+  const C = ref('default', 'rIdC');
+  const DE = ref('even', 'rIdD') + ref('default', 'rIdE');
+  // Both uploads: four sections. The second carries on with the first's headers; the third names one of its own.
+  const upload = { main: main([text('one'), breakWith(AB), text('two'), breakWith(''), text('three'), breakWith(C, '', 990)], DE), rels: RELS };
+  // The engine's output on the real contract: the first break twice, and the two after it naming the next section's headers.
+  const engine = main([text('one'), breakWith(AB, 'del'), breakWith(AB, 'ins'), text('two'), breakWith(C), text('three'), breakWith(DE, '', 990)], DE);
+  const namedAt = (xml: string): string[] => [...xml.matchAll(/<w:sectPr\b.*?<\/w:sectPr>/gs)].map((m) => [...m[0].matchAll(/w:type="(\w+)" r:id="rId(\w)"/g)].map((x) => `${x[1]}:${x[2]}`).join(','));
+
+  it('each section break that stays names the headers the modified document shows in that section', () => {
+    const repaired = repairSectionReferences(engine, RELS, upload, upload)!;
+    // (A section that names none carries on with the previous section's: written out in full, as the engine does.)
+    expect(namedAt(repaired)).toEqual(['even:A,default:B', 'even:A,default:B', 'even:A,default:B', 'even:A,default:C', 'even:D,default:E']);
+    // Nothing else in a section break moves: the headers stay in front of the page settings, which are untouched.
+    expect(repaired).toContain(`<w:sectPr>${ref('even', 'rIdA')}${C}${PAGE}<w:pgMar w:top="990"/></w:sectPr>`);
+    expect(repaired.split(`<w:sectPr>${AB}${PAGE}<w:pgMar w:top="1260"/></w:sectPr>`)).toHaveLength(4);
+  });
+
+  it('nothing is touched where the output has as many section breaks as the uploads', () => {
+    expect(repairSectionReferences(upload.main.replace(C, DE), RELS, upload, upload)).toBeUndefined();
+  });
+
+  it('nothing is touched where the uploads arrange their headers differently (review finding: the engine then points sections at parts of its own)', () => {
+    const rearranged = { main: upload.main.replace(C, ref('default', 'rIdD')), rels: RELS };
+    expect(repairSectionReferences(engine, RELS, upload, rearranged)).toBeUndefined();
+    expect(repairSectionReferences(engine, RELS, rearranged, upload)).toBeUndefined();
+    const extra = RELS.replace('</Relationships>', '<Relationship Id="rIdHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header99.xml"/></Relationships>');
+    expect(repairSectionReferences(engine, extra, upload, upload)).toBeUndefined();
+  });
+
+  it('nothing is touched where the breaks cannot be paired off, or a header is not in the output under the same name', () => {
+    const unpaired = main([text('one'), breakWith(AB, 'del'), breakWith(AB, 'ins'), text('two'), breakWith(C), breakWith(C), text('three'), breakWith(DE)], DE);
+    expect(repairSectionReferences(unpaired, RELS, upload, upload)).toBeUndefined();
+    expect(repairSectionReferences(engine, RELS.replace('Target="headerC.xml"', 'Target="header9.xml"'), upload, upload)).toBeUndefined();
+    expect(repairSectionReferences(engine, RELS.replace(/<Relationship Id="rIdC"[^>]*>/, ''), upload, upload)).toBeUndefined();
+  });
+
+  it('a document in which the engine shows a section break removed and added: both Word files pass', async () => {
+    const base = (await buildPair(pairById('footer-change'))).original;
+    const make = async (breakText: string): Promise<Uint8Array> => {
+      const files = await unzip(base);
+      const xml = decoder.decode(files.get('word/document.xml')!);
+      const named = /<w:sectPr\b[^>]*>((?:(?!<\/w:sectPr>).)*)<\/w:sectPr>(?=<\/w:body>)/.exec(xml)![1]!;
+      const bare = named.replace(/<w:(header|footer)Reference\b[^>]*\/>/g, '');
+      const headerId = /<w:headerReference\b[^>]*r:id="([^"]+)"/.exec(named)![1]!;
+      let rels = decoder.decode(files.get('word/_rels/document.xml.rels')!);
+      const target = (new RegExp(`Id="${headerId}"[^>]*Target="([^"]+)"`).exec(rels) ?? new RegExp(`Target="([^"]+)"[^>]*Id="${headerId}"`).exec(rels))![1]!;
+      let types = decoder.decode(files.get('[Content_Types].xml')!);
+      for (let n = 1; n <= 5; n++) {
+        files.set(`word/header9${n}.xml`, encoder.encode(decoder.decode(files.get(`word/${target}`)!).replace(/(<w:t[^>]*>)[^<]*/, `$1Header number ${n} of the set`)));
+        rels = rels.replace('</Relationships>', `<Relationship Id="rIdH${n}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header9${n}.xml"/></Relationships>`);
+        types = types.replace('</Types>', `<Override PartName="/word/header9${n}.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/></Types>`);
+      }
+      files.set('word/_rels/document.xml.rels', encoder.encode(rels));
+      files.set('[Content_Types].xml', encoder.encode(types));
+      const h = (type: string, n: number): string => `<w:headerReference w:type="${type}" r:id="rIdH${n}"/>`;
+      const P = (t: string, sect?: string): string => `<w:p>${sect === undefined ? '' : `<w:pPr><w:sectPr>${sect}</w:sectPr></w:pPr>`}${t ? `<w:r><w:t xml:space="preserve">${t}</w:t></w:r>` : ''}</w:p>`;
+      const body = [P('Part one of the agreement'), P(breakText, h('even', 1) + h('default', 2) + bare), P('Part two of the agreement'), P('', bare), P('Part three of the agreement'), P('', h('default', 3) + bare), P('Part four of the agreement'), `<w:sectPr>${h('even', 4) + h('default', 5) + bare}</w:sectPr>`];
+      files.set('word/document.xml', encoder.encode(xml.replace(/<w:body>.*<\/w:body>/s, `<w:body>${body.join('')}</w:body>`)));
+      return zip(files);
+    };
+    const original = await make('The first schedule ends on this line');
+    const modified = await make('Completely different wording closes that chapter now');
+    const { tracked } = await bothPass(original, modified);
+    // The situation the repair is for: one section break more than either document.
+    expect(decoder.decode((await unzip(tracked)).get('word/document.xml')!).split('<w:sectPr').length - 1).toBe(5);
+  });
+});
+
+/**
+ * Found on a real contract (held-out run 1, a tender schedule): words typed into the footnote separator (the
+ * rule between the text and the footnotes), used as a second footer. The engine does not compare separators, so
+ * a change of wording there was missing from the redline, which was withheld.
+ */
+describe('wording typed into the footnote separator', () => {
+  const withSeparatorText = (docx: Uint8Array, wording: string): Promise<Uint8Array> =>
+    editPart(docx, /^word\/footnotes\.xml$/, (xml) => {
+      const typed = `<w:p><w:r><w:t xml:space="preserve">${wording}</w:t></w:r><w:r><w:tab/></w:r></w:p>`;
+      const out = xml.replace(/(<w:footnote\b[^>]*w:type="separator"[^>]*>)/, `$1${typed}`);
+      if (out === xml) throw new Error('the fixture has no footnote separator');
+      return out;
+    });
+
+  it('a change of wording there is shown, and both Word files pass', async () => {
+    const pair = await buildPair(pairById('footnote-change'));
+    const original = await withSeparatorText(pair.original, 'Contract No: 1 Revision date: 1 May');
+    const modified = await withSeparatorText(pair.modified, 'Contract No: 1 Revision date: 9 June');
+    const { tracked, staticRedline } = await bothPass(original, modified);
+    const notes = decoder.decode((await unzip(tracked)).get('word/footnotes.xml')!);
+    expect(notes).toMatch(/<w:del\b[^>]*>(?:(?!<\/w:del>).)*Revision date: 1 May/s);
+    expect(notes).toMatch(/<w:ins\b[^>]*>(?:(?!<\/w:ins>).)*Revision date: 9 June/s);
+    expect(decoder.decode((await unzip(staticRedline)).get('word/footnotes.xml')!)).toContain('Revision date: 1 May');
+  });
+
+  it('the same wording in both is left exactly as the engine wrote it', async () => {
+    const pair = await buildPair(pairById('footnote-change'));
+    const original = await withSeparatorText(pair.original, 'Contract No: 1');
+    const modified = await withSeparatorText(pair.modified, 'Contract No: 1');
+    const { tracked } = await bothPass(original, modified);
+    const separator = /<w:footnote\b[^>]*w:type="separator"[^>]*>.*?<\/w:footnote>/s.exec(decoder.decode((await unzip(tracked)).get('word/footnotes.xml')!))![0];
+    expect(separator).not.toMatch(/<w:(ins|del)\b/);
+  });
+});
+
+/**
+ * Found on a real contract (held-out run 1, an ADB document): one numbered list running through a text box and
+ * on into the main text. Word stores a text box twice (a modern form and a legacy one) and shows it once. The
+ * redline counted both stored forms when working out a removed clause's old number, and the Checker, comparing
+ * the two forms, counted them three times; neither agreed with Word, or with each other.
+ */
+describe('a numbered list that runs through a text box and on into the main text', () => {
+  const NS_BOX = 'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" xmlns:v="urn:schemas-microsoft-com:vml"';
+  const withBoxedItem = async (docx: Uint8Array): Promise<Uint8Array> => {
+    const numPr = /<w:numPr>.*?<\/w:numPr>/s.exec(decoder.decode((await unzip(docx)).get('word/document.xml')!))![0];
+    const box = `<w:txbxContent><w:p><w:pPr>${numPr}</w:pPr><w:r><w:t xml:space="preserve">A note that opens the list</w:t></w:r></w:p></w:txbxContent>`;
+    const holder = `<w:p><w:r><mc:AlternateContent ${NS_BOX}><mc:Choice Requires="wps"><w:drawing><wps:txbx>${box}</wps:txbx></w:drawing></mc:Choice><mc:Fallback><w:pict><v:textbox>${box}</v:textbox></w:pict></mc:Fallback></mc:AlternateContent></w:r></w:p>`;
+    return editPart(docx, /^word\/document\.xml$/, (xml) => xml.replace(/<w:p>.*?<\/w:p>/s, (first) => first + holder));
+  };
+  const oldNumberIn = async (staticRedline: Uint8Array): Promise<string> => {
+    const xml = decoder.decode((await unzip(staticRedline)).get('word/document.xml')!);
+    return /RedlineOldNumber"\/>.*?<w:t[^>]*>([^<]*)</s.exec(xml)![1]!;
+  };
+
+  it('a removed clause shows the number Word gave it: the text box counted once', async () => {
+    const pair = await buildPair(pairById('numbered-clause-deleted'));
+    const plain = await oldNumberIn((await bothPass(pair.original, pair.modified)).staticRedline);
+    const boxed = await oldNumberIn((await bothPass(await withBoxedItem(pair.original), await withBoxedItem(pair.modified))).staticRedline);
+    expect(plain).toBe('(b)');
+    expect(boxed).toBe('(c)');
+  });
+
+  it('an output whose legacy form of the box has lost its numbering is caught (review finding)', async () => {
+    const pair = await buildPair(pairById('numbered-clause-deleted'));
+    const original = await withBoxedItem(pair.original);
+    const modified = await withBoxedItem(pair.modified);
+    const { tracked, staticRedline } = await bothPass(original, modified);
+    const damage = (docx: Uint8Array): Promise<Uint8Array> =>
+      editPart(docx, /^word\/document\.xml$/, (xml) => {
+        const out = xml.replace(/(<mc:Fallback\b[^>]*>(?:(?!<\/mc:Fallback>).)*?)<w:numPr>.*?<\/w:numPr>/s, '$1');
+        if (out === xml) throw new Error('nothing was damaged');
+        return out;
+      });
+    expect(await failed(checkTrackedChanges({ original, modified, output: await damage(tracked) }))).not.toEqual([]);
+    const report = await checkStaticRedline({ original, modified, output: await damage(staticRedline), ...COVER });
+    expect(report.checks.filter((c) => !c.passed)).not.toEqual([]);
+  });
+});
+
+/**
+ * Found on a real contract (held-out run 1, an NHS agreement published with tracked changes in it): a footnote
+ * emptied in the draft, its one paragraph mark flagged as removed. Word keeps that paragraph (a note cannot lose
+ * its last one). The Checker read the note as holding no paragraph at all, so no output could ever match it.
+ */
+describe('an upload whose emptied footnote has its only paragraph mark flagged as removed', () => {
+  it('both Word files pass', async () => {
+    const pair = await buildPair(pairById('footnote-change'));
+    const emptied = '<w:footnote w:id="1"><w:p><w:pPr><w:pStyle w:val="FootnoteText"/><w:rPr><w:del w:id="900" w:author="A" w:date="2026-01-01T00:00:00Z"/></w:rPr></w:pPr></w:p></w:footnote>';
+    const original = await editPart(pair.original, /^word\/footnotes\.xml$/, (xml) => {
+      const out = xml.replace(/<w:footnote w:id="1">.*?<\/w:footnote>/s, emptied);
+      if (out === xml) throw new Error('the fixture has no footnote 1');
+      return out;
+    });
+    await bothPass(original, pair.modified, 'original');
+    await bothPass(original, original, 'both');
+  });
+
+  it('an output whose footnote has lost its paragraph altogether is still caught (review finding)', async () => {
+    const pair = await buildPair(pairById('footnote-change'));
+    const blank = (docx: Uint8Array): Promise<Uint8Array> => editPart(docx, /^word\/footnotes\.xml$/, (xml) => xml.replace(/<w:footnote w:id="1">.*?<\/w:footnote>/s, '<w:footnote w:id="1"><w:p><w:pPr><w:pStyle w:val="FootnoteText"/></w:pPr></w:p></w:footnote>'));
+    const original = await blank(pair.original);
+    const modified = await blank(pair.modified);
+    const { tracked } = await bothPass(original, modified);
+    const damaged = await editPart(tracked, /^word\/footnotes\.xml$/, (xml) => {
+      const out = xml.replace(/(<w:footnote\b(?![^>]*w:type=)[^>]*>).*?(<\/w:footnote>)/s, '$1$2');
+      if (out === xml) throw new Error('nothing was damaged');
+      return out;
+    });
+    expect(await failed(checkTrackedChanges({ original, modified, output: damaged }))).not.toEqual([]);
+  });
 });
