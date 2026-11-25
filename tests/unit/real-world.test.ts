@@ -16,7 +16,7 @@ import { compareDocuments } from 'docxodus/core';
 import { repairNotes } from '../../src/producer/repair-notes';
 import { repairParagraphProperties } from '../../src/producer/repair-paragraphs';
 import { unwrapRowControls, unwrapRowControlsInPart } from '../../src/producer/unwrap-row-controls';
-import { withBlueDoubleUnderline, withCellsInContentControls, withGlossary, withInk, withParagraphsAtCellEnd, withClauseStyle, withRowsInContentControls, withNumberedClausesInCell, withDocumentWideSpaces, withNoteInTable, withSections } from '../fixtures/real-world';
+import { withBlueDoubleUnderline, withCellsInContentControls, withGlossary, withInk, withParagraphsAtCellEnd, withRedStrikethrough, withClauseStyle, withRowsInContentControls, withNumberedClausesInCell, withDocumentWideSpaces, withNoteInTable, withSections } from '../fixtures/real-world';
 
 const COVER = { originalName: 'original.docx', modifiedName: 'modified.docx', comparedAt: '24 November 2026 at 10:00 (UTC+00:00)' };
 const decoder = new TextDecoder();
@@ -509,6 +509,70 @@ describe('table rows wrapped in content controls', () => {
       if ((await failed(checkTrackedChanges({ original, modified, output: raw }))).length > 0) refused++;
     }
     expect(refused).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * Found on a real contract (Stage 7): a document whose own text (there, just a paragraph mark) is formatted red
+ * and struck through, which is how the redline shows deletions. The owner's rule for blue, applied to red: such a
+ * redline shows its deletions in dark orange and says so in the legend; any other redline stays red.
+ */
+describe('a document that itself uses red strikethrough', () => {
+  const ALT_LEGEND = 'Deleted text (shown in dark orange, because this document itself contains red struck-through text)';
+  const bodyOf = async (docx: Uint8Array): Promise<string> => decoder.decode((await unzip(docx)).get('word/document.xml')!);
+  const deletedIn = (xml: string, colour: string): number => (xml.match(new RegExp(`<w:strike/><w:color w:val="${colour}"/>`, 'g')) ?? []).length;
+
+  for (const [which, shape] of [
+    ['a stretch of text in the modified document', { original: undefined, modified: 'text' }],
+    ['a stretch of text in the original only', { original: 'text', modified: undefined }],
+    ['only a paragraph mark, in both documents (as in the real contract)', { original: 'paragraph mark', modified: 'paragraph mark' }],
+  ] as const) {
+    it(`${which}: deletions are dark orange, the legend says why, and both Word files pass`, async () => {
+      const pair = await buildPair(pairById('several-changes'));
+      const original = shape.original ? await withRedStrikethrough(pair.original, shape.original) : pair.original;
+      const modified = shape.modified ? await withRedStrikethrough(pair.modified, shape.modified) : pair.modified;
+      const { staticRedline, counts } = await bothPass(original, modified);
+      const xml = await bodyOf(staticRedline);
+      expect(xml).toContain(ALT_LEGEND);
+      expect(deletedIn(xml, 'C55A11')).toBeGreaterThan(1); // the legend sample and the deletions
+      expect(counts.deletions).toBeGreaterThan(0);
+      // The document's own red struck-through text is still there, untouched, where the modified document has it.
+      if (shape.modified) expect(deletedIn(xml, 'FF0000')).toBeGreaterThan(0);
+    });
+  }
+
+  it('an ordinary pair stays red, with the ordinary legend', async () => {
+    const pair = await buildPair(pairById('several-changes'));
+    const { staticRedline } = await bothPass(pair.original, pair.modified);
+    const xml = await bodyOf(staticRedline);
+    expect(xml).not.toContain('dark orange');
+    expect(xml).not.toContain('C55A11');
+    expect(deletedIn(xml, 'FF0000')).toBeGreaterThan(1);
+  });
+
+  it('a document with both looks of its own gets both alternative colours, and passes', async () => {
+    const pair = await buildPair(pairById('several-changes'));
+    const modified = await withBlueDoubleUnderline(await withRedStrikethrough(pair.modified, 'paragraph mark'));
+    const xml = await bodyOf((await bothPass(pair.original, modified)).staticRedline);
+    expect(xml).toContain(ALT_LEGEND);
+    expect(xml).toContain('shown in magenta');
+  });
+
+  it('the wrong colour either way, or a legend that does not match, is caught', async () => {
+    const pair = await buildPair(pairById('several-changes'));
+    const redModified = await withRedStrikethrough(pair.modified);
+    // A redline that should be dark orange, made as if nothing were unusual (red): the document's own red text reads as a deletion.
+    const tracked = await produceTrackedChanges(pair.original, redModified);
+    const madeRed = await makeStaticRedline(tracked, pair.original, { ...COVER, style: { deletedColor: 'FF0000' } });
+    expect(await failed(checkStaticRedline({ original: pair.original, modified: redModified, output: madeRed.docx, ...COVER }))).not.toEqual([]);
+    // A redline in dark orange where nothing calls for it.
+    const plainTracked = await produceTrackedChanges(pair.original, pair.modified);
+    const madeOrange = await makeStaticRedline(plainTracked, pair.original, { ...COVER, style: { deletedColor: 'C55A11' } });
+    expect(await failed(checkStaticRedline({ original: pair.original, modified: pair.modified, output: madeOrange.docx, ...COVER }))).not.toEqual([]);
+    // The right colour but the ordinary legend text.
+    const { staticRedline } = await bothPass(pair.original, redModified);
+    const wrongLegend = await editPart(staticRedline, /^word\/document\.xml$/, (xml) => xml.replace(ALT_LEGEND, 'Deleted text'));
+    expect(await failed(checkStaticRedline({ original: pair.original, modified: redModified, output: wrongLegend, ...COVER }))).toContain('cover-page');
   });
 });
 

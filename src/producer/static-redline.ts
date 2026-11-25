@@ -98,8 +98,8 @@ function removeRunProperty(rPr: Element, name: string): void {
 }
 
 /** Apply a change's formatting to a set of run properties (of a run, or of a paragraph mark). */
-function applyChangeStyle(rPr: Element, kind: ChangeKind, insertedColor: string): void {
-  const style = kind === 'inserted' ? { ...CHANGE_STYLE.inserted, color: insertedColor } : CHANGE_STYLE[kind];
+function applyChangeStyle(rPr: Element, kind: ChangeKind, colors: { insertedColor: string; deletedColor: string }): void {
+  const style = kind === 'inserted' ? { ...CHANGE_STYLE.inserted, color: colors.insertedColor } : kind === 'deleted' ? { ...CHANGE_STYLE.deleted, color: colors.deletedColor } : CHANGE_STYLE[kind];
   setRunProperty(rPr, 'color', { val: style.color });
   if (style.underline) setRunProperty(rPr, 'u', { val: style.underline });
   if (style.strike) {
@@ -166,6 +166,8 @@ export interface StaticRedlineStyleOptions {
   markFormattingChanges: boolean;
   /** The colour of inserted text: the standard blue, or the alternative where a document itself uses blue double underline. */
   insertedColor: string;
+  /** The colour of deleted text (see DELETED_COLOR). */
+  deletedColor: string;
 }
 
 /**
@@ -174,6 +176,30 @@ export interface StaticRedlineStyleOptions {
  * a dark magenta, and the legend says so (owner's decision, 2026-11-24).
  */
 export const INSERTED_COLOR = { standard: '0000FF', alternative: 'AA00AA' } as const;
+/**
+ * Deleted text, on the same rule: red, unless one of the two documents itself contains text (or a paragraph mark)
+ * formatted red with a strikethrough (found on a real contract). Then deletions are shown in a dark orange, and the
+ * legend says so.
+ */
+export const DELETED_COLOR = { standard: 'FF0000', alternative: 'C55A11' } as const;
+
+/** Whether a part's own runs or paragraph marks are formatted red with a (single) strikethrough, stated on the run or mark itself. */
+export function usesDeletionLook(xml: string): boolean {
+  if (!/w:val="FF0000"/i.test(xml) || !/<w:strike\b/.test(xml)) return false;
+  const root = new DOMParser().parseFromString(xml, 'application/xml').documentElement as unknown as Element;
+  for (const name of ['r', 'pPr']) {
+    const owners = root.getElementsByTagNameNS(W, name);
+    for (let i = 0; i < owners.length; i++) {
+      const rPr = elementChildren(owners.item(i) as unknown as Element).find((c) => isW(c, 'rPr'));
+      if (!rPr) continue;
+      const color = elementChildren(rPr).find((c) => isW(c, 'color'));
+      const strike = elementChildren(rPr).find((c) => isW(c, 'strike'));
+      const struck = !!strike && !['0', 'false', 'off'].includes(strike.getAttributeNS(W, 'val') ?? '');
+      if (color && !color.getAttributeNS(W, 'themeColor') && color.getAttributeNS(W, 'val')?.toUpperCase() === DELETED_COLOR.standard && struck) return true;
+    }
+  }
+  return false;
+}
 
 /** Whether a part's own runs or paragraph marks are formatted blue with a double underline (stated on the run or mark itself). */
 export function usesInsertionLook(xml: string): boolean {
@@ -192,7 +218,7 @@ export function usesInsertionLook(xml: string): boolean {
   return false;
 }
 
-export const DEFAULT_STYLE_OPTIONS: StaticRedlineStyleOptions = { deletionBeforeInsertion: true, unnumberRemovedParagraphs: true, showOldNumbers: true, markFormattingChanges: true, insertedColor: INSERTED_COLOR.standard };
+export const DEFAULT_STYLE_OPTIONS: StaticRedlineStyleOptions = { deletionBeforeInsertion: true, unnumberRemovedParagraphs: true, showOldNumbers: true, markFormattingChanges: true, insertedColor: INSERTED_COLOR.standard, deletedColor: DELETED_COLOR.standard };
 
 const hasFlag = (properties: Element | undefined, names: string[]): boolean => !!properties && kids(properties).some((c) => isWord(c) && names.includes(c.localName!));
 
@@ -424,7 +450,7 @@ class PartConverter {
     style.setAttributeNS(W, `${prefix}:val`, OLD_NUMBER_STYLE);
     rPr.appendChild(style);
     run.appendChild(rPr);
-    applyChangeStyle(rPr, kind, this.options.insertedColor);
+    applyChangeStyle(rPr, kind, this.options);
     const text = make('t');
     text.setAttribute('xml:space', 'preserve');
     text.appendChild(doc.createTextNode(label));
@@ -584,7 +610,7 @@ class PartConverter {
       if (child.localName === 'delText') rename(child, 't');
       else if (child.localName === 'delInstrText') rename(child, 'instrText');
     }
-    if (kind) applyChangeStyle(runProperties(run), kind, this.options.insertedColor);
+    if (kind) applyChangeStyle(runProperties(run), kind, this.options);
     if (hasContent) this.tokens.push(kind ?? 'unchanged');
     // Text boxes and other nested content inside the run.
     for (const child of elementChildren(run)) if (!isW(child, 'rPr')) this.convert(child, kind);
@@ -638,7 +664,7 @@ class PartConverter {
         // (A run of removed paragraphs ending in one of which part remains is left as it is: which clause number
         // the remaining part should carry cannot be told here, and the Checker judges the result.)
         if (previous && index !== undefined && this.tokens[index] === 'unchanged' && (single || !removal || whollyRemoved || content.length === 0)) {
-          applyChangeStyle(markProperties(previous), markKind, this.options.insertedColor);
+          applyChangeStyle(markProperties(previous), markKind, this.options);
           this.tokens[index] = markKind;
           // Numbering must follow (found on real contracts: otherwise two paragraphs keep a number where the
           // modified document has one clause, and every later clause is numbered one too high).
@@ -676,7 +702,7 @@ class PartConverter {
     if (this.options.deletionBeforeInsertion) this.putDeletionsFirst(paragraph);
     for (const child of elementChildren(paragraph)) if (!isW(child, 'pPr')) this.visit(child, kind);
 
-    if (markKind) applyChangeStyle(markProperties(paragraph), markKind, this.options.insertedColor);
+    if (markKind) applyChangeStyle(markProperties(paragraph), markKind, this.options);
     const numberLost = keepsNumber ? undefined : markKind === 'deleted' || markKind === 'movedFrom' ? markKind : numberLostAtCellEnd;
     if (numberLost) {
       const label = this.oldNumberOf.get(paragraph);

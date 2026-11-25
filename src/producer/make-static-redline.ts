@@ -9,7 +9,7 @@ import { unzip, zip } from '../common/zip';
 import { acceptTrackedChanges, hasTrackedChanges } from './accept-changes';
 import { coverPageXml, coverStylesXml, type CoverPageContent } from './cover-page';
 import { readOriginal, StyleSheet } from './original-reader';
-import { convertPart, DEFAULT_STYLE_OPTIONS, INSERTED_COLOR, PROPERTY_CHANGE_RECORDS, usesInsertionLook, type ChangeCounts, type StaticRedlineStyleOptions } from './static-redline';
+import { convertPart, DEFAULT_STYLE_OPTIONS, DELETED_COLOR, INSERTED_COLOR, PROPERTY_CHANGE_RECORDS, usesDeletionLook, usesInsertionLook, type ChangeCounts, type StaticRedlineStyleOptions } from './static-redline';
 
 const W = NS.w;
 const decoder = new TextDecoder();
@@ -208,14 +208,18 @@ export async function makeStaticRedline(trackedChanges: Uint8Array, original: Ui
 
   // If either document itself uses blue double underline, insertions are shown in the alternative colour. The original is
   // looked at as accepted; the modified document's text is all in the tracked-changes file.
-  const alternativeInsertionColor = [...originalParts.textParts.map((name) => text(originalFiles, name)!), ...textParts.map((name) => decoder.decode(files.get(name)!))].some(usesInsertionLook);
+  const ownText = [...originalParts.textParts.map((name) => text(originalFiles, name)!), ...textParts.map((name) => decoder.decode(files.get(name)!))];
+  const alternativeInsertionColor = ownText.some(usesInsertionLook);
   const insertedColor = alternativeInsertionColor ? INSERTED_COLOR.alternative : INSERTED_COLOR.standard;
+  // The same for deletions: red struck-through text of the documents' own.
+  const alternativeDeletionColor = ownText.some(usesDeletionLook);
+  const deletedColor = alternativeDeletionColor ? DELETED_COLOR.alternative : DELETED_COLOR.standard;
 
   const counts: ChangeCounts = { insertions: 0, deletions: 0, moves: 0, formattingChanges: 0 };
   const converted = new Map<string, string>();
   const trackedStyles = new StyleSheet(text(files, styles));
   for (const part of textParts) {
-    const result = convertPart(decoder.decode(files.get(part)!), { ...DEFAULT_STYLE_OPTIONS, insertedColor, ...options.style }, { info, styles: trackedStyles, isMain: part === main });
+    const result = convertPart(decoder.decode(files.get(part)!), { ...DEFAULT_STYLE_OPTIONS, insertedColor, deletedColor, ...options.style }, { info, styles: trackedStyles, isMain: part === main });
     converted.set(part, result.xml);
     counts.insertions += result.counts.inserted;
     counts.deletions += result.counts.deleted;
@@ -225,7 +229,7 @@ export async function makeStaticRedline(trackedChanges: Uint8Array, original: Ui
 
   const stated = options.trackedChangesIn;
   const trackedChangesIn = stated === 'original' || stated === 'modified' || stated === 'both' ? stated : stated === undefined && (await hasTrackedChanges(original)) ? 'original' : undefined;
-  const content: CoverPageContent = { originalName: options.originalName, modifiedName: options.modifiedName, comparedAt: options.comparedAt, ...counts, trackedChangesIn, alternativeInsertionColor };
+  const content: CoverPageContent = { originalName: options.originalName, modifiedName: options.modifiedName, comparedAt: options.comparedAt, ...counts, trackedChangesIn, alternativeInsertionColor, alternativeDeletionColor };
   const settingsPart = [...files.keys()].find((name) => /(^|\/)settings\.xml$/.test(name));
   const facingPages = settingsPart !== undefined && /<w:(evenAndOddHeaders|mirrorMargins)(?![^>]*w:val="(0|false|off)")[^>]*>/.test(decoder.decode(files.get(settingsPart)!));
   converted.set(main, addCoverPage(converted.get(main)!, content, facingPages));

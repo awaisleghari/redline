@@ -97,16 +97,24 @@ export function withNoteInTable(docx: Uint8Array, secondRow: string): Promise<Ui
  * double underline. `where` chooses a stretch of text (the last run of the main text) or a paragraph mark only.
  */
 export function withBlueDoubleUnderline(docx: Uint8Array, where: 'text' | 'paragraph mark' = 'text'): Promise<Uint8Array> {
-  const look = '<w:color w:val="0000FF"/><w:u w:val="double"/>';
+  return withLook(docx, '<w:color w:val="0000FF"/><w:u w:val="double"/>', where);
+}
+
+/** The same with the look of a deletion: the last stretch of text, or the first paragraph mark, formatted red and struck through. */
+export function withRedStrikethrough(docx: Uint8Array, where: 'text' | 'paragraph mark' = 'text'): Promise<Uint8Array> {
+  return withLook(docx, '<w:strike/><w:color w:val="FF0000"/>', where);
+}
+
+function withLook(docx: Uint8Array, look: string, where: 'text' | 'paragraph mark'): Promise<Uint8Array> {
   return editParts(docx, (name, xml) => {
     if (name !== 'word/document.xml') return xml;
     if (where === 'paragraph mark') {
       const at = xml.indexOf('<w:p>');
-      if (at < 0) throw new Error('withBlueDoubleUnderline: no plain paragraph found');
+      if (at < 0) throw new Error('withLook: no plain paragraph found');
       return `${xml.slice(0, at)}<w:p><w:pPr><w:rPr>${look}</w:rPr></w:pPr>${xml.slice(at + '<w:p>'.length)}`;
     }
     const at = xml.lastIndexOf('<w:r><w:t');
-    if (at < 0) throw new Error('withBlueDoubleUnderline: no plain run found');
+    if (at < 0) throw new Error('withLook: no plain run found');
     return `${xml.slice(0, at)}<w:r><w:rPr>${look}</w:rPr>${xml.slice(at + '<w:r>'.length)}`;
   });
 }

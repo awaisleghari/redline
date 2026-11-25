@@ -408,7 +408,7 @@ export function comparePdf(reading: StoryReading, pdf: PdfReading): PdfCheckResu
   // readings of a header or footer carried over into a later section are left out here.
   const printed: StoryReading = { ...reading, stories: reading.stories.filter((story) => !story.carriedOver) };
   // Insertions are printed in the colour this redline uses for them (blue, or the alternative where the document itself uses blue double underline).
-  COLOUR = { ...COLOUR, inserted: reading.insertedColour };
+  COLOUR = { ...COLOUR, inserted: reading.colours.inserted, deleted: reading.colours.deleted };
   CHANGE_COLOURS = new Set(Object.values(COLOUR));
   const chars = pdf.chars.map((x) => ({ ...x, c: canon(x.c) }));
   const source: Source = { chars, owner: new Array<Owner>(chars.length).fill(undefined) };

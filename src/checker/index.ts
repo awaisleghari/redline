@@ -10,8 +10,9 @@
 import { compareStories } from './compare-text';
 import { completenessFailure, coverageNote, unreadText } from './completeness';
 import { NS } from '../common/namespaces';
-import { INSERTED_COLOUR, usesInsertionLook } from './formatting';
-import { INSERTED_LEGEND, countStaticChanges, coverPageFailure, formatMarksFailure, formattingFailure, leftoverTrackedChanges, numberingFailure, oldNumberFailure } from './detail-checks';
+import type { XmlElement } from './xml';
+import { DELETED_COLOUR, INSERTED_COLOUR, usesDeletionLook, usesInsertionLook, type ChangeColours } from './formatting';
+import { DELETED_LEGEND, INSERTED_LEGEND, countStaticChanges, coverPageFailure, formatMarksFailure, formattingFailure, leftoverTrackedChanges, numberingFailure, oldNumberFailure } from './detail-checks';
 import { DocxPackage, PackageError } from './package';
 import { PdfError, readPdf } from './pdf';
 import { comparePdf, type PdfCheckResult } from './pdf-check';
@@ -152,8 +153,12 @@ export async function checkPdf(input: PdfCheckInput): Promise<CheckReport> {
     const pdf = await readPdf(input.pdf);
     // Which colour this redline shows insertions in is read from its own legend (the redline itself was checked against the uploads on that point).
     const standard = readStories(redline, 'all', 'static');
-    const alternative = standard.stories.some((story) => story.key === 'body' && story.paragraphs.slice(0, 30).includes(INSERTED_LEGEND.alternative));
-    result = comparePdf(alternative ? readStories(redline, 'all', 'static', INSERTED_COLOUR.alternative) : standard, pdf);
+    const legendHas = (line: string): boolean => standard.stories.some((story) => story.key === 'body' && story.paragraphs.slice(0, 30).includes(line));
+    const colours: ChangeColours = {
+      inserted: legendHas(INSERTED_LEGEND.alternative) ? INSERTED_COLOUR.alternative : INSERTED_COLOUR.standard,
+      deleted: legendHas(DELETED_LEGEND.alternative) ? DELETED_COLOUR.alternative : DELETED_COLOUR.standard,
+    };
+    result = comparePdf(colours.inserted !== INSERTED_COLOUR.standard || colours.deleted !== DELETED_COLOUR.standard ? readStories(redline, 'all', 'static', colours) : standard, pdf);
   } catch (error) {
     return failBoth(error instanceof PdfError ? error.message : describe(error));
   }
@@ -175,12 +180,15 @@ export interface StaticCheckInput extends CheckInput {
 /** For an upload with tracked changes of its own: its reading with those changes rejected, used only to see which notes deleted text refers to. */
 const deletedSide = (upload: DocxPackage): StoryReading[] => (hadTrackedChanges(upload) ? [readStories(upload, 'rejected')] : []);
 
-/** Whether a document's own text (main text, headers, footers, notes) carries the standard look of an insertion: blue with a double underline. */
-function usesInsertionLookIn(upload: DocxPackage): boolean {
+/**
+ * Whether a document's own text (main text, headers, footers, notes) carries the standard look of a change:
+ * blue with a double underline (an insertion), or red and struck through (a deletion).
+ */
+function usesLookIn(upload: DocxPackage, usesLook: (root: XmlElement) => boolean): boolean {
   for (const partName of upload.partNames) {
     if (!partName.endsWith('.xml') || partName === '[Content_Types].xml') continue;
     const root = upload.xml(partName);
-    if (root.ns === NS.w && ['document', 'hdr', 'ftr', 'footnotes', 'endnotes'].includes(root.name) && usesInsertionLook(root)) return true;
+    if (root.ns === NS.w && ['document', 'hdr', 'ftr', 'footnotes', 'endnotes'].includes(root.name) && usesLook(root)) return true;
   }
   return false;
 }
@@ -211,23 +219,27 @@ export async function checkStaticRedline(input: StaticCheckInput): Promise<Check
   const originalText = (): StoryReading => reading('original', () => readStories(original, 'accepted'));
   const modifiedText = (): StoryReading => reading('modified', () => readStories(modified, 'accepted'));
   // Whether insertions must be shown in the alternative colour is the Checker's own finding, from the uploads themselves.
-  const alternativeInsertionColour = usesInsertionLookIn(original) || usesInsertionLookIn(modified);
-  const insertedColour = alternativeInsertionColour ? INSERTED_COLOUR.alternative : INSERTED_COLOUR.standard;
-  const newSide = (): StoryReading => reading('new', () => readStories(output, 'accepted', 'static', insertedColour));
-  const oldSide = (): StoryReading => reading('old', () => readStories(output, 'rejected', 'static', insertedColour));
+  const alternativeInsertionColour = usesLookIn(original, usesInsertionLook) || usesLookIn(modified, usesInsertionLook);
+  const alternativeDeletionColour = usesLookIn(original, usesDeletionLook) || usesLookIn(modified, usesDeletionLook);
+  const colours: ChangeColours = {
+    inserted: alternativeInsertionColour ? INSERTED_COLOUR.alternative : INSERTED_COLOUR.standard,
+    deleted: alternativeDeletionColour ? DELETED_COLOUR.alternative : DELETED_COLOUR.standard,
+  };
+  const newSide = (): StoryReading => reading('new', () => readStories(output, 'accepted', 'static', colours));
+  const oldSide = (): StoryReading => reading('old', () => readStories(output, 'rejected', 'static', colours));
 
   const checks: CheckResult[] = [
     guarded('static-new', () => verdict('static-new', compareStories(modifiedText().stories, newSide().stories, 'modified document') ?? compareLinks(modifiedText().links, newSide().links, 'modified document'), hadTrackedChanges(modified) ? ACCEPTED_READING.modified : undefined)),
     guarded('static-old', () => verdict('static-old', compareStories(originalText().stories, oldSide().stories, 'original document') ?? compareLinks(originalText().links, oldSide().links, 'original document'), hadTrackedChanges(original) ? ACCEPTED_READING.original : undefined)),
     guarded('no-tracked-changes', () => verdict('no-tracked-changes', firstOf(leftoverTrackedChanges(output)))),
     guarded('cover-page', () => {
-      const counts = countStaticChanges(output, insertedColour);
+      const counts = countStaticChanges(output, colours);
       const note = `Counted independently: ${counts.insertions} insertions, ${counts.deletions} deletions, ${counts.moves} moves, ${counts.formattingChanges} formatting changes.`;
       // Whether an upload came with tracked changes of its own is the Checker's own finding, from the upload itself.
       const inOriginal = hadTrackedChanges(original);
       const inModified = hadTrackedChanges(modified);
       const trackedChangesIn = inOriginal && inModified ? 'both' : inOriginal ? 'original' : inModified ? 'modified' : undefined;
-      const expectation = { originalName: input.originalName, modifiedName: input.modifiedName, comparedAt: input.comparedAt, trackedChangesIn, alternativeInsertionColour } as const;
+      const expectation = { originalName: input.originalName, modifiedName: input.modifiedName, comparedAt: input.comparedAt, trackedChangesIn, alternativeInsertionColour, alternativeDeletionColour } as const;
       return verdict('cover-page', coverPageFailure(newSide().cover, newSide().coverLooks, expectation, counts), note);
     }),
     guarded('formatting', () => verdict('formatting', formattingFailure(modifiedText().stories, newSide().stories, true))),
