@@ -196,6 +196,7 @@ const KNOWN_WRAPPER_NAMESPACES: ReadonlySet<string> = new Set([
 const A_NS = 'http://schemas.openxmlformats.org/drawingml/2006/main';
 const M_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/math';
 const V_NS = 'urn:schemas-microsoft-com:vml';
+const INK_NS = 'http://www.w3.org/2003/InkML';
 
 /** Does an element hold any document markup at all (text, a note reference, a tab, a field, an equation, a shape...)? */
 /**
@@ -382,6 +383,12 @@ function linkedContent(node: XmlElement, context: Context): string {
     if (/\.xml$/i.test(rel.partName)) {
       const root = pkg.xml(rel.partName);
       if (root.ns === W) continue; // headers, footers and notes are read as stories of their own
+      if (root.ns === INK_NS) {
+        // Handwriting: pen strokes, stored as coordinates. There is no text in it; what can be checked is the
+        // picture of it that the file carries alongside (see alternateContentBranch).
+        partsRead.add(rel.partName);
+        continue;
+      }
       partsRead.add(rel.partName);
       const texts: string[] = [];
       allText(root, texts);
@@ -434,7 +441,23 @@ function alternateContentBranch(element: XmlElement, context: Context, read: (br
       context.problems.push('A drawing or text box is stored in alternative forms whose text differs, so what a reader would see cannot be verified.');
     }
   }
+  // Handwriting (found on a real contract: a stray pen mark) is stored as pen strokes with, as the other form, a
+  // picture of them. The strokes cannot be compared with anything, and a program that rewrites the file may keep
+  // only the picture. So the picture is the form that is read: it is what is compared between the files.
+  const fallback = branches.find((branch) => branch.name === 'Fallback');
+  if (fallback && branches[0] !== fallback && linksToInk(branches[0]!, context)) return fallback;
   return branches[0];
+}
+
+/** Does anything in this element link to a part of pen strokes? */
+function linksToInk(element: XmlElement, context: Context): boolean {
+  const { pkg, part } = context.source;
+  for (const [key, id] of element.attributes) {
+    if (!key.startsWith(`${NS.r}|`) || id === '') continue;
+    const rel = pkg.relationships(part).find((r) => r.id === id);
+    if (rel && !rel.external && rel.partName && /\.xml$/i.test(rel.partName) && pkg.has(rel.partName) && pkg.xml(rel.partName).ns === INK_NS) return true;
+  }
+  return element.children.some((c) => linksToInk(c, context));
 }
 
 function unknownWrapperProblem(node: XmlElement, context: Context): void {
@@ -586,11 +609,34 @@ function closeParagraph(context: Context, number: string, removed: boolean, list
   context.oldNumber = '';
 }
 
-function readParagraph(paragraph: XmlElement, context: Context): void {
+/**
+ * The paragraph whose properties this paragraph's text has in this view. Paragraph properties belong to the
+ * paragraph mark. When tracked changes remove a mark, the text before it joins the next paragraph and takes that
+ * paragraph's properties (so text that joins a heading is formatted as the heading). `siblings` is the content of
+ * the paragraph's container, and `index` the paragraph's place in it.
+ */
+function survivingParagraph(paragraph: XmlElement, siblings: XmlElement[], index: number, context: Context): XmlElement {
+  if (context.source.markup !== 'tracked' || context.view === 'all') return paragraph;
+  const markRemoved = (p: XmlElement): boolean => {
+    const properties = child(p, W, 'pPr');
+    return removedIn(properties && child(properties, W, 'rPr'), context.view, ['ins', 'moveTo'], ['del', 'moveFrom']);
+  };
+  let current = paragraph;
+  for (let i = index + 1; markRemoved(current); i++) {
+    const next = siblings[i];
+    // Only a paragraph directly after can be joined; anything else (a table, a wrapper, the end) ends the run of paragraphs.
+    if (!next || !w(next, 'p')) return paragraph;
+    current = next;
+  }
+  return current;
+}
+
+function readParagraph(paragraph: XmlElement, context: Context, siblings: XmlElement[] = [], index = 0): void {
   const properties = child(paragraph, W, 'pPr');
   const { markup, styles, numbering } = context.source;
-  const styleElement = properties && child(properties, W, 'pStyle');
-  context.paragraphStyle = styleElement && attribute(styleElement, W, 'val');
+  const survivingProperties = child(survivingParagraph(paragraph, siblings, index, context), W, 'pPr');
+  const survivingStyle = survivingProperties && child(survivingProperties, W, 'pStyle');
+  context.paragraphStyle = survivingStyle && attribute(survivingStyle, W, 'val');
   if (markup === 'static' && context.view !== 'all' && (context.paragraphStyle ?? '').startsWith(STATIC_STYLE.coverPrefix)) {
     context.problems.push('A paragraph inside the document carries the cover-page style, which would exempt it from the counts.');
   }
@@ -626,7 +672,7 @@ function readParagraph(paragraph: XmlElement, context: Context): void {
 
 /** Read block-level content (paragraphs, tables, containers) of a body, cell, note, header or text box. */
 function readBlocks(container: XmlElement, context: Context): void {
-  for (const node of container.children) {
+  for (const [index, node] of container.children.entries()) {
     if (droppedIn(node, context.view)) continue;
     if (node.ns === NS.mc && node.name === 'AlternateContent') {
       const branch = alternateContentBranch(node, context, (b, into) => {
@@ -646,7 +692,7 @@ function readBlocks(container: XmlElement, context: Context): void {
         context.problems.push('The document pulls in content from another file (an embedded or linked sub-document), which cannot be checked.');
         break;
       case 'p':
-        readParagraph(node, context);
+        readParagraph(node, context, container.children, index);
         break;
       case 'tbl':
         flushPending(context);

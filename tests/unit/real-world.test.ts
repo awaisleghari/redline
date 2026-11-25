@@ -16,7 +16,7 @@ import { compareDocuments } from 'docxodus/core';
 import { repairNotes } from '../../src/producer/repair-notes';
 import { repairParagraphProperties } from '../../src/producer/repair-paragraphs';
 import { unwrapRowControls, unwrapRowControlsInPart } from '../../src/producer/unwrap-row-controls';
-import { withBlueDoubleUnderline, withCellsInContentControls, withGlossary, withClauseStyle, withRowsInContentControls, withNumberedClausesInCell, withDocumentWideSpaces, withNoteInTable, withSections } from '../fixtures/real-world';
+import { withBlueDoubleUnderline, withCellsInContentControls, withGlossary, withInk, withParagraphsAtCellEnd, withClauseStyle, withRowsInContentControls, withNumberedClausesInCell, withDocumentWideSpaces, withNoteInTable, withSections } from '../fixtures/real-world';
 
 const COVER = { originalName: 'original.docx', modifiedName: 'modified.docx', comparedAt: '24 November 2026 at 10:00 (UTC+00:00)' };
 const decoder = new TextDecoder();
@@ -543,6 +543,115 @@ describe('a document whose glossary has its own style sheet', () => {
     expect(decoder.decode(files.get('word/document.xml')!)).toContain('RedlineOldNumber');
     expect(decoder.decode(files.get('word/styles.xml')!)).toContain('w:styleId="RedlineOldNumber"');
     expect(decoder.decode(files.get('word/glossary/styles.xml')!)).not.toContain('Redline');
+  });
+});
+
+/**
+ * Found on a real contract (Stage 7): a stray pen mark. Word stores handwriting as pen strokes and, alongside, as a
+ * picture of them; the engine keeps the picture. The strokes hold no text, so the picture is what is compared.
+ */
+describe('a pen mark (handwriting) in the document', () => {
+  it('both Word files pass, and the pen mark\'s picture is in both', async () => {
+    const pair = await buildPair(pairById('one-word-change'));
+    const { tracked, staticRedline, counts } = await bothPass(await withInk(pair.original), await withInk(pair.modified));
+    expect(counts).toEqual((await bothPass(pair.original, pair.modified)).counts);
+    for (const output of [tracked, staticRedline]) expect(decoder.decode((await unzip(output)).get('word/document.xml')!)).toMatch(/<(a:)?blip /);
+  });
+
+  it('the pen mark is really checked: a different picture in the output, or a pen mark only one document has, is refused', async () => {
+    const pair = await buildPair(pairById('one-word-change'));
+    const original = await withInk(pair.original);
+    const modified = await withInk(pair.modified);
+    const tracked = await produceTrackedChanges(original, modified);
+    // Another picture in place of the pen mark's.
+    const files = await unzip(tracked);
+    const pictures = [...files.keys()].filter((name) => /^word\/media\/.*\.png$/.test(name));
+    expect(pictures.length).toBeGreaterThan(0);
+    for (const picture of pictures) files.set(picture, Uint8Array.from([...files.get(picture)!, 0]));
+    const failures = await failed(checkTrackedChanges({ original, modified, output: await zip(files) }));
+    expect(failures).toContain('accept-all');
+    expect(failures).toContain('reject-all');
+    // The pen mark missing from the output's reading of one side.
+    expect(await failed(checkTrackedChanges({ original, modified: pair.modified, output: tracked }))).toContain('accept-all');
+    expect(await failed(checkTrackedChanges({ original: pair.original, modified, output: tracked }))).toContain('reject-all');
+  });
+
+  it('the alternative forms of ordinary content must still say the same: text that only one form has is refused', async () => {
+    const pair = await buildPair(pairById('one-word-change'));
+    const odd = await editPart(await withInk(pair.original), /^word\/document\.xml$/, (xml) => xml.replace('</mc:Fallback>', '<w:t>only in one form</w:t></mc:Fallback>'));
+    expect(await failed(checkTrackedChanges({ original: odd, modified: pair.modified, output: await produceTrackedChanges(pair.original, pair.modified) }))).toContain('completeness');
+  });
+});
+
+/**
+ * Found on a real contract (Stage 7): the first word of a bold heading is replaced, and the engine writes the new
+ * word in a paragraph of its own whose mark is deleted. On "accept all" that word joins the heading and is bold,
+ * because a joined paragraph has the properties of the mark that stays.
+ */
+describe('text that joins a paragraph of another style when its paragraph mark is removed', () => {
+  const A = 'w:author="Redline" w:date="2000-01-01T00:00:00Z"';
+  const heading = (inner: string): string => `<w:p><w:pPr><w:pStyle w:val="BoldHead"/></w:pPr>${inner}</w:p>`;
+  const t = (text: string): string => `<w:r><w:t xml:space="preserve">${text}</w:t></w:r>`;
+  const intro = `<w:p>${t('The parties agree as follows.')}</w:p>`;
+  const bodies = {
+    original: `${intro}<w:p/>${heading(t('Termination of contract'))}`,
+    modified: `${intro}<w:p/>${heading(t('without of contract'))}`,
+    // As the engine wrote it on the real contract.
+    tracked:
+      `${intro}<w:p><w:pPr><w:rPr><w:ins w:id="1" ${A}/></w:rPr></w:pPr></w:p><w:p><w:pPr><w:rPr><w:del w:id="2" ${A}/></w:rPr></w:pPr><w:ins w:id="3" ${A}>${t('without')}</w:ins></w:p>` +
+      heading(`<w:del w:id="4" ${A}><w:r><w:delText>Termination</w:delText></w:r></w:del>${t(' of contract')}`),
+  };
+  const build = async (body: string): Promise<Uint8Array> => {
+    const base = (await buildPair(pairById('one-word-change'))).original;
+    const styled = await editPart(base, /^word\/styles\.xml$/, (xml) => xml.replace('</w:styles>', '<w:style w:type="paragraph" w:customStyle="1" w:styleId="BoldHead"><w:name w:val="Bold Head"/><w:rPr><w:b/></w:rPr></w:style></w:styles>'));
+    return editPart(styled, /^word\/document\.xml$/, (xml) => xml.replace(/(<w:body>).*?(<w:sectPr\b)/s, `$1${body}$2`));
+  };
+
+  it('the tracked-changes file passes: the new word is read as bold, as it is once the changes are accepted', async () => {
+    const [original, modified, tracked] = await Promise.all([build(bodies.original), build(bodies.modified), build(bodies.tracked)]);
+    expect(await failed(checkTrackedChanges({ original, modified, output: tracked }))).toEqual([]);
+    // And it is really checked: if the heading it joins is not bold, the same file is refused.
+    const plainHeading = await editPart(tracked, /^word\/document\.xml$/, (xml) => xml.replace('<w:pPr><w:pStyle w:val="BoldHead"/></w:pPr>', ''));
+    expect(await failed(checkTrackedChanges({ original, modified, output: plainHeading }))).toContain('formatting');
+  });
+
+  it('the static redline shows the new word bold, as the modified document has it, and passes', async () => {
+    const [original, modified, tracked] = await Promise.all([build(bodies.original), build(bodies.modified), build(bodies.tracked)]);
+    const made = await makeStaticRedline(tracked, original, COVER);
+    expect(await failed(checkStaticRedline({ original, modified, output: made.docx, ...COVER }))).toEqual([]);
+    const xml = decoder.decode((await unzip(made.docx)).get('word/document.xml')!);
+    expect(/<w:r><w:rPr>(?:(?!<\/w:rPr>).)*<w:b\/>(?:(?!<\/w:rPr>).)*<\/w:rPr><w:t[^>]*>without<\/w:t>/.test(xml)).toBe(true);
+    // A static redline that shows the word plain is refused.
+    const plain = await editPart(made.docx, /^word\/document\.xml$/, (doc) => doc.replace(/(<w:r><w:rPr>(?:(?!<\/w:rPr>).)*)<w:b\/>((?:(?!<\/w:rPr>).)*<\/w:rPr><w:t[^>]*>without<\/w:t>)/, '$1$2'));
+    expect(await failed(checkStaticRedline({ original, modified, output: plain, ...COVER }))).toContain('formatting');
+  });
+});
+
+/**
+ * Found on a real contract (Stage 7): several paragraphs added after the only paragraph of a table cell, the last
+ * of them empty. A cell's final paragraph mark cannot be shown as added or removed, so the whole run of marks is
+ * shown one paragraph up; otherwise the original would read as having an extra empty paragraph in the cell.
+ */
+describe('several paragraphs added or removed at the end of a table cell', () => {
+  const LINES = [
+    ['', 'Must meet the requirement', ''],
+    ['Must meet the requirement', 'Evidence to be attached'],
+    ['', ''],
+    ['', '', 'Must meet the requirement', '', '', 'Must meet the requirement', ''],
+  ];
+
+  it.each(LINES.map((lines) => [JSON.stringify(lines), lines] as const))('added %s: both Word files pass', async (_, lines) => {
+    const base = (await buildPair(pairById('one-word-change'))).original;
+    const { counts } = await bothPass(await withParagraphsAtCellEnd(base, []), await withParagraphsAtCellEnd(base, lines));
+    expect(counts.insertions).toBeGreaterThan(0);
+    expect(counts.deletions).toBe(0);
+  });
+
+  it.each(LINES.map((lines) => [JSON.stringify(lines), lines] as const))('removed %s: both Word files pass', async (_, lines) => {
+    const base = (await buildPair(pairById('one-word-change'))).original;
+    const { counts } = await bothPass(await withParagraphsAtCellEnd(base, lines), await withParagraphsAtCellEnd(base, []));
+    expect(counts.deletions).toBeGreaterThan(0);
+    expect(counts.insertions).toBe(0);
   });
 });
 

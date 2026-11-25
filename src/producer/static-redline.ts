@@ -314,6 +314,43 @@ function markFormattingChanges(root: Element, original: OriginalContext): void {
   }
 }
 
+/**
+ * Before conversion: text that stays, in a paragraph whose mark is removed. In the modified document that text is
+ * part of the paragraph it joins, and is formatted by that paragraph's style (found on a real contract: a word
+ * that became the start of a bold heading). The static redline shows it in the paragraph it sits in, so where the
+ * two styles would make it look different, the look it has in the modified document is stated on the text itself.
+ */
+function stateLookOfJoinedText(root: Element, styles: StyleSheet): void {
+  const markRemoved = (paragraph: Element): boolean => hasFlag(kid(kid(paragraph, 'pPr'), 'rPr'), ['del', 'moveFrom']);
+  const paragraphs = root.getElementsByTagNameNS(W, 'p');
+  for (let i = 0; i < paragraphs.length; i++) {
+    const paragraph = paragraphs.item(i) as Element;
+    if (!markRemoved(paragraph)) continue;
+    // The paragraph it joins: the next one whose mark stays. Only paragraphs directly after one another join.
+    let joined: Element | undefined = paragraph;
+    while (joined && markRemoved(joined)) {
+      let next: Node | null = joined.nextSibling;
+      while (next && next.nodeType !== 1) next = next.nextSibling;
+      joined = next && isWord(next, 'p') ? (next as Element) : undefined;
+    }
+    if (!joined) continue;
+    const runs = paragraph.getElementsByTagNameNS(W, 'r');
+    for (let j = 0; j < runs.length; j++) {
+      const run = runs.item(j) as Element;
+      if (nearestParagraph(run) !== paragraph || insideWrapper(run, ['del', 'moveFrom'])) continue;
+      const rPr = kid(run, 'rPr');
+      const here = styles.bits(rPr, paragraph);
+      const there = styles.bits(rPr, joined);
+      if (here === there) continue;
+      for (const [name, bit] of Object.entries(BIT)) {
+        if ((here & bit) === (there & bit)) continue;
+        const on = (there & bit) !== 0;
+        setRunProperty(runProperties(run), name, name === 'u' ? { val: on ? 'single' : 'none' } : on ? {} : { val: '0' });
+      }
+    }
+  }
+}
+
 /** The original's clause number for each paragraph of the main document that the original had. */
 function oldNumbers(root: Element, original: OriginalContext): Map<Element, string> {
   const result = new Map<Element, string>();
@@ -588,16 +625,25 @@ class PartConverter {
         // cell's final mark cannot change, the join or split really happens at
         // the mark of the paragraph before: that is the mark to show as changed.
         const before = kids(cell).filter((c) => isWord(c, 'p') || isWord(c, 'tbl'));
-        const previous = before[before.length - 2];
+        // Several paragraphs in a row may have been added or removed at the end of the cell (found on a real
+        // contract: twelve added after the one that was there). The marks before the last already show the
+        // change, so the whole run moves up by one: the mark to show as changed is the one before the run.
+        let at = before.length - 2;
+        while (at >= 0 && isWord(before[at]!, 'p') && this.markToken.has(before[at]!) && this.tokens[this.markToken.get(before[at]!)!] === markKind) at--;
+        const single = at === before.length - 2;
+        const removal = markKind === 'deleted' || markKind === 'movedFrom';
+        const whollyRemoved = removal && content.length > 0 && content.every((c) => isW(c, markKind === 'deleted' ? 'del' : 'moveFrom'));
+        const previous = before[at];
         const index = previous && isWord(previous, 'p') ? this.markToken.get(previous) : undefined;
-        if (previous && index !== undefined && this.tokens[index] === 'unchanged') {
+        // (A run of removed paragraphs ending in one of which part remains is left as it is: which clause number
+        // the remaining part should carry cannot be told here, and the Checker judges the result.)
+        if (previous && index !== undefined && this.tokens[index] === 'unchanged' && (single || !removal || whollyRemoved || content.length === 0)) {
           applyChangeStyle(markProperties(previous), markKind, this.options.insertedColor);
           this.tokens[index] = markKind;
           // Numbering must follow (found on real contracts: otherwise two paragraphs keep a number where the
           // modified document has one clause, and every later clause is numbered one too high).
-          if (markKind === 'deleted' || markKind === 'movedFrom') {
-            const wrapper = markKind === 'deleted' ? 'del' : 'moveFrom';
-            if (content.length > 0 && content.every((c) => isW(c, wrapper))) {
+          if (removal) {
+            if (whollyRemoved || (!single && content.length === 0)) {
               // Nothing of this paragraph remains: it is the clause that was removed, so it is the one that gives up
               // its number (below), and the paragraph before keeps its own.
               numberLostAtCellEnd = markKind;
@@ -669,6 +715,7 @@ export function convertPart(xml: string, options: StaticRedlineStyleOptions = DE
   const root = document.documentElement as unknown as Element;
   // These two need the tracked changes still in place, so they come first.
   const numbers = original && original.isMain && options.showOldNumbers ? oldNumbers(root, original) : new Map<Element, string>();
+  if (original) stateLookOfJoinedText(root, original.styles);
   if (original && options.markFormattingChanges) markFormattingChanges(root, original);
   const converter = new PartConverter(options, numbers, original ? (paragraph) => original.styles.numPr(paragraph) : undefined);
   converter.convert(root, undefined);
