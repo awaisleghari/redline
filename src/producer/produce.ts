@@ -14,6 +14,7 @@ import { repairNotes } from './repair-notes';
 import { restorePictures } from './restore-pictures';
 import { unwrapRowControls } from './unwrap-row-controls';
 import { repairParagraphProperties } from './repair-paragraphs';
+import { repairSectionReferences } from './repair-section-references';
 import { REVISION_AUTHOR } from './protocol';
 
 /** The engine must already be initialised. */
@@ -34,12 +35,21 @@ export async function produceTrackedChanges(original: Uint8Array, modified: Uint
   for (const [name, bytes] of files) if (/^word\/[^/]+\.xml$/.test(name)) parts.set(name, decoder.decode(bytes));
   for (const [name, xml] of repairNotes(parts)) parts.set(name, xml);
   const modifiedFiles = await unzip(preparedModified);
+  const originalFiles = await unzip(preparedOriginal);
   // Pictures stored as text come out rewritten; they are given back the uploaded bytes (restore-pictures.ts).
-  restorePictures(files, [await unzip(preparedOriginal), modifiedFiles]);
+  restorePictures(files, [originalFiles, modifiedFiles]);
   const modifiedMain = modifiedFiles.get('word/document.xml');
   const trackedMain = parts.get('word/document.xml');
   if (modifiedMain && trackedMain) {
     const repaired = repairParagraphProperties(trackedMain, decoder.decode(modifiedMain));
+    if (repaired) parts.set('word/document.xml', repaired);
+  }
+  // Where a section break is shown removed and added, the engine names the wrong headers for later sections (repair-section-references.ts).
+  const relsOf = (from: Map<string, Uint8Array>): string => decoder.decode(from.get('word/_rels/document.xml.rels') ?? new Uint8Array());
+  const mainNow = parts.get('word/document.xml');
+  const originalMain = originalFiles.get('word/document.xml');
+  if (mainNow && modifiedMain && originalMain) {
+    const repaired = repairSectionReferences(mainNow, relsOf(files), { main: decoder.decode(originalMain), rels: relsOf(originalFiles) }, { main: decoder.decode(modifiedMain), rels: relsOf(modifiedFiles) });
     if (repaired) parts.set('word/document.xml', repaired);
   }
   for (const [name, xml] of parts) files.set(name, encoder.encode(labelAuthors(xml)));

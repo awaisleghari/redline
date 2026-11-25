@@ -14,6 +14,7 @@ import { produceTrackedChanges } from '../../src/producer/produce';
 import { buildDocx, buildPair, pairById } from '../fixtures/pairs';
 import type { DocSpec } from '../fixtures/pairs';
 import { freshRelationshipIds, renameInPart } from '../../src/producer/fresh-relationship-ids';
+import { repairSectionReferences } from '../../src/producer/repair-section-references';
 import { compareDocuments } from 'docxodus/core';
 import { repairNotes } from '../../src/producer/repair-notes';
 import { repairParagraphProperties } from '../../src/producer/repair-paragraphs';
@@ -1205,5 +1206,78 @@ describe('a document whose internal reference names look like the engine\'s own'
       `<w:document xmlns:w="w" xmlns:rel='http://schemas.openxmlformats.org/officeDocument/2006/relationships' xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:v="v">` +
         `<w:hyperlink rel:id="rIdU1" w:anchor="R1"><w:t>R1 and "R2a"</w:t></w:hyperlink><v:imagedata o:relid="rIdU2" o:title="R1"/><a:blip rel:embed="rId7" rel:link = "rIdU2"/></w:document>`,
     );
+  });
+});
+
+/**
+ * Found on a real contract (held-out run 1, an ADB document carrying tracked changes): the paragraph holding a
+ * section break changed so much that the engine showed it removed and added again. Its output then held one
+ * section break more than either document, and each later section named the header of the section after it.
+ */
+describe('a section break shown removed and added again', () => {
+  const WNS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
+  const ref = (type: string, id: string): string => `<w:headerReference w:type="${type}" r:id="${id}"/>`;
+  const PAGE = '<w:pgSz w:w="12240" w:h="15840"/>';
+  const breakWith = (refs: string, mark = '', margin = 1260): string => `<w:p><w:pPr>${mark ? `<w:rPr><w:${mark} w:id="1" w:author="x"/></w:rPr>` : ''}<w:sectPr>${refs}${PAGE}<w:pgMar w:top="${margin}"/></w:sectPr></w:pPr></w:p>`;
+  const text = (t: string): string => `<w:p><w:r><w:t>${t}</w:t></w:r></w:p>`;
+  const main = (blocks: string[], last: string): string => `<w:document ${WNS}><w:body>${blocks.join('')}<w:sectPr>${last}${PAGE}</w:sectPr></w:body></w:document>`;
+  const RELS = `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${['A', 'B', 'C', 'D', 'E'].map((n) => `<Relationship Id="rId${n}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header${n}.xml"/>`).join('')}</Relationships>`;
+  const AB = ref('even', 'rIdA') + ref('default', 'rIdB');
+  const C = ref('default', 'rIdC');
+  const DE = ref('even', 'rIdD') + ref('default', 'rIdE');
+  // Both uploads: four sections. The second carries on with the first's headers; the third names one of its own.
+  const upload = { main: main([text('one'), breakWith(AB), text('two'), breakWith(''), text('three'), breakWith(C, '', 990)], DE), rels: RELS };
+  // The engine's output on the real contract: the first break twice, and the two after it naming the next section's headers.
+  const engine = main([text('one'), breakWith(AB, 'del'), breakWith(AB, 'ins'), text('two'), breakWith(C), text('three'), breakWith(DE, '', 990)], DE);
+  const namedAt = (xml: string): string[] => [...xml.matchAll(/<w:sectPr\b.*?<\/w:sectPr>/gs)].map((m) => [...m[0].matchAll(/w:type="(\w+)" r:id="rId(\w)"/g)].map((x) => `${x[1]}:${x[2]}`).join(','));
+
+  it('each section break that stays names the headers the modified document names there', () => {
+    const repaired = repairSectionReferences(engine, RELS, upload, upload)!;
+    expect(namedAt(repaired)).toEqual(['even:A,default:B', 'even:A,default:B', '', 'default:C', 'even:D,default:E']);
+    // Nothing else in a section break moves: the headers stay in front of the page settings, which are untouched.
+    expect(repaired).toContain(`<w:sectPr>${C}${PAGE}<w:pgMar w:top="990"/></w:sectPr>`);
+    expect(repaired).toContain(`<w:sectPr>${PAGE}<w:pgMar w:top="1260"/></w:sectPr>`);
+  });
+
+  it('nothing is touched where the output has as many section breaks as the uploads', () => {
+    expect(repairSectionReferences(upload.main.replace(C, DE), RELS, upload, upload)).toBeUndefined();
+  });
+
+  it('nothing is touched where the breaks cannot be paired off, or a header is not in the output under the same name', () => {
+    const unpaired = main([text('one'), breakWith(AB, 'del'), breakWith(AB, 'ins'), text('two'), breakWith(C), breakWith(C), text('three'), breakWith(DE)], DE);
+    expect(repairSectionReferences(unpaired, RELS, upload, upload)).toBeUndefined();
+    expect(repairSectionReferences(engine, RELS.replace('Target="headerC.xml"', 'Target="header9.xml"'), upload, upload)).toBeUndefined();
+    expect(repairSectionReferences(engine, RELS.replace(/<Relationship Id="rIdC"[^>]*>/, ''), upload, upload)).toBeUndefined();
+  });
+
+  it('a document in which the engine shows a section break removed and added: both Word files pass', async () => {
+    const base = (await buildPair(pairById('footer-change'))).original;
+    const make = async (breakText: string): Promise<Uint8Array> => {
+      const files = await unzip(base);
+      const xml = decoder.decode(files.get('word/document.xml')!);
+      const named = /<w:sectPr\b[^>]*>((?:(?!<\/w:sectPr>).)*)<\/w:sectPr>(?=<\/w:body>)/.exec(xml)![1]!;
+      const bare = named.replace(/<w:(header|footer)Reference\b[^>]*\/>/g, '');
+      const headerId = /<w:headerReference\b[^>]*r:id="([^"]+)"/.exec(named)![1]!;
+      let rels = decoder.decode(files.get('word/_rels/document.xml.rels')!);
+      const target = (new RegExp(`Id="${headerId}"[^>]*Target="([^"]+)"`).exec(rels) ?? new RegExp(`Target="([^"]+)"[^>]*Id="${headerId}"`).exec(rels))![1]!;
+      let types = decoder.decode(files.get('[Content_Types].xml')!);
+      for (let n = 1; n <= 5; n++) {
+        files.set(`word/header9${n}.xml`, encoder.encode(decoder.decode(files.get(`word/${target}`)!).replace(/(<w:t[^>]*>)[^<]*/, `$1Header number ${n} of the set`)));
+        rels = rels.replace('</Relationships>', `<Relationship Id="rIdH${n}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header9${n}.xml"/></Relationships>`);
+        types = types.replace('</Types>', `<Override PartName="/word/header9${n}.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/></Types>`);
+      }
+      files.set('word/_rels/document.xml.rels', encoder.encode(rels));
+      files.set('[Content_Types].xml', encoder.encode(types));
+      const h = (type: string, n: number): string => `<w:headerReference w:type="${type}" r:id="rIdH${n}"/>`;
+      const P = (t: string, sect?: string): string => `<w:p>${sect === undefined ? '' : `<w:pPr><w:sectPr>${sect}</w:sectPr></w:pPr>`}${t ? `<w:r><w:t xml:space="preserve">${t}</w:t></w:r>` : ''}</w:p>`;
+      const body = [P('Part one of the agreement'), P(breakText, h('even', 1) + h('default', 2) + bare), P('Part two of the agreement'), P('', bare), P('Part three of the agreement'), P('', h('default', 3) + bare), P('Part four of the agreement'), `<w:sectPr>${h('even', 4) + h('default', 5) + bare}</w:sectPr>`];
+      files.set('word/document.xml', encoder.encode(xml.replace(/<w:body>.*<\/w:body>/s, `<w:body>${body.join('')}</w:body>`)));
+      return zip(files);
+    };
+    const original = await make('The first schedule ends on this line');
+    const modified = await make('Completely different wording closes that chapter now');
+    const { tracked } = await bothPass(original, modified);
+    // The situation the repair is for: one section break more than either document.
+    expect(decoder.decode((await unzip(tracked)).get('word/document.xml')!).split('<w:sectPr').length - 1).toBe(5);
   });
 });
