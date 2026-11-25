@@ -1,0 +1,142 @@
+
+== ordinary edits: 269 documents
+  both Word files released:                       207 of 269 (77.0%)
+  released and marking within 1.5 times the real change: 206 of 269 (76.6%)
+  tracked-changes file alone released:            216 of 269 (80.3%)
+  engine failed outright:                         0 of 269 (0.0%)
+  marking, released documents: median 1.03, worst 1.9
+  by source (released / run):
+    arma.ac.uk                         2 / 2
+    github-StandardCap                 2 / 2
+    github-bitblu                      1 / 1
+    github-dealfluence                 4 / 4
+    github-finsrud                     2 / 2
+    github-sambacha                    5 / 5
+    github-tanko-r                     1 / 1
+    github-vertis                      4 / 4
+    kindrik.co.nz                      9 / 9
+    synthetic-harvey                   41 / 41
+    www.adb.org                        21 / 60
+    www.england.nhs.uk                 19 / 20
+    www.info.buy.nsw.gov.au            17 / 31
+    www.medicinesaustralia.com.au      1 / 1
+    www.modelcommerciallease.co.uk     21 / 28
+    www.myresearchproject.org.uk       43 / 43
+    www.seca.ch                        5 / 5
+    www.svca.org.sg                    5 / 5
+    www.wa.gov.au                      4 / 5
+  why withheld (first failing check), most common first:
+     31  accept-all: The text differs from the modified document.
+     21  completeness: In the modified document: A drawing or text box is stored in alternative forms w
+      7  static-new: A table is laid out differently from the modified document (its rows, cells or p
+      1  numbering: A paragraph does not carry the number it has in the modified document.
+      1  reject-all: The output has more paragraphs than the original document (1 instead of 0).
+      1  static-new: The text differs from the modified document.
+
+== tracked changes in original: 269 documents
+  both Word files released:                       185 of 269 (68.8%)
+  released and marking within 1.5 times the real change: 182 of 269 (67.7%)
+  tracked-changes file alone released:            194 of 269 (72.1%)
+  engine failed outright:                         0 of 269 (0.0%)
+  marking, released documents: median 1.03, worst 3.1
+  by source (released / run):
+    arma.ac.uk                         2 / 2
+    github-StandardCap                 2 / 2
+    github-bitblu                      1 / 1
+    github-dealfluence                 4 / 4
+    github-finsrud                     2 / 2
+    github-sambacha                    5 / 5
+    github-tanko-r                     1 / 1
+    github-vertis                      4 / 4
+    kindrik.co.nz                      9 / 9
+    synthetic-harvey                   41 / 41
+    www.adb.org                        1 / 60
+    www.england.nhs.uk                 19 / 20
+    www.info.buy.nsw.gov.au            14 / 31
+    www.medicinesaustralia.com.au      1 / 1
+    www.modelcommerciallease.co.uk     21 / 28
+    www.myresearchproject.org.uk       43 / 43
+    www.seca.ch                        5 / 5
+    www.svca.org.sg                    5 / 5
+    www.wa.gov.au                      5 / 5
+  why withheld (first failing check), most common first:
+     73  accept-all: The text differs from the modified document.
+      7  static-new: A table is laid out differently from the modified document (its rows, cells or p
+      2  completeness: In the original document: A drawing or text box is stored in alternative forms w
+      1  numbering: An old clause number is shown where there should be none.
+      1  static-old: A table is laid out differently from the original document (its rows, cells or p
+
+== tracked changes in modified: 269 documents
+  both Word files released:                       173 of 269 (64.3%)
+  released and marking within 1.5 times the real change: 170 of 269 (63.2%)
+  tracked-changes file alone released:            194 of 269 (72.1%)
+  engine failed outright:                         2 of 269 (0.7%)
+  marking, released documents: median 1.05, worst 2.3
+  by source (released / run):
+    arma.ac.uk                         2 / 2
+    github-StandardCap                 2 / 2
+    github-bitblu                      0 / 1
+    github-dealfluence                 4 / 4
+    github-finsrud                     2 / 2
+    github-sambacha                    5 / 5
+    github-tanko-r                     1 / 1
+    github-vertis                      3 / 4
+    kindrik.co.nz                      9 / 9
+    synthetic-harvey                   41 / 41
+    www.adb.org                        1 / 60
+    www.england.nhs.uk                 18 / 20
+    www.info.buy.nsw.gov.au            12 / 31
+    www.medicinesaustralia.com.au      1 / 1
+    www.modelcommerciallease.co.uk     15 / 28
+    www.myresearchproject.org.uk       43 / 43
+    www.seca.ch                        5 / 5
+    www.svca.org.sg                    5 / 5
+    www.wa.gov.au                      4 / 5
+  why withheld (first failing check), most common first:
+     61  accept-all: The text differs from the modified document.
+     14  static-new: A table is laid out differently from the modified document (its rows, cells or p
+     10  reject-all: The text differs from the original document.
+      2  static-old: A table is laid out differently from the original document (its rows, cells or p
+      2  static-new: The text differs from the modified document.
+      2  static-old: The text differs from the original document.
+      2  engine: process stopped: out of memory or crash
+      2  completeness: In the modified document: A drawing or text box is stored in alternative forms w
+      1  numbering: An old clause number is shown where there should be none.
+
+== PDF round trip: 60 documents
+  both Word files released:                       10 of 60 (16.7%)
+  released and marking within 1.5 times the real change: 6 of 60 (10.0%)
+  tracked-changes file alone released:            19 of 60 (31.7%)
+  engine failed outright:                         2 of 60 (3.3%)
+  marking, released documents: median 1.24, worst 2.9
+  by source (released / run):
+    arma.ac.uk                         1 / 2
+    github-StandardCap                 0 / 2
+    github-bitblu                      0 / 1
+    github-dealfluence                 0 / 1
+    github-finsrud                     1 / 1
+    github-sambacha                    0 / 1
+    kindrik.co.nz                      0 / 4
+    synthetic-harvey                   6 / 8
+    www.adb.org                        0 / 1
+    www.england.nhs.uk                 0 / 8
+    www.info.buy.nsw.gov.au            1 / 8
+    www.modelcommerciallease.co.uk     0 / 8
+    www.myresearchproject.org.uk       0 / 8
+    www.seca.ch                        1 / 4
+    www.svca.org.sg                    0 / 2
+    www.wa.gov.au                      0 / 1
+  why withheld (first failing check), most common first:
+     24  formatting: Text does not have the formatting it has in the modified document.
+     10  reject-all: The text differs from the original document.
+      6  static-old: A table is laid out differently from the original document (its rows, cells or p
+      2  static-new: The text differs from the modified document.
+      1  static-new: A table is laid out differently from the modified document (its rows, cells or p
+      1  accept-all: The output has a footnote separator that the modified document does not have.
+      1  engine: Error: Command failed: python3 -I -c import sys,logging
+logging.disabl
+      1  reject-all: The output has a footer (section 1) that the original document does not have.
+      1  accept-all: A table is laid out differently from the modified document (its rows, cells or p
+      1  engine: process stopped: out of memory or crash
+      1  accept-all: The output has more paragraphs than the modified document (608 instead of 607).
+      1  reject-all: The header (section 1) of the original document is missing from the output.
