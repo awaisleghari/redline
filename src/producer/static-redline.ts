@@ -98,8 +98,8 @@ function removeRunProperty(rPr: Element, name: string): void {
 }
 
 /** Apply a change's formatting to a set of run properties (of a run, or of a paragraph mark). */
-function applyChangeStyle(rPr: Element, kind: ChangeKind, insertedColor: string): void {
-  const style = kind === 'inserted' ? { ...CHANGE_STYLE.inserted, color: insertedColor } : CHANGE_STYLE[kind];
+function applyChangeStyle(rPr: Element, kind: ChangeKind, colors: { insertedColor: string; deletedColor: string }): void {
+  const style = kind === 'inserted' ? { ...CHANGE_STYLE.inserted, color: colors.insertedColor } : kind === 'deleted' ? { ...CHANGE_STYLE.deleted, color: colors.deletedColor } : CHANGE_STYLE[kind];
   setRunProperty(rPr, 'color', { val: style.color });
   if (style.underline) setRunProperty(rPr, 'u', { val: style.underline });
   if (style.strike) {
@@ -166,6 +166,8 @@ export interface StaticRedlineStyleOptions {
   markFormattingChanges: boolean;
   /** The colour of inserted text: the standard blue, or the alternative where a document itself uses blue double underline. */
   insertedColor: string;
+  /** The colour of deleted text (see DELETED_COLOR). */
+  deletedColor: string;
 }
 
 /**
@@ -174,6 +176,30 @@ export interface StaticRedlineStyleOptions {
  * a dark magenta, and the legend says so (owner's decision, 2026-11-24).
  */
 export const INSERTED_COLOR = { standard: '0000FF', alternative: 'AA00AA' } as const;
+/**
+ * Deleted text, on the same rule: red, unless one of the two documents itself contains text (or a paragraph mark)
+ * formatted red with a strikethrough (found on a real contract). Then deletions are shown in a dark orange, and the
+ * legend says so.
+ */
+export const DELETED_COLOR = { standard: 'FF0000', alternative: 'C55A11' } as const;
+
+/** Whether a part's own runs or paragraph marks are formatted red with a (single) strikethrough, stated on the run or mark itself. */
+export function usesDeletionLook(xml: string): boolean {
+  if (!/w:val="FF0000"/i.test(xml) || !/<w:strike\b/.test(xml)) return false;
+  const root = new DOMParser().parseFromString(xml, 'application/xml').documentElement as unknown as Element;
+  for (const name of ['r', 'pPr']) {
+    const owners = root.getElementsByTagNameNS(W, name);
+    for (let i = 0; i < owners.length; i++) {
+      const rPr = elementChildren(owners.item(i) as unknown as Element).find((c) => isW(c, 'rPr'));
+      if (!rPr) continue;
+      const color = elementChildren(rPr).find((c) => isW(c, 'color'));
+      const strike = elementChildren(rPr).find((c) => isW(c, 'strike'));
+      const struck = !!strike && !['0', 'false', 'off'].includes(strike.getAttributeNS(W, 'val') ?? '');
+      if (color && !color.getAttributeNS(W, 'themeColor') && color.getAttributeNS(W, 'val')?.toUpperCase() === DELETED_COLOR.standard && struck) return true;
+    }
+  }
+  return false;
+}
 
 /** Whether a part's own runs or paragraph marks are formatted blue with a double underline (stated on the run or mark itself). */
 export function usesInsertionLook(xml: string): boolean {
@@ -192,7 +218,7 @@ export function usesInsertionLook(xml: string): boolean {
   return false;
 }
 
-export const DEFAULT_STYLE_OPTIONS: StaticRedlineStyleOptions = { deletionBeforeInsertion: true, unnumberRemovedParagraphs: true, showOldNumbers: true, markFormattingChanges: true, insertedColor: INSERTED_COLOR.standard };
+export const DEFAULT_STYLE_OPTIONS: StaticRedlineStyleOptions = { deletionBeforeInsertion: true, unnumberRemovedParagraphs: true, showOldNumbers: true, markFormattingChanges: true, insertedColor: INSERTED_COLOR.standard, deletedColor: DELETED_COLOR.standard };
 
 const hasFlag = (properties: Element | undefined, names: string[]): boolean => !!properties && kids(properties).some((c) => isWord(c) && names.includes(c.localName!));
 
@@ -314,6 +340,44 @@ function markFormattingChanges(root: Element, original: OriginalContext): void {
   }
 }
 
+/**
+ * Before conversion: text that stays, in a paragraph whose mark is removed. In the modified document that text is
+ * part of the paragraph it joins, and is formatted by that paragraph's style (found on a real contract: a word
+ * that became the start of a bold heading). The static redline shows it in the paragraph it sits in, so where the
+ * two styles would make it look different, the look it has in the modified document is stated on the text itself.
+ */
+function stateLookOfJoinedText(root: Element, styles: StyleSheet): void {
+  const markRemoved = (paragraph: Element): boolean => hasFlag(kid(kid(paragraph, 'pPr'), 'rPr'), ['del', 'moveFrom']);
+  const paragraphs = root.getElementsByTagNameNS(W, 'p');
+  for (let i = 0; i < paragraphs.length; i++) {
+    const paragraph = paragraphs.item(i) as Element;
+    if (!markRemoved(paragraph)) continue;
+    // The paragraph it joins: the next one whose mark stays. Only paragraphs directly after one another join.
+    let joined: Element | undefined = paragraph;
+    while (joined && markRemoved(joined)) {
+      let next: Node | null = joined.nextSibling;
+      // Markers that hold no content (bookmarks and the like) do not keep paragraphs apart.
+      while (next && (next.nodeType !== 1 || (isWord(next) && /^(bookmarkStart|bookmarkEnd|proofErr|permStart|permEnd|commentRangeStart|commentRangeEnd|move(From|To)Range(Start|End))$/.test((next as Element).localName!)))) next = next.nextSibling;
+      joined = next && isWord(next, 'p') ? (next as Element) : undefined;
+    }
+    if (!joined) continue;
+    const runs = paragraph.getElementsByTagNameNS(W, 'r');
+    for (let j = 0; j < runs.length; j++) {
+      const run = runs.item(j) as Element;
+      if (nearestParagraph(run) !== paragraph || insideWrapper(run, ['del', 'moveFrom'])) continue;
+      const rPr = kid(run, 'rPr');
+      const here = styles.bits(rPr, paragraph);
+      const there = styles.bits(rPr, joined);
+      if (here === there) continue;
+      for (const [name, bit] of Object.entries(BIT)) {
+        if ((here & bit) === (there & bit)) continue;
+        const on = (there & bit) !== 0;
+        setRunProperty(runProperties(run), name, name === 'u' ? { val: on ? 'single' : 'none' } : on ? {} : { val: '0' });
+      }
+    }
+  }
+}
+
 /** The original's clause number for each paragraph of the main document that the original had. */
 function oldNumbers(root: Element, original: OriginalContext): Map<Element, string> {
   const result = new Map<Element, string>();
@@ -366,6 +430,8 @@ class PartConverter {
   private readonly cellChange = new Map<Element, ChangeKind>();
   /** Where each paragraph's mark sits in `tokens`. */
   private readonly markToken = new Map<Element, number>();
+  /** Last paragraphs of cells that were removed whole, where the engine put the removal on the mark before. */
+  private readonly removedAtCellEnd = new Map<Element, ChangeKind>();
 
   constructor(
     private readonly options: StaticRedlineStyleOptions,
@@ -385,7 +451,7 @@ class PartConverter {
     style.setAttributeNS(W, `${prefix}:val`, OLD_NUMBER_STYLE);
     rPr.appendChild(style);
     run.appendChild(rPr);
-    applyChangeStyle(rPr, kind, this.options.insertedColor);
+    applyChangeStyle(rPr, kind, this.options);
     const text = make('t');
     text.setAttribute('xml:space', 'preserve');
     text.appendChild(doc.createTextNode(label));
@@ -409,6 +475,27 @@ class PartConverter {
       }
       i = Math.max(j, i + 1);
     }
+  }
+
+  /**
+   * Is this the paragraph before the last one of a cell that stays, with that last paragraph removed whole (all
+   * of it inside the same kind of removal as this paragraph's mark) and its own mark not flagged?
+   */
+  private endsCellWithRemovedClause(paragraph: Element, markKind: ChangeKind): boolean {
+    const cell = paragraph.parentNode as Element;
+    if (!isWord(cell, 'tc')) return false;
+    const blocks = kids(cell).filter((c) => isWord(c, 'p') || isWord(c, 'tbl'));
+    const last = blocks[blocks.length - 1]!;
+    if (blocks[blocks.length - 2] !== paragraph || !isWord(last, 'p') || paragraph.nextSibling !== last) return false;
+    let row = cell.parentNode as Element | null;
+    while (row && isWord(row) && ['sdt', 'sdtContent', 'customXml'].includes(row.localName!)) row = row.parentNode as Element | null;
+    if (this.cellChange.has(cell) || (row && this.cellChange.has(row))) return false;
+    const lastPPr = childW(last, 'pPr');
+    const lastMark = lastPPr && childW(lastPPr, 'rPr');
+    if (lastMark && elementChildren(lastMark).some((flag) => isW(flag) && flag.localName! in WRAPPER_KIND)) return false;
+    const wrapper = markKind === 'deleted' ? 'del' : 'moveFrom';
+    const content = elementChildren(last).filter((c) => !/^(pPr|bookmark|moveFromRange|moveToRange|proofErr|permStart|permEnd)/.test(c.namespaceURI === W ? c.localName! : ''));
+    return content.length > 0 && content.every((c) => isW(c, wrapper));
   }
 
   /** Give `to` the numbering that `from` states for itself (list and level), in place of its own. */
@@ -524,7 +611,7 @@ class PartConverter {
       if (child.localName === 'delText') rename(child, 't');
       else if (child.localName === 'delInstrText') rename(child, 'instrText');
     }
-    if (kind) applyChangeStyle(runProperties(run), kind, this.options.insertedColor);
+    if (kind) applyChangeStyle(runProperties(run), kind, this.options);
     if (hasContent) this.tokens.push(kind ?? 'unchanged');
     // Text boxes and other nested content inside the run.
     for (const child of elementChildren(run)) if (!isW(child, 'rPr')) this.convert(child, kind);
@@ -553,6 +640,7 @@ class PartConverter {
     // exists. So the last mark in a cell is changed only if the cell itself (or
     // its row) was inserted or deleted, whatever the paragraph's own flag says.
     let numberLostAtCellEnd: ChangeKind | undefined;
+    let keepsNumber = false;
     const cell = paragraph.parentNode as Element;
     if (!kind && isWord(cell, 'tc') && kids(cell).filter((c) => isWord(c, 'p') || isWord(c, 'tbl')).pop() === paragraph) {
       // The cell's row: its parent, or further up when the cell sits in a content control (a tick-box cell) or custom XML wrapper.
@@ -564,16 +652,25 @@ class PartConverter {
         // cell's final mark cannot change, the join or split really happens at
         // the mark of the paragraph before: that is the mark to show as changed.
         const before = kids(cell).filter((c) => isWord(c, 'p') || isWord(c, 'tbl'));
-        const previous = before[before.length - 2];
+        // Several paragraphs in a row may have been added or removed at the end of the cell (found on a real
+        // contract: twelve added after the one that was there). The marks before the last already show the
+        // change, so the whole run moves up by one: the mark to show as changed is the one before the run.
+        let at = before.length - 2;
+        while (at >= 0 && isWord(before[at]!, 'p') && this.markToken.has(before[at]!) && this.tokens[this.markToken.get(before[at]!)!] === markKind) at--;
+        const single = at === before.length - 2;
+        const removal = markKind === 'deleted' || markKind === 'movedFrom';
+        const whollyRemoved = removal && content.length > 0 && content.every((c) => isW(c, markKind === 'deleted' ? 'del' : 'moveFrom'));
+        const previous = before[at];
         const index = previous && isWord(previous, 'p') ? this.markToken.get(previous) : undefined;
-        if (previous && index !== undefined && this.tokens[index] === 'unchanged') {
-          applyChangeStyle(markProperties(previous), markKind, this.options.insertedColor);
+        // (A run of removed paragraphs ending in one of which part remains is left as it is: which clause number
+        // the remaining part should carry cannot be told here, and the Checker judges the result.)
+        if (previous && index !== undefined && this.tokens[index] === 'unchanged' && (single || !removal || whollyRemoved || content.length === 0)) {
+          applyChangeStyle(markProperties(previous), markKind, this.options);
           this.tokens[index] = markKind;
           // Numbering must follow (found on real contracts: otherwise two paragraphs keep a number where the
           // modified document has one clause, and every later clause is numbered one too high).
-          if (markKind === 'deleted' || markKind === 'movedFrom') {
-            const wrapper = markKind === 'deleted' ? 'del' : 'moveFrom';
-            if (content.length > 0 && content.every((c) => isW(c, wrapper))) {
+          if (removal) {
+            if (whollyRemoved || (!single && content.length === 0)) {
               // Nothing of this paragraph remains: it is the clause that was removed, so it is the one that gives up
               // its number (below), and the paragraph before keeps its own.
               numberLostAtCellEnd = markKind;
@@ -590,15 +687,24 @@ class PartConverter {
         }
         markKind = undefined;
       } else if (markKind === 'movedFrom' || markKind === 'movedTo') markKind = cellKind ? markKind : undefined;
-      else markKind = cellKind;
+      else {
+        if (!cellKind) numberLostAtCellEnd = this.removedAtCellEnd.get(paragraph);
+        markKind = cellKind;
+      }
+    } else if (!kind && (markKind === 'deleted' || markKind === 'movedFrom') && this.endsCellWithRemovedClause(paragraph, markKind)) {
+      // The same situation as above, written the other way round (found on real contracts): the engine has already
+      // put the removal on this mark, the one before the cell's last paragraph, and that last paragraph is removed
+      // whole. The clause that went is the last one, so it gives up its number and this paragraph keeps its own.
+      this.removedAtCellEnd.set(paragraph.nextSibling as Element, markKind);
+      keepsNumber = true;
     }
 
     if (pPr) this.convert(pPr, kind);
     if (this.options.deletionBeforeInsertion) this.putDeletionsFirst(paragraph);
     for (const child of elementChildren(paragraph)) if (!isW(child, 'pPr')) this.visit(child, kind);
 
-    if (markKind) applyChangeStyle(markProperties(paragraph), markKind, this.options.insertedColor);
-    const numberLost = markKind === 'deleted' || markKind === 'movedFrom' ? markKind : numberLostAtCellEnd;
+    if (markKind) applyChangeStyle(markProperties(paragraph), markKind, this.options);
+    const numberLost = keepsNumber ? undefined : markKind === 'deleted' || markKind === 'movedFrom' ? markKind : numberLostAtCellEnd;
     if (numberLost) {
       const label = this.oldNumberOf.get(paragraph);
       if (this.options.showOldNumbers && label) this.addOldNumber(paragraph, label, numberLost);
@@ -636,6 +742,7 @@ export function convertPart(xml: string, options: StaticRedlineStyleOptions = DE
   const root = document.documentElement as unknown as Element;
   // These two need the tracked changes still in place, so they come first.
   const numbers = original && original.isMain && options.showOldNumbers ? oldNumbers(root, original) : new Map<Element, string>();
+  if (original) stateLookOfJoinedText(root, original.styles);
   if (original && options.markFormattingChanges) markFormattingChanges(root, original);
   const converter = new PartConverter(options, numbers, original ? (paragraph) => original.styles.numPr(paragraph) : undefined);
   converter.convert(root, undefined);

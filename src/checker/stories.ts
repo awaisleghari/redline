@@ -15,7 +15,7 @@
  * (spaces, punctuation, digits, tabs, line breaks) is kept.
  */
 import { NS } from '../common/namespaces';
-import { FORMAT, INSERTED_COLOUR, staticKindOf, Styles, type StaticKind } from './formatting';
+import { FORMAT, STANDARD_COLOURS, staticKindOf, Styles, type ChangeColours, type StaticKind } from './formatting';
 import { Numbering } from './numbering';
 import { DocxPackage } from './package';
 import { attribute, child, is, type XmlElement } from './xml';
@@ -98,7 +98,7 @@ export interface Story {
 export interface StoryReading {
   stories: Story[];
   /** The colour in which a static redline shows insertions (only meaningful for a static redline's reading). */
-  insertedColour: string;
+  colours: ChangeColours;
   /** Every part of the package this reading took text from. */
   partsRead: Set<string>;
   /** Footnote / endnote ids that were reached through a reference, per notes part. */
@@ -112,6 +112,8 @@ export interface StoryReading {
    * text inserted, so each view has exactly its own document's links.)
    */
   links: string[];
+  /** Handwriting (pen strokes) the document holds, in reading order: a fingerprint of each. */
+  inks: string[];
   /** The text of each table row marked to repeat at the top of every page the table runs onto. */
   repeatRows: string[];
   /** How the pages are set up: sections, their headers and footers, page numbering, note numbering. */
@@ -196,6 +198,7 @@ const KNOWN_WRAPPER_NAMESPACES: ReadonlySet<string> = new Set([
 const A_NS = 'http://schemas.openxmlformats.org/drawingml/2006/main';
 const M_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/math';
 const V_NS = 'urn:schemas-microsoft-com:vml';
+const INK_NS = 'http://www.w3.org/2003/InkML';
 
 /** Does an element hold any document markup at all (text, a note reference, a tab, a field, an equation, a shape...)? */
 /**
@@ -293,12 +296,13 @@ interface Source {
   part: string;
   partsRead: Set<string>;
   links: string[];
+  inks: string[];
   markup: Markup;
   styles: Styles;
   numbering: Numbering;
   repeatRows: string[];
   /** The colour in which a static redline shows insertions. */
-  insertedColour: string;
+  colours: ChangeColours;
 }
 
 function newContext(view: View, problems: string[], source: Source): Context {
@@ -323,12 +327,14 @@ function readRun(run: XmlElement, context: Context): string {
   const { markup, styles } = context.source;
   let code = styles.formatOf(rPr, context.paragraphStyle) | (context.code & CHAR.changed);
   if (markup === 'static') {
-    const kind = staticKindOf(rPr, context.source.insertedColour);
+    const kind = staticKindOf(rPr, context.source.colours);
     const styleElement = rPr && child(rPr, W, 'rStyle');
     if (styleElement && attribute(styleElement, W, 'val') === STATIC_STYLE.oldNumber && context.view !== 'all') {
       // The old number of a removed clause: shown struck through, and not part of either document's text.
       if (kind !== 'deleted' && kind !== 'movedFrom') context.problems.push('An old clause number is not marked as deleted text.');
       if (styles.formatOf(rPr, context.paragraphStyle) & FORMAT.hidden) context.problems.push('An old clause number is formatted as hidden text.');
+      const undefinedStyle = 'An old clause number uses a style that the document\'s style sheet does not define.';
+      if (!styles.defines(STATIC_STYLE.oldNumber) && !context.problems.includes(undefinedStyle)) context.problems.push(undefinedStyle);
       const saved = context.meta;
       const label = inlineText(run, context);
       context.meta = saved;
@@ -339,7 +345,7 @@ function readRun(run: XmlElement, context: Context): string {
       // Everything inside a dropped run (a text box, say) must be marked the same way, or a reader would see it as ordinary text.
       const inner = (element: XmlElement): void => {
         for (const c of element.children) {
-          if (w(c, 'r') && c.children.some((x) => !w(x, 'rPr')) && staticKindOf(child(c, W, 'rPr'), context.source.insertedColour) !== kind) {
+          if (w(c, 'r') && c.children.some((x) => !w(x, 'rPr')) && staticKindOf(child(c, W, 'rPr'), context.source.colours) !== kind) {
             context.problems.push('Text inside a deleted or inserted object is not itself marked as deleted or inserted.');
           }
           inner(c);
@@ -380,6 +386,14 @@ function linkedContent(node: XmlElement, context: Context): string {
     if (/\.xml$/i.test(rel.partName)) {
       const root = pkg.xml(rel.partName);
       if (root.ns === W) continue; // headers, footers and notes are read as stories of their own
+      if (root.ns === INK_NS) {
+        // Handwriting: pen strokes, stored as coordinates. There is no text in it. The strokes are noted, to be
+        // compared between the files; the picture of them that the file carries alongside is read as a picture
+        // (see alternateContentBranch).
+        partsRead.add(rel.partName);
+        context.source.inks.push(fingerprint(pkg.entries.get(rel.partName)!));
+        continue;
+      }
       partsRead.add(rel.partName);
       const texts: string[] = [];
       allText(root, texts);
@@ -412,7 +426,7 @@ function alternateContentBranch(element: XmlElement, context: Context, read: (br
   if (branches.length > 1) {
     // Every branch (there may be several Choices) must read the same: text, text boxes and note references.
     const readings = branches.map((branch) => {
-      const probe = newContext(context.view, [], { ...context.source, partsRead: new Set(), links: [], repeatRows: [] });
+      const probe = newContext(context.view, [], { ...context.source, partsRead: new Set(), links: [], inks: [], repeatRows: [] });
       const inline = read(branch, probe);
       // Pictures are stored differently in the modern and legacy forms, so linked files are left out of this comparison.
       const texts = (list: Para[]): string[] => list.map((entry) => entry.text);
@@ -432,7 +446,35 @@ function alternateContentBranch(element: XmlElement, context: Context, read: (br
       context.problems.push('A drawing or text box is stored in alternative forms whose text differs, so what a reader would see cannot be verified.');
     }
   }
+  // Handwriting (found on a real contract: a stray pen mark) is stored as pen strokes with, as the other form, a
+  // picture of them. The strokes cannot be compared with anything, and a program that rewrites the file may keep
+  // only the picture. So the picture is the form that is read: it is what is compared between the files.
+  const fallback = branches.find((branch) => branch.name === 'Fallback');
+  // The strokes are still noted: a file that keeps them must keep them unchanged (the Checker compares them).
+  if (fallback && branches[0] !== fallback) {
+    const strokes = inkIn(branches[0]!, context);
+    if (strokes.length > 0) {
+      context.source.inks.push(...strokes);
+      return fallback;
+    }
+  }
   return branches[0];
+}
+
+/** The pen strokes anything in this element links to: a fingerprint of each such part. */
+function inkIn(element: XmlElement, context: Context): string[] {
+  const { pkg, part, partsRead } = context.source;
+  const found: string[] = [];
+  for (const [key, id] of element.attributes) {
+    if (!key.startsWith(`${NS.r}|`) || id === '') continue;
+    const rel = pkg.relationships(part).find((r) => r.id === id);
+    if (rel && !rel.external && rel.partName && /\.xml$/i.test(rel.partName) && pkg.has(rel.partName) && pkg.xml(rel.partName).ns === INK_NS) {
+      partsRead.add(rel.partName);
+      found.push(fingerprint(pkg.entries.get(rel.partName)!));
+    }
+  }
+  for (const c of element.children) found.push(...inkIn(c, context));
+  return found;
 }
 
 function unknownWrapperProblem(node: XmlElement, context: Context): void {
@@ -584,11 +626,38 @@ function closeParagraph(context: Context, number: string, removed: boolean, list
   context.oldNumber = '';
 }
 
-function readParagraph(paragraph: XmlElement, context: Context): void {
+/**
+ * The paragraph whose properties this paragraph's text has in this view. Paragraph properties belong to the
+ * paragraph mark. When tracked changes remove a mark, the text before it joins the next paragraph and takes that
+ * paragraph's properties (so text that joins a heading is formatted as the heading). `siblings` is the content of
+ * the paragraph's container, and `index` the paragraph's place in it.
+ */
+const BETWEEN_PARAGRAPHS = /^(bookmarkStart|bookmarkEnd|proofErr|permStart|permEnd|commentRangeStart|commentRangeEnd|move(From|To)Range(Start|End))$/;
+
+function survivingParagraph(paragraph: XmlElement, siblings: XmlElement[], index: number, context: Context): XmlElement {
+  if (context.source.markup !== 'tracked' || context.view === 'all') return paragraph;
+  const markRemoved = (p: XmlElement): boolean => {
+    const properties = child(p, W, 'pPr');
+    return removedIn(properties && child(properties, W, 'rPr'), context.view, ['ins', 'moveTo'], ['del', 'moveFrom']);
+  };
+  let current = paragraph;
+  for (let i = index + 1; markRemoved(current); i++) {
+    // Markers that hold no content (bookmarks and the like) do not keep paragraphs apart.
+    while (siblings[i] && siblings[i]!.ns === W && BETWEEN_PARAGRAPHS.test(siblings[i]!.name)) i++;
+    const next = siblings[i];
+    // Only a paragraph directly after can be joined; anything else (a table, a wrapper, the end) ends the run of paragraphs.
+    if (!next || !w(next, 'p')) return paragraph;
+    current = next;
+  }
+  return current;
+}
+
+function readParagraph(paragraph: XmlElement, context: Context, siblings: XmlElement[] = [], index = 0): void {
   const properties = child(paragraph, W, 'pPr');
   const { markup, styles, numbering } = context.source;
-  const styleElement = properties && child(properties, W, 'pStyle');
-  context.paragraphStyle = styleElement && attribute(styleElement, W, 'val');
+  const survivingProperties = child(survivingParagraph(paragraph, siblings, index, context), W, 'pPr');
+  const survivingStyle = survivingProperties && child(survivingProperties, W, 'pStyle');
+  context.paragraphStyle = survivingStyle && attribute(survivingStyle, W, 'val');
   if (markup === 'static' && context.view !== 'all' && (context.paragraphStyle ?? '').startsWith(STATIC_STYLE.coverPrefix)) {
     context.problems.push('A paragraph inside the document carries the cover-page style, which would exempt it from the counts.');
   }
@@ -596,7 +665,7 @@ function readParagraph(paragraph: XmlElement, context: Context): void {
   context.paragraphStyle = undefined;
 
   const markProperties = properties && child(properties, W, 'rPr');
-  const markKind = markup !== 'static' ? undefined : context.markAt?.has(paragraph) ? context.markAt.get(paragraph) : staticKindOf(markProperties, context.source.insertedColour);
+  const markKind = markup !== 'static' ? undefined : context.markAt?.has(paragraph) ? context.markAt.get(paragraph) : staticKindOf(markProperties, context.source.colours);
   const markRemoved =
     markup === 'static' ? staticDropped(markKind, context.view) : removedIn(markProperties, context.view, ['ins', 'moveTo'], ['del', 'moveFrom']);
   // Is the paragraph itself removed by the changes (whatever this view shows)?
@@ -624,7 +693,7 @@ function readParagraph(paragraph: XmlElement, context: Context): void {
 
 /** Read block-level content (paragraphs, tables, containers) of a body, cell, note, header or text box. */
 function readBlocks(container: XmlElement, context: Context): void {
-  for (const node of container.children) {
+  for (const [index, node] of container.children.entries()) {
     if (droppedIn(node, context.view)) continue;
     if (node.ns === NS.mc && node.name === 'AlternateContent') {
       const branch = alternateContentBranch(node, context, (b, into) => {
@@ -644,7 +713,7 @@ function readBlocks(container: XmlElement, context: Context): void {
         context.problems.push('The document pulls in content from another file (an embedded or linked sub-document), which cannot be checked.');
         break;
       case 'p':
-        readParagraph(node, context);
+        readParagraph(node, context, container.children, index);
         break;
       case 'tbl':
         flushPending(context);
@@ -738,17 +807,21 @@ function readRow(row: XmlElement, context: Context): void {
  * before the last paragraph shows a change and everything in the last paragraph shows the same change, the
  * change belongs to the last paragraph: that is the clause that came or went, and the one before it is untouched.
  */
-function cellEndMarks(cell: XmlElement, insertedColour: string): Map<XmlElement, StaticKind | undefined> | undefined {
+function cellEndMarks(cell: XmlElement, colours: ChangeColours): Map<XmlElement, StaticKind | undefined> | undefined {
   const blocks = cell.children.filter((c) => w(c, 'p') || w(c, 'tbl'));
   const last = blocks[blocks.length - 1];
   const before = blocks[blocks.length - 2];
   if (!last || !before || !w(last, 'p') || !w(before, 'p')) return undefined;
   const markOf = (paragraph: XmlElement): StaticKind | undefined => {
     const properties = child(paragraph, W, 'pPr');
-    return staticKindOf(properties && child(properties, W, 'rPr'), insertedColour);
+    return staticKindOf(properties && child(properties, W, 'rPr'), colours);
   };
   const kind = markOf(before);
   if (!kind || markOf(last)) return undefined;
+  // Several paragraphs in a row may have come or gone at the end of the cell. Their marks then show the change
+  // from one paragraph further up, all the way: the first mark of that run is the one that is really untouched.
+  let first = before;
+  for (let i = blocks.length - 3; i >= 0 && w(blocks[i]!, 'p') && markOf(blocks[i]!) === kind; i--) first = blocks[i]!;
   const runs: XmlElement[] = [];
   const collect = (element: XmlElement): void => {
     for (const c of element.children) {
@@ -764,8 +837,8 @@ function cellEndMarks(cell: XmlElement, insertedColour: string): Map<XmlElement,
   };
   // The old clause number typed in front of a removed paragraph is the redline's own addition, not the paragraph's content.
   const content = runs.filter((run) => styleOf(run) !== STATIC_STYLE.oldNumber);
-  if (content.length === 0 || !content.every((run) => staticKindOf(child(run, W, 'rPr'), insertedColour) === kind)) return undefined;
-  return new Map<XmlElement, StaticKind | undefined>([[before, undefined], [last, kind]]);
+  if (content.length === 0 || !content.every((run) => staticKindOf(child(run, W, 'rPr'), colours) === kind)) return undefined;
+  return new Map<XmlElement, StaticKind | undefined>([[first, undefined], [last, kind]]);
 }
 
 /** Read one cell. Returns undefined when the cell does not exist in this view. */
@@ -774,7 +847,7 @@ function readCell(cell: XmlElement, context: Context): Context | undefined {
   // A cell is its own scope for joining paragraphs: text never leaks out of a cell.
   const inner = newContext(context.view, context.problems, context.source);
   inner.code = context.code & CHAR.changed;
-  if (context.source.markup === 'static') inner.markAt = cellEndMarks(cell, context.source.insertedColour);
+  if (context.source.markup === 'static') inner.markAt = cellEndMarks(cell, context.source.colours);
   readBlocks(cell, inner);
   // In a static redline there are no flags on rows and cells: a cell is gone
   // in this view exactly when its last paragraph's mark is (Word never lets a
@@ -796,12 +869,13 @@ const storyOf = (key: string, kind: StoryKind, label: string, details: Para[]): 
  * Stories with no text at all are left out, so "a header that exists but is
  * empty" and "no header" compare as equal.
  */
-export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'tracked', insertedColour: string = INSERTED_COLOUR.standard): StoryReading {
+export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'tracked', colours: ChangeColours = STANDARD_COLOURS): StoryReading {
   const stories: Story[] = [];
   const partsRead = new Set<string>();
   const noteIdsRead = new Map<string, Set<string>>();
   const problems: string[] = [];
   const links: string[] = [];
+  const inks: string[] = [];
   const cover: string[] = [];
   const coverLooks: string[] = [];
   const repeatRows: string[] = [];
@@ -814,10 +888,10 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
   let body = child(pkg.xml(main), W, 'body');
   if (!body) {
     problems.push('The main document has no body.');
-    return { stories, partsRead, noteIdsRead, problems, links, cover, coverLooks, repeatRows, layout, insertedColour };
+    return { stories, partsRead, noteIdsRead, problems, links, inks, cover, coverLooks, repeatRows, layout, colours };
   }
   partsRead.add(main);
-  const shared = { pkg, partsRead, links, markup, styles: new Styles(pkg, main), numbering: new Numbering(pkg, main), repeatRows, insertedColour };
+  const shared = { pkg, partsRead, links, inks, markup, styles: new Styles(pkg, main), numbering: new Numbering(pkg, main), repeatRows, colours };
 
   if (markup === 'static' && view !== 'all') {
     // The cover page: the leading paragraphs in the cover styles. It is the
@@ -835,6 +909,11 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
       // How the line looks: the legend's samples must really be in each style, and nothing may be hidden.
       const pPr = child(paragraph, W, 'pPr');
       const styleElement = pPr && child(pPr, W, 'pStyle');
+      // The cover's styles are the redline's own: they must be in the style sheet the document really uses,
+      // or Word shows the cover page with none of its layout.
+      const coverStyle = (styleElement && attribute(styleElement, W, 'val')) ?? '';
+      const undefinedStyle = 'The cover page uses a style that the document\'s style sheet does not define.';
+      if (!shared.styles.defines(coverStyle) && !problems.includes(undefinedStyle)) problems.push(undefinedStyle);
       const looks = new Set<string>();
       const look = (element: XmlElement): void => {
         for (const c of element.children) {
@@ -843,7 +922,7 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
             const shading = rPr && child(rPr, W, 'shd');
             const shaded = !!shading && attribute(shading, W, 'fill')?.toUpperCase() === STATIC_STYLE.shadeFill;
             const hidden = (shared.styles.formatOf(rPr, styleElement && attribute(styleElement, W, 'val')) & FORMAT.hidden) !== 0;
-            looks.add(`${staticKindOf(rPr, insertedColour) ?? (shaded ? 'shaded' : 'plain')}${hidden ? ':hidden' : ''}`);
+            looks.add(`${staticKindOf(rPr, colours) ?? (shaded ? 'shaded' : 'plain')}${hidden ? ':hidden' : ''}`);
           } else look(c);
         }
       };
@@ -989,5 +1068,5 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
     if (stated.size > 1 || restarts) layout.noteFormat[kind] = 'mixed';
   }
 
-  return { stories, partsRead, noteIdsRead, problems, links, cover, coverLooks, repeatRows, layout, insertedColour };
+  return { stories, partsRead, noteIdsRead, problems, links, inks, cover, coverLooks, repeatRows, layout, colours };
 }

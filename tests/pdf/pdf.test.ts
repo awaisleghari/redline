@@ -271,6 +271,22 @@ print("done")`;
   });
 });
 
+describe('a redline that shows its deletions in dark orange (the document itself uses red strikethrough)', () => {
+  it('its PDF passes check 9: deletions are printed in dark orange, and the document\'s own red text is not taken for a change', async () => {
+    const { withRedStrikethrough } = await import('../fixtures/real-world');
+    const pair = await buildPair(pairById('several-changes'));
+    const modified = await withRedStrikethrough(pair.modified);
+    const cover = { originalName: 'original.docx', modifiedName: 'modified.docx', comparedAt: '24 November 2026 at 12:00 (UTC+00:00)' };
+    const made = await makeStaticRedline(await produceTrackedChanges(pair.original, modified), pair.original, cover);
+    expect(new TextDecoder().decode((await unzip(made.docx)).get('word/document.xml')!)).toContain('shown in dark orange');
+    const report = await checkPdf({ staticRedline: made.docx, pdf: await convertToPdf(made.docx) });
+    expect(report.checks.filter((check) => !check.passed)).toEqual([]);
+    // The same PDF checked against a red redline of the plain pair must not pass: the colours are really compared.
+    const red = await makeStaticRedline(await produceTrackedChanges(pair.original, pair.modified), pair.original, cover);
+    expect((await checkPdf({ staticRedline: red.docx, pdf: await convertToPdf(made.docx) })).passed).toBe(false);
+  });
+});
+
 describe('a redline that shows its insertions in magenta (the document itself uses blue double underline)', () => {
   it('its PDF passes check 9: insertions are printed in magenta, and the document\'s own blue text is not taken for a change', async () => {
     const { withBlueDoubleUnderline } = await import('../fixtures/real-world');

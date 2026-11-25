@@ -107,6 +107,11 @@ export class Styles {
     }
   }
 
+  /** Does the document's own style sheet define this style? */
+  defines(id: string): boolean {
+    return this.styles.has(id);
+  }
+
   /** A style and everything it is based on, nearest first. */
   private chain(id: string | undefined): Style[] {
     const result: Style[] = [];
@@ -170,14 +175,33 @@ export type StaticKind = 'inserted' | 'deleted' | 'movedFrom' | 'movedTo';
  */
 export const INSERTED_COLOUR = { standard: '0000FF', alternative: 'AA00AA' } as const;
 
-/** Whether a document's own text or paragraph marks carry the standard look of an insertion. */
-export function usesInsertionLook(root: XmlElement): boolean {
+/**
+ * The colour of deleted text, on the same rule (owner's rule for insertions, applied to deletions; found on a real
+ * contract whose own text held a paragraph mark formatted red and struck through): red, unless one of the two
+ * documents itself contains text formatted red with a strikethrough. Then deletions are shown in a dark orange,
+ * and the legend says so.
+ */
+export const DELETED_COLOUR = { standard: 'FF0000', alternative: 'C55A11' } as const;
+
+/** The colours a static redline shows insertions and deletions in. */
+export interface ChangeColours {
+  inserted: string;
+  deleted: string;
+}
+export const STANDARD_COLOURS: ChangeColours = { inserted: INSERTED_COLOUR.standard, deleted: DELETED_COLOUR.standard };
+
+/** Whether a document's own text or paragraph marks carry the standard look of the given kind of change. */
+function usesLook(root: XmlElement, kind: StaticKind): boolean {
   for (const node of [root, ...descendantsOf(root)]) {
     if (node.ns !== W || (node.name !== 'r' && node.name !== 'pPr')) continue;
-    if (staticKindOf(child(node, W, 'rPr'), INSERTED_COLOUR.standard) === 'inserted') return true;
+    if (staticKindOf(child(node, W, 'rPr'), STANDARD_COLOURS) === kind) return true;
   }
   return false;
 }
+/** Whether a document's own text or paragraph marks carry the standard look of an insertion. */
+export const usesInsertionLook = (root: XmlElement): boolean => usesLook(root, 'inserted');
+/** Whether a document's own text or paragraph marks carry the standard look of a deletion. */
+export const usesDeletionLook = (root: XmlElement): boolean => usesLook(root, 'deleted');
 function* descendantsOf(element: XmlElement): Generator<XmlElement> {
   for (const c of element.children) {
     yield c;
@@ -189,7 +213,7 @@ function* descendantsOf(element: XmlElement): Generator<XmlElement> {
  * Which change, if any, a set of run properties marks in a static redline,
  * per the style spec in PLAN.md. Read from the formatting alone.
  */
-export function staticKindOf(rPr: XmlElement | undefined, insertedColour: string = INSERTED_COLOUR.standard): StaticKind | undefined {
+export function staticKindOf(rPr: XmlElement | undefined, colours: ChangeColours = STANDARD_COLOURS): StaticKind | undefined {
   if (!rPr) return undefined;
   const colorElement = child(rPr, W, 'color');
   // A theme colour takes precedence over the stated one in Word, so the text would not show in the change colour.
@@ -201,9 +225,9 @@ export function staticKindOf(rPr: XmlElement | undefined, insertedColour: string
   };
   const underline = child(rPr, W, 'u');
   const doubleUnderline = !!underline && attribute(underline, W, 'val') === 'double';
-  if (color === 'FF0000' && on('strike')) return 'deleted';
+  if (color === colours.deleted && on('strike')) return 'deleted';
   if (color === '008000' && on('dstrike')) return 'movedFrom';
-  if (color === insertedColour && doubleUnderline) return 'inserted';
+  if (color === colours.inserted && doubleUnderline) return 'inserted';
   if (color === '008000' && doubleUnderline) return 'movedTo';
   return undefined;
 }

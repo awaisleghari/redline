@@ -7,9 +7,10 @@ import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
 import { NS } from '../common/namespaces';
 import { unzip, zip } from '../common/zip';
 import { acceptTrackedChanges, hasTrackedChanges } from './accept-changes';
+import { dropUnusedHeadersAndFooters } from './drop-unused-headers';
 import { coverPageXml, coverStylesXml, type CoverPageContent } from './cover-page';
 import { readOriginal, StyleSheet } from './original-reader';
-import { convertPart, DEFAULT_STYLE_OPTIONS, INSERTED_COLOR, PROPERTY_CHANGE_RECORDS, usesInsertionLook, type ChangeCounts, type StaticRedlineStyleOptions } from './static-redline';
+import { convertPart, DEFAULT_STYLE_OPTIONS, DELETED_COLOR, INSERTED_COLOR, PROPERTY_CHANGE_RECORDS, usesDeletionLook, usesInsertionLook, type ChangeCounts, type StaticRedlineStyleOptions } from './static-redline';
 
 const W = NS.w;
 const decoder = new TextDecoder();
@@ -47,7 +48,8 @@ function attributeValue(tag: string, name: string): string | undefined {
 }
 
 /** Part names by declared content type, read from [Content_Types].xml. */
-function partsOfTypes(contentTypes: string, names: Iterable<string>, wanted: string[]): { textParts: string[]; main?: string; styles?: string; numbering?: string } {
+function partsOfTypes(contentTypes: string, files: Map<string, Uint8Array>, wanted: string[]): { textParts: string[]; main?: string; styles?: string; numbering?: string } {
+  const names = files.keys();
   const overrides = new Map<string, string>();
   for (const tag of contentTypes.match(/<Override\b[^>]*>/g) ?? []) {
     const part = attributeValue(tag, 'PartName');
@@ -63,10 +65,35 @@ function partsOfTypes(contentTypes: string, names: Iterable<string>, wanted: str
     if (!type) continue;
     if (wanted.some((w) => type.endsWith(w))) textParts.push(name);
     if (/\.(document|template)\.(macroEnabled\.)?main\+xml$/.test(type) || type.endsWith('macroEnabledTemplate.main+xml')) main = name;
-    if (type.endsWith('wordprocessingml.styles+xml')) styles = name;
-    if (type.endsWith('wordprocessingml.numbering+xml')) numbering = name;
+  }
+  // The styles and numbering are the main document's own: the ones its relationships point to. A file can hold
+  // others of the same type (found on real contracts: a template's glossary of building blocks has its own
+  // styles), and taking those instead would read every clause number and all formatting from the wrong sheet.
+  if (main) {
+    const folder = main.slice(0, main.lastIndexOf('/') + 1);
+    const rels = files.get(`${folder}_rels/${main.slice(folder.length)}.rels`);
+    for (const tag of (rels ? decoder.decode(rels) : '').match(/<Relationship\b[^>]*>/g) ?? []) {
+      const type = attributeValue(tag, 'Type');
+      const target = attributeValue(tag, 'Target');
+      if (!type || !target || attributeValue(tag, 'TargetMode') === 'External') continue;
+      const name = resolveTarget(folder, target);
+      if (!files.has(name)) continue;
+      if (type.endsWith('/styles') && overrides.get(name)?.endsWith('wordprocessingml.styles+xml')) styles = name;
+      if (type.endsWith('/numbering') && overrides.get(name)?.endsWith('wordprocessingml.numbering+xml')) numbering = name;
+    }
   }
   return { textParts: textParts.sort(), main, styles, numbering };
+}
+
+/** The part a relationship target names: absolute ("/word/styles.xml") or relative to the folder of the part that has the relationship. */
+function resolveTarget(folder: string, target: string): string {
+  if (target.startsWith('/')) return target.slice(1);
+  const out: string[] = [];
+  for (const piece of (folder + target).split('/')) {
+    if (piece === '..') out.pop();
+    else if (piece !== '.' && piece !== '') out.push(piece);
+  }
+  return out.join('/');
 }
 
 const isW = (node: Node | null, name: string): node is Element => !!node && node.nodeType === 1 && (node as Element).namespaceURI === W && (node as Element).localName === name;
@@ -163,9 +190,11 @@ export async function makeStaticRedline(trackedChanges: Uint8Array, original: Ui
   // The original document: the formatting its text had, and its clause numbers.
   // Tracked changes already in the original count as accepted: its formatting and numbering are read from the accepted copy.
   const originalFiles = await unzip(await acceptTrackedChanges(original));
+  // Headers and footers that no section refers to are not document content (and are not in the tracked-changes file either).
+  dropUnusedHeadersAndFooters(originalFiles);
   const originalTypes = originalFiles.get('[Content_Types].xml');
   if (!originalTypes) throw new Error('the original document has no content types');
-  const originalParts = partsOfTypes(decoder.decode(originalTypes), originalFiles.keys(), TEXT_PART_TYPES);
+  const originalParts = partsOfTypes(decoder.decode(originalTypes), originalFiles, TEXT_PART_TYPES);
   const text = (files: Map<string, Uint8Array>, name: string | undefined): string | undefined => (name && files.has(name) ? decoder.decode(files.get(name)!) : undefined);
   const info = readOriginal(
     originalParts.textParts.map((name) => ({ xml: text(originalFiles, name)!, isMain: name === originalParts.main })),
@@ -176,20 +205,24 @@ export async function makeStaticRedline(trackedChanges: Uint8Array, original: Ui
   const files = await unzip(trackedChanges);
   const contentTypes = files.get('[Content_Types].xml');
   if (!contentTypes) throw new Error('the tracked-changes file has no content types');
-  const { textParts, main, styles, numbering } = partsOfTypes(decoder.decode(contentTypes), files.keys(), TEXT_PART_TYPES);
+  const { textParts, main, styles, numbering } = partsOfTypes(decoder.decode(contentTypes), files, TEXT_PART_TYPES);
   if (!main) throw new Error('the tracked-changes file has no main document part');
   if (!styles) throw new Error('the tracked-changes file has no styles part');
 
   // If either document itself uses blue double underline, insertions are shown in the alternative colour. The original is
   // looked at as accepted; the modified document's text is all in the tracked-changes file.
-  const alternativeInsertionColor = [...originalParts.textParts.map((name) => text(originalFiles, name)!), ...textParts.map((name) => decoder.decode(files.get(name)!))].some(usesInsertionLook);
+  const ownText = [...originalParts.textParts.map((name) => text(originalFiles, name)!), ...textParts.map((name) => decoder.decode(files.get(name)!))];
+  const alternativeInsertionColor = ownText.some(usesInsertionLook);
   const insertedColor = alternativeInsertionColor ? INSERTED_COLOR.alternative : INSERTED_COLOR.standard;
+  // The same for deletions: red struck-through text of the documents' own.
+  const alternativeDeletionColor = ownText.some(usesDeletionLook);
+  const deletedColor = alternativeDeletionColor ? DELETED_COLOR.alternative : DELETED_COLOR.standard;
 
   const counts: ChangeCounts = { insertions: 0, deletions: 0, moves: 0, formattingChanges: 0 };
   const converted = new Map<string, string>();
   const trackedStyles = new StyleSheet(text(files, styles));
   for (const part of textParts) {
-    const result = convertPart(decoder.decode(files.get(part)!), { ...DEFAULT_STYLE_OPTIONS, insertedColor, ...options.style }, { info, styles: trackedStyles, isMain: part === main });
+    const result = convertPart(decoder.decode(files.get(part)!), { ...DEFAULT_STYLE_OPTIONS, insertedColor, deletedColor, ...options.style }, { info, styles: trackedStyles, isMain: part === main });
     converted.set(part, result.xml);
     counts.insertions += result.counts.inserted;
     counts.deletions += result.counts.deleted;
@@ -199,7 +232,7 @@ export async function makeStaticRedline(trackedChanges: Uint8Array, original: Ui
 
   const stated = options.trackedChangesIn;
   const trackedChangesIn = stated === 'original' || stated === 'modified' || stated === 'both' ? stated : stated === undefined && (await hasTrackedChanges(original)) ? 'original' : undefined;
-  const content: CoverPageContent = { originalName: options.originalName, modifiedName: options.modifiedName, comparedAt: options.comparedAt, ...counts, trackedChangesIn, alternativeInsertionColor };
+  const content: CoverPageContent = { originalName: options.originalName, modifiedName: options.modifiedName, comparedAt: options.comparedAt, ...counts, trackedChangesIn, alternativeInsertionColor, alternativeDeletionColor };
   const settingsPart = [...files.keys()].find((name) => /(^|\/)settings\.xml$/.test(name));
   const facingPages = settingsPart !== undefined && /<w:(evenAndOddHeaders|mirrorMargins)(?![^>]*w:val="(0|false|off)")[^>]*>/.test(decoder.decode(files.get(settingsPart)!));
   converted.set(main, addCoverPage(converted.get(main)!, content, facingPages));

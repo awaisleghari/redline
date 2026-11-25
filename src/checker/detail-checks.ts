@@ -4,7 +4,7 @@
  * the cover page (check 5). All work from the Checker's own readings.
  */
 import { NS } from '../common/namespaces';
-import { describeFormat, FORMAT, FORMAT_MASK, INSERTED_COLOUR, staticKindOf, type StaticKind } from './formatting';
+import { describeFormat, FORMAT, FORMAT_MASK, STANDARD_COLOURS, staticKindOf, type ChangeColours, type StaticKind } from './formatting';
 import type { DocxPackage } from './package';
 import type { CheckFailure } from './report';
 import { CHAR, isStructureMark, STATIC_STYLE, type Para, type Story } from './stories';
@@ -200,7 +200,7 @@ export interface StaticCounts {
  * counted once, at its origin; a formatting change is an unbroken stretch of
  * shaded runs within one paragraph. The cover page itself is not counted.
  */
-export function countStaticChanges(pkg: DocxPackage, insertedColour: string = INSERTED_COLOUR.standard): StaticCounts {
+export function countStaticChanges(pkg: DocxPackage, colours: ChangeColours = STANDARD_COLOURS): StaticCounts {
   const counts: Record<StaticKind, number> = { inserted: 0, deleted: 0, movedFrom: 0, movedTo: 0 };
   let formattingChanges = 0;
 
@@ -244,13 +244,13 @@ export function countStaticChanges(pkg: DocxPackage, insertedColour: string = IN
           runs(node);
           walk(node);
           const pPr = child(node, W, 'pPr');
-          token(staticKindOf(pPr && child(pPr, W, 'rPr'), insertedColour) ?? 'unchanged');
+          token(staticKindOf(pPr && child(pPr, W, 'rPr'), colours) ?? 'unchanged');
         } else if (node.name === 'r') {
           const rPr = child(node, W, 'rPr');
           const runStyle = rPr && child(rPr, W, 'rStyle');
           // The old number typed in front of a removed clause belongs to that clause's change; it is not counted on its own.
           if (runStyle && attribute(runStyle, W, 'val') === STATIC_STYLE.oldNumber) continue;
-          if (node.children.some((x) => x !== rPr)) token(staticKindOf(rPr, insertedColour) ?? 'unchanged');
+          if (node.children.some((x) => x !== rPr)) token(staticKindOf(rPr, colours) ?? 'unchanged');
           walk(node);
         } else if (node.name === 'footnote' || node.name === 'endnote' || node.name === 'comment') {
           token('boundary');
@@ -274,9 +274,11 @@ export interface CoverExpectation {
   trackedChangesIn?: 'original' | 'modified' | 'both';
   /** True when the Checker itself found that a document already uses blue double underline, so insertions must be shown in the alternative colour. */
   alternativeInsertionColour?: boolean;
+  alternativeDeletionColour?: boolean;
 }
 
 /** The legend's line for inserted text: plain, or saying why insertions are not in the usual blue. */
+export const DELETED_LEGEND = { standard: 'Deleted text', alternative: 'Deleted text (shown in dark orange, because this document itself contains red struck-through text)' } as const;
 export const INSERTED_LEGEND = { standard: 'Inserted text', alternative: 'Inserted text (shown in magenta, because this document itself contains blue double-underlined text)' } as const;
 
 /** What the cover page must say when an upload came with tracked changes of its own (and must not say otherwise). */
@@ -297,6 +299,7 @@ export function coverPageFailure(cover: string[], coverLooks: string[], expectat
     };
   }
   const insertedLegend = expectation.alternativeInsertionColour ? INSERTED_LEGEND.alternative : INSERTED_LEGEND.standard;
+  const deletedLegend = expectation.alternativeDeletionColour ? DELETED_LEGEND.alternative : DELETED_LEGEND.standard;
   const expected = [
     'Comparison of documents',
     `Original: ${expectation.originalName}`,
@@ -305,7 +308,7 @@ export function coverPageFailure(cover: string[], coverLooks: string[], expectat
     ...(expectation.trackedChangesIn ? [ACCEPTED_NOTE_EXPECTED[expectation.trackedChangesIn]] : []),
     'Legend',
     insertedLegend,
-    'Deleted text',
+    deletedLegend,
     'Text moved from here',
     'Text moved to here',
     'Text whose formatting changed',
@@ -329,7 +332,7 @@ export function coverPageFailure(cover: string[], coverLooks: string[], expectat
   }
   // The legend must show each style as it really is, and no line may be hidden or dressed as a change.
   const looks = expected.map((line) =>
-    line === insertedLegend ? 'inserted' : line === 'Deleted text' ? 'deleted' : line === 'Text moved from here' ? 'movedFrom' : line === 'Text moved to here' ? 'movedTo' : line === 'Text whose formatting changed' ? 'shaded' : line === '' ? '' : 'plain',
+    line === insertedLegend ? 'inserted' : line === deletedLegend ? 'deleted' : line === 'Text moved from here' ? 'movedFrom' : line === 'Text moved to here' ? 'movedTo' : line === 'Text whose formatting changed' ? 'shaded' : line === '' ? '' : 'plain',
   );
   for (let i = 0; i < looks.length; i++) {
     if (looks[i] === coverLooks[i]) continue;
