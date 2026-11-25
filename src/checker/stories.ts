@@ -591,6 +591,10 @@ function inlineText(element: XmlElement, context: Context): string {
           continue;
         case 'drawing':
         case 'pict':
+          // A legacy picture element holding nothing but shape types (templates for shapes, see below) draws
+          // nothing: it is a place where definitions are kept. Found on real contracts: a program that rewrites the
+          // file may gather a definition into such an element of its own, and a reader sees no difference.
+          if (node.name === 'pict' && node.children.length > 0 && node.children.every((child) => child.ns === V_NS && child.name === 'shapetype')) continue;
           // The marker, then any text shown inside the object (watermark or shape text).
           // Text boxes inside it are read into the text-box story as they are met.
           text += emit(context, MARK.object);

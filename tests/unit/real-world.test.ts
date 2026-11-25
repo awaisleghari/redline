@@ -16,7 +16,7 @@ import { compareDocuments } from 'docxodus/core';
 import { repairNotes } from '../../src/producer/repair-notes';
 import { repairParagraphProperties } from '../../src/producer/repair-paragraphs';
 import { unwrapRowControls, unwrapRowControlsInPart } from '../../src/producer/unwrap-row-controls';
-import { withBlueDoubleUnderline, withCellsInContentControls, withGlossary, withInk, withParagraphsAtCellEnd, withRedStrikethrough, withClauseStyle, withRowsInContentControls, withNumberedClausesInCell, withDocumentWideSpaces, withNoteInTable, withSections } from '../fixtures/real-world';
+import { withBlueDoubleUnderline, withCellsInContentControls, withGlossary, withInk, withSvgPicture, SVG_PICTURE, withParagraphsAtCellEnd, withRedStrikethrough, withClauseStyle, withRowsInContentControls, withNumberedClausesInCell, withDocumentWideSpaces, withNoteInTable, withSections } from '../fixtures/real-world';
 
 const COVER = { originalName: 'original.docx', modifiedName: 'modified.docx', comparedAt: '24 November 2026 at 10:00 (UTC+00:00)' };
 const decoder = new TextDecoder();
@@ -811,5 +811,69 @@ describe('a footer that no section refers to', () => {
     expect(await failed(checkTrackedChanges({ original: pair.original, modified: pair.modified, output: await withLeftover(tracked) }))).toContain('completeness');
     const dropped = await editPart(tracked, /^word\/document\.xml$/, (xml) => xml.replace(/<w:footerReference\b[^>]*\/>/g, ''));
     expect(await failed(checkTrackedChanges({ original: pair.original, modified: pair.modified, output: dropped }))).toContain('accept-all');
+  });
+});
+
+/**
+ * Found on real contracts (held-out run 1, about 17 documents of one family): the engine gathers a shape type (a
+ * template for legacy shapes, which draws nothing) into a picture element of its own. A reader sees no difference.
+ */
+describe('a legacy picture element that holds only a shape template', () => {
+  const V = 'xmlns:v="urn:schemas-microsoft-com:vml"';
+  const template = `<v:shapetype ${V} id="_x0000_t202" coordsize="21600,21600" path="m,l,21600r21600,l21600,xe"><v:stroke joinstyle="miter"/></v:shapetype>`;
+  const add = (docx: Uint8Array, inside: string): Promise<Uint8Array> => editPart(docx, /^word\/document\.xml$/, (xml) => xml.replace('<w:r>', `<w:r><w:pict>${inside}</w:pict></w:r><w:r>`));
+
+  it('draws nothing, so an output that has one more of them than the uploads is passed', async () => {
+    const pair = await buildPair(pairById('one-word-change'));
+    const tracked = await produceTrackedChanges(pair.original, pair.modified);
+    expect(await failed(checkTrackedChanges({ original: pair.original, modified: pair.modified, output: await add(tracked, template) }))).toEqual([]);
+  });
+
+  it('an actual shape is still an object: an output with one the uploads do not have is refused', async () => {
+    const pair = await buildPair(pairById('one-word-change'));
+    const tracked = await produceTrackedChanges(pair.original, pair.modified);
+    const shape = `${template}<v:shape ${V} type="#_x0000_t202" style="width:10pt;height:10pt"/>`;
+    const failures = await failed(checkTrackedChanges({ original: pair.original, modified: pair.modified, output: await add(tracked, shape) }));
+    expect(failures).toContain('accept-all');
+  });
+});
+
+/**
+ * Found on real contracts (held-out run 1, about 10 documents of one family): an icon stored as text (SVG). The
+ * engine reads it as XML and writes it out again laid out differently, so the picture file is no longer the uploaded one.
+ */
+describe('a picture stored as text (SVG)', () => {
+  const svgsIn = async (docx: Uint8Array): Promise<Uint8Array[]> => [...(await unzip(docx))].filter(([name]) => name.endsWith('.svg')).map(([, bytes]) => bytes);
+
+  it('both Word files pass, and the picture in them is the uploaded file, byte for byte', async () => {
+    const pair = await buildPair(pairById('one-word-change'));
+    const { tracked, staticRedline, counts } = await bothPass(await withSvgPicture(pair.original), await withSvgPicture(pair.modified));
+    expect(counts).toEqual((await bothPass(pair.original, pair.modified)).counts);
+    for (const output of [tracked, staticRedline]) {
+      const svgs = await svgsIn(output);
+      expect(svgs.length).toBeGreaterThan(0);
+      for (const svg of svgs) expect(decoder.decode(svg)).toBe(decoder.decode(SVG_PICTURE));
+    }
+  });
+
+  it('the picture is really checked: an output whose picture draws something else is refused', async () => {
+    const pair = await buildPair(pairById('one-word-change'));
+    const original = await withSvgPicture(pair.original);
+    const modified = await withSvgPicture(pair.modified);
+    const files = await unzip(await produceTrackedChanges(original, modified));
+    for (const [name, bytes] of files) if (name.endsWith('.svg')) files.set(name, new TextEncoder().encode(decoder.decode(bytes).replace('#558ED5', '#FF0000')));
+    const failures = await failed(checkTrackedChanges({ original, modified, output: await zip(files) }));
+    expect(failures).toContain('accept-all');
+    expect(failures).toContain('reject-all');
+  });
+
+  it('a picture that draws something else is not mistaken for the uploaded one: each document keeps its own', async () => {
+    const pair = await buildPair(pairById('one-word-change'));
+    const other = new TextEncoder().encode(decoder.decode(SVG_PICTURE).replace(/#558ED5/g, '#00AA00'));
+    const original = await withSvgPicture(pair.original);
+    const modified = await withSvgPicture(pair.modified, other);
+    const tracked = await produceTrackedChanges(original, modified);
+    expect(await failed(checkTrackedChanges({ original, modified, output: tracked }))).toEqual([]);
+    expect((await svgsIn(tracked)).map((svg) => decoder.decode(svg)).sort()).toEqual([decoder.decode(SVG_PICTURE), decoder.decode(other)].sort());
   });
 });
