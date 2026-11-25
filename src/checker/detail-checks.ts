@@ -141,6 +141,15 @@ export function numberingFailure(modified: Story[], accepted: Story[]): CheckFai
   );
 }
 
+/** Which paragraphs are numbered in the stored forms of text boxes that are not the form read: the same as in the modified document. */
+export function otherFormsFailure(modified: string[], accepted: string[]): CheckFailure | undefined {
+  if (modified.length === accepted.length && modified.every((form, i) => form === accepted[i])) return undefined;
+  return {
+    message: 'A text box is stored in a second form (for older programs) whose numbered paragraphs differ from the modified document.',
+    where: 'text boxes and drawings',
+  };
+}
+
 /**
  * Old numbers: in a static redline, a removed paragraph that was numbered in
  * the original shows that old number, struck through, in front of it; nothing
