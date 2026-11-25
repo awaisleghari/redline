@@ -328,6 +328,21 @@ export const BROKEN_STATIC_CASES: BrokenStaticCase[] = [
     damage: (f) => edit(f, DOC, (x) => x.replace('<w:numPr><w:ilvl w:val="0"/><w:numId w:val="2"/></w:numPr>', '')),
     caughtBy: ['numbering'],
   },
+  // ----- the redline's own styles -----
+  {
+    id: 'static-cover-styles-undefined',
+    description: 'The cover page\'s styles are not in the document\'s style sheet (found on a real contract: they had been written into the style sheet of the template\'s glossary instead), so Word shows the cover page with none of its layout.',
+    pairId: 'numbered-clause-deleted',
+    damage: (f) => edit(f, 'word/styles.xml', (x) => x.replace(/<w:style\b[^>]*w:styleId="RedlineCover\w*"[^>]*>.*?<\/w:style>/gs, '')),
+    caughtBy: ['completeness'],
+  },
+  {
+    id: 'static-old-number-style-undefined',
+    description: 'The style of the old clause numbers is not in the document\'s style sheet.',
+    pairId: 'numbered-clause-deleted',
+    damage: (f) => edit(f, 'word/styles.xml', (x) => swap(x, /<w:style\b[^>]*w:styleId="RedlineOldNumber"[^>]*>.*?<\/w:style>/s, '')),
+    caughtBy: ['completeness'],
+  },
   // ----- the package -----
   {
     id: 'static-broken-comment-anchor',

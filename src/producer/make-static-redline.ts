@@ -47,7 +47,8 @@ function attributeValue(tag: string, name: string): string | undefined {
 }
 
 /** Part names by declared content type, read from [Content_Types].xml. */
-function partsOfTypes(contentTypes: string, names: Iterable<string>, wanted: string[]): { textParts: string[]; main?: string; styles?: string; numbering?: string } {
+function partsOfTypes(contentTypes: string, files: Map<string, Uint8Array>, wanted: string[]): { textParts: string[]; main?: string; styles?: string; numbering?: string } {
+  const names = files.keys();
   const overrides = new Map<string, string>();
   for (const tag of contentTypes.match(/<Override\b[^>]*>/g) ?? []) {
     const part = attributeValue(tag, 'PartName');
@@ -63,10 +64,35 @@ function partsOfTypes(contentTypes: string, names: Iterable<string>, wanted: str
     if (!type) continue;
     if (wanted.some((w) => type.endsWith(w))) textParts.push(name);
     if (/\.(document|template)\.(macroEnabled\.)?main\+xml$/.test(type) || type.endsWith('macroEnabledTemplate.main+xml')) main = name;
-    if (type.endsWith('wordprocessingml.styles+xml')) styles = name;
-    if (type.endsWith('wordprocessingml.numbering+xml')) numbering = name;
+  }
+  // The styles and numbering are the main document's own: the ones its relationships point to. A file can hold
+  // others of the same type (found on real contracts: a template's glossary of building blocks has its own
+  // styles), and taking those instead would read every clause number and all formatting from the wrong sheet.
+  if (main) {
+    const folder = main.slice(0, main.lastIndexOf('/') + 1);
+    const rels = files.get(`${folder}_rels/${main.slice(folder.length)}.rels`);
+    for (const tag of (rels ? decoder.decode(rels) : '').match(/<Relationship\b[^>]*>/g) ?? []) {
+      const type = attributeValue(tag, 'Type');
+      const target = attributeValue(tag, 'Target');
+      if (!type || !target || attributeValue(tag, 'TargetMode') === 'External') continue;
+      const name = resolveTarget(folder, target);
+      if (!files.has(name)) continue;
+      if (type.endsWith('/styles') && overrides.get(name)?.endsWith('wordprocessingml.styles+xml')) styles = name;
+      if (type.endsWith('/numbering') && overrides.get(name)?.endsWith('wordprocessingml.numbering+xml')) numbering = name;
+    }
   }
   return { textParts: textParts.sort(), main, styles, numbering };
+}
+
+/** The part a relationship target names: absolute ("/word/styles.xml") or relative to the folder of the part that has the relationship. */
+function resolveTarget(folder: string, target: string): string {
+  if (target.startsWith('/')) return target.slice(1);
+  const out: string[] = [];
+  for (const piece of (folder + target).split('/')) {
+    if (piece === '..') out.pop();
+    else if (piece !== '.' && piece !== '') out.push(piece);
+  }
+  return out.join('/');
 }
 
 const isW = (node: Node | null, name: string): node is Element => !!node && node.nodeType === 1 && (node as Element).namespaceURI === W && (node as Element).localName === name;
@@ -165,7 +191,7 @@ export async function makeStaticRedline(trackedChanges: Uint8Array, original: Ui
   const originalFiles = await unzip(await acceptTrackedChanges(original));
   const originalTypes = originalFiles.get('[Content_Types].xml');
   if (!originalTypes) throw new Error('the original document has no content types');
-  const originalParts = partsOfTypes(decoder.decode(originalTypes), originalFiles.keys(), TEXT_PART_TYPES);
+  const originalParts = partsOfTypes(decoder.decode(originalTypes), originalFiles, TEXT_PART_TYPES);
   const text = (files: Map<string, Uint8Array>, name: string | undefined): string | undefined => (name && files.has(name) ? decoder.decode(files.get(name)!) : undefined);
   const info = readOriginal(
     originalParts.textParts.map((name) => ({ xml: text(originalFiles, name)!, isMain: name === originalParts.main })),
@@ -176,7 +202,7 @@ export async function makeStaticRedline(trackedChanges: Uint8Array, original: Ui
   const files = await unzip(trackedChanges);
   const contentTypes = files.get('[Content_Types].xml');
   if (!contentTypes) throw new Error('the tracked-changes file has no content types');
-  const { textParts, main, styles, numbering } = partsOfTypes(decoder.decode(contentTypes), files.keys(), TEXT_PART_TYPES);
+  const { textParts, main, styles, numbering } = partsOfTypes(decoder.decode(contentTypes), files, TEXT_PART_TYPES);
   if (!main) throw new Error('the tracked-changes file has no main document part');
   if (!styles) throw new Error('the tracked-changes file has no styles part');
 

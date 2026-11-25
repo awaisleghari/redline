@@ -16,7 +16,7 @@ import { compareDocuments } from 'docxodus/core';
 import { repairNotes } from '../../src/producer/repair-notes';
 import { repairParagraphProperties } from '../../src/producer/repair-paragraphs';
 import { unwrapRowControls, unwrapRowControlsInPart } from '../../src/producer/unwrap-row-controls';
-import { withBlueDoubleUnderline, withCellsInContentControls, withClauseStyle, withRowsInContentControls, withNumberedClausesInCell, withDocumentWideSpaces, withNoteInTable, withSections } from '../fixtures/real-world';
+import { withBlueDoubleUnderline, withCellsInContentControls, withGlossary, withClauseStyle, withRowsInContentControls, withNumberedClausesInCell, withDocumentWideSpaces, withNoteInTable, withSections } from '../fixtures/real-world';
 
 const COVER = { originalName: 'original.docx', modifiedName: 'modified.docx', comparedAt: '24 November 2026 at 10:00 (UTC+00:00)' };
 const decoder = new TextDecoder();
@@ -509,6 +509,40 @@ describe('table rows wrapped in content controls', () => {
       if ((await failed(checkTrackedChanges({ original, modified, output: raw }))).length > 0) refused++;
     }
     expect(refused).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * Found on real contracts (Stage 7): the last clause in a table cell is deleted and words are deleted from the
+ * middle of the clause before it. The engine then records the removed paragraph break on the clause before (a cell's last mark cannot
+ * be removed). The clause that went is still the last one: it shows its old number, and the one before keeps its own.
+ */
+describe('the last clause in a cell deleted, the one before it shortened', () => {
+  it('both Word files pass; the surviving clause keeps its number and the deleted one shows its old number', async () => {
+    for (const id of ['numbered-clause-deleted', 'numbered-clause-moved']) {
+      const base = (await buildPair(pairById(id))).original;
+      const original = await withNumberedClausesInCell(base);
+      const modified = await withNumberedClausesInCell(base, 'last deleted, second shortened');
+      const { staticRedline } = await bothPass(original, modified);
+      const xml = decoder.decode((await unzip(staticRedline)).get('word/document.xml')!);
+      const inCell = /<w:tc>.*?<\/w:tc>/s.exec(xml)![0].match(/<w:p>.*?<\/w:p>/gs)!;
+      expect(inCell).toHaveLength(3);
+      expect(inCell.map((paragraph) => paragraph.includes('<w:numId w:val="0"/>'))).toEqual([false, false, true]);
+      expect(inCell.map((paragraph) => paragraph.includes('RedlineOldNumber'))).toEqual([false, false, true]);
+    }
+  });
+});
+
+/** Found on a real contract (Stage 7): a template whose glossary of building blocks has a style sheet of its own. */
+describe('a document whose glossary has its own style sheet', () => {
+  it('both Word files pass, old clause numbers are shown, and the redline\'s styles go into the document\'s own style sheet', async () => {
+    const pair = await buildPair(pairById('numbered-clause-deleted'));
+    const { staticRedline, counts } = await bothPass(await withGlossary(pair.original), await withGlossary(pair.modified));
+    expect(counts).toEqual((await bothPass(pair.original, pair.modified)).counts);
+    const files = await unzip(staticRedline);
+    expect(decoder.decode(files.get('word/document.xml')!)).toContain('RedlineOldNumber');
+    expect(decoder.decode(files.get('word/styles.xml')!)).toContain('w:styleId="RedlineOldNumber"');
+    expect(decoder.decode(files.get('word/glossary/styles.xml')!)).not.toContain('Redline');
   });
 });
 

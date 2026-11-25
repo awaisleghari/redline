@@ -329,6 +329,8 @@ function readRun(run: XmlElement, context: Context): string {
       // The old number of a removed clause: shown struck through, and not part of either document's text.
       if (kind !== 'deleted' && kind !== 'movedFrom') context.problems.push('An old clause number is not marked as deleted text.');
       if (styles.formatOf(rPr, context.paragraphStyle) & FORMAT.hidden) context.problems.push('An old clause number is formatted as hidden text.');
+      const undefinedStyle = 'An old clause number uses a style that the document\'s style sheet does not define.';
+      if (!styles.defines(STATIC_STYLE.oldNumber) && !context.problems.includes(undefinedStyle)) context.problems.push(undefinedStyle);
       const saved = context.meta;
       const label = inlineText(run, context);
       context.meta = saved;
@@ -835,6 +837,11 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
       // How the line looks: the legend's samples must really be in each style, and nothing may be hidden.
       const pPr = child(paragraph, W, 'pPr');
       const styleElement = pPr && child(pPr, W, 'pStyle');
+      // The cover's styles are the redline's own: they must be in the style sheet the document really uses,
+      // or Word shows the cover page with none of its layout.
+      const coverStyle = (styleElement && attribute(styleElement, W, 'val')) ?? '';
+      const undefinedStyle = 'The cover page uses a style that the document\'s style sheet does not define.';
+      if (!shared.styles.defines(coverStyle) && !problems.includes(undefinedStyle)) problems.push(undefinedStyle);
       const looks = new Set<string>();
       const look = (element: XmlElement): void => {
         for (const c of element.children) {

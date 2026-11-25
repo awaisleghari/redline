@@ -366,6 +366,8 @@ class PartConverter {
   private readonly cellChange = new Map<Element, ChangeKind>();
   /** Where each paragraph's mark sits in `tokens`. */
   private readonly markToken = new Map<Element, number>();
+  /** Last paragraphs of cells that were removed whole, where the engine put the removal on the mark before. */
+  private readonly removedAtCellEnd = new Map<Element, ChangeKind>();
 
   constructor(
     private readonly options: StaticRedlineStyleOptions,
@@ -409,6 +411,27 @@ class PartConverter {
       }
       i = Math.max(j, i + 1);
     }
+  }
+
+  /**
+   * Is this the paragraph before the last one of a cell that stays, with that last paragraph removed whole (all
+   * of it inside the same kind of removal as this paragraph's mark) and its own mark not flagged?
+   */
+  private endsCellWithRemovedClause(paragraph: Element, markKind: ChangeKind): boolean {
+    const cell = paragraph.parentNode as Element;
+    if (!isWord(cell, 'tc')) return false;
+    const blocks = kids(cell).filter((c) => isWord(c, 'p') || isWord(c, 'tbl'));
+    const last = blocks[blocks.length - 1]!;
+    if (blocks[blocks.length - 2] !== paragraph || !isWord(last, 'p') || paragraph.nextSibling !== last) return false;
+    let row = cell.parentNode as Element | null;
+    while (row && isWord(row) && ['sdt', 'sdtContent', 'customXml'].includes(row.localName!)) row = row.parentNode as Element | null;
+    if (this.cellChange.has(cell) || (row && this.cellChange.has(row))) return false;
+    const lastPPr = childW(last, 'pPr');
+    const lastMark = lastPPr && childW(lastPPr, 'rPr');
+    if (lastMark && elementChildren(lastMark).some((flag) => isW(flag) && flag.localName! in WRAPPER_KIND)) return false;
+    const wrapper = markKind === 'deleted' ? 'del' : 'moveFrom';
+    const content = elementChildren(last).filter((c) => !/^(pPr|bookmark|moveFromRange|moveToRange|proofErr|permStart|permEnd)/.test(c.namespaceURI === W ? c.localName! : ''));
+    return content.length > 0 && content.every((c) => isW(c, wrapper));
   }
 
   /** Give `to` the numbering that `from` states for itself (list and level), in place of its own. */
@@ -553,6 +576,7 @@ class PartConverter {
     // exists. So the last mark in a cell is changed only if the cell itself (or
     // its row) was inserted or deleted, whatever the paragraph's own flag says.
     let numberLostAtCellEnd: ChangeKind | undefined;
+    let keepsNumber = false;
     const cell = paragraph.parentNode as Element;
     if (!kind && isWord(cell, 'tc') && kids(cell).filter((c) => isWord(c, 'p') || isWord(c, 'tbl')).pop() === paragraph) {
       // The cell's row: its parent, or further up when the cell sits in a content control (a tick-box cell) or custom XML wrapper.
@@ -590,7 +614,16 @@ class PartConverter {
         }
         markKind = undefined;
       } else if (markKind === 'movedFrom' || markKind === 'movedTo') markKind = cellKind ? markKind : undefined;
-      else markKind = cellKind;
+      else {
+        if (!cellKind) numberLostAtCellEnd = this.removedAtCellEnd.get(paragraph);
+        markKind = cellKind;
+      }
+    } else if (!kind && (markKind === 'deleted' || markKind === 'movedFrom') && this.endsCellWithRemovedClause(paragraph, markKind)) {
+      // The same situation as above, written the other way round (found on real contracts): the engine has already
+      // put the removal on this mark, the one before the cell's last paragraph, and that last paragraph is removed
+      // whole. The clause that went is the last one, so it gives up its number and this paragraph keeps its own.
+      this.removedAtCellEnd.set(paragraph.nextSibling as Element, markKind);
+      keepsNumber = true;
     }
 
     if (pPr) this.convert(pPr, kind);
@@ -598,7 +631,7 @@ class PartConverter {
     for (const child of elementChildren(paragraph)) if (!isW(child, 'pPr')) this.visit(child, kind);
 
     if (markKind) applyChangeStyle(markProperties(paragraph), markKind, this.options.insertedColor);
-    const numberLost = markKind === 'deleted' || markKind === 'movedFrom' ? markKind : numberLostAtCellEnd;
+    const numberLost = keepsNumber ? undefined : markKind === 'deleted' || markKind === 'movedFrom' ? markKind : numberLostAtCellEnd;
     if (numberLost) {
       const label = this.oldNumberOf.get(paragraph);
       if (this.options.showOldNumbers && label) this.addOldNumber(paragraph, label, numberLost);

@@ -116,7 +116,7 @@ export function withBlueDoubleUnderline(docx: Uint8Array, where: 'text' | 'parag
  * definitions tables). `lastTwo` says what then happens to the second and third: nothing; they are run
  * together into one clause (an editor deleting the paragraph break between them); or the third is deleted.
  */
-export function withNumberedClausesInCell(docx: Uint8Array, lastTwo: 'kept' | 'joined' | 'last deleted' = 'kept'): Promise<Uint8Array> {
+export function withNumberedClausesInCell(docx: Uint8Array, lastTwo: 'kept' | 'joined' | 'last deleted' | 'last deleted, second shortened' = 'kept'): Promise<Uint8Array> {
   return editParts(docx, (name, xml) => {
     if (name !== 'word/document.xml') return xml;
     const paragraphs = [...xml.matchAll(/<w:p>(?:(?!<\/w:p>).)*<w:numPr>(?:(?!<\/w:p>).)*<\/w:p>/gs)];
@@ -130,6 +130,13 @@ export function withNumberedClausesInCell(docx: Uint8Array, lastTwo: 'kept' | 'j
       second = second.slice(0, second.lastIndexOf('</w:p>')) + '<w:r><w:t xml:space="preserve"> </w:t></w:r>' + runs + '</w:p>';
       third = '';
     } else if (lastTwo === 'last deleted') third = '';
+    else if (lastTwo === 'last deleted, second shortened') {
+      third = '';
+      // Words go from the middle of the second clause; its ending stays as it was.
+      const reworded = second.replace(/(<w:t(?: [^>]*)?>)(\S+ \S+ )\S+ \S+ /, '$1$2');
+      if (reworded === second) throw new Error('withNumberedClausesInCell: the second clause is too short to shorten');
+      second = reworded;
+    }
     const table = `<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="9000" w:type="dxa"/></w:tcPr>${a![0]}${second}${third}</w:tc></w:tr></w:tbl>`;
     return xml.slice(0, a!.index) + table + xml.slice(c!.index! + c![0].length);
   });
@@ -161,4 +168,22 @@ export function withRowsInContentControls(docx: Uint8Array): Promise<Uint8Array>
     if (out === xml) throw new Error('withRowsInContentControls: the document has no table with more than one row');
     return out;
   });
+}
+
+/**
+ * Add a glossary (the store of building blocks a Word template carries, never shown in the document) with a
+ * style sheet of its own, as law-firm templates have. The file then holds two style sheets; only the one the
+ * main document links to is the document's.
+ */
+export async function withGlossary(docx: Uint8Array): Promise<Uint8Array> {
+  const files = await unzip(docx);
+  const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+  const WML = 'application/vnd.openxmlformats-officedocument.wordprocessingml';
+  const REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+  files.set('word/glossary/document.xml', encoder.encode(`<w:glossaryDocument ${W}><w:docParts><w:docPart><w:docPartPr><w:name w:val="Block"/></w:docPartPr><w:docPartBody><w:p><w:r><w:t>A building block</w:t></w:r></w:p></w:docPartBody></w:docPart></w:docParts></w:glossaryDocument>`));
+  files.set('word/glossary/styles.xml', encoder.encode(`<w:styles ${W}><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style></w:styles>`));
+  files.set('word/glossary/_rels/document.xml.rels', encoder.encode(`<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${REL}/styles" Target="styles.xml"/></Relationships>`));
+  files.set('[Content_Types].xml', encoder.encode(decoder.decode(files.get('[Content_Types].xml')!).replace('</Types>', `<Override PartName="/word/glossary/document.xml" ContentType="${WML}.document.glossary+xml"/><Override PartName="/word/glossary/styles.xml" ContentType="${WML}.styles+xml"/></Types>`)));
+  files.set('word/_rels/document.xml.rels', encoder.encode(decoder.decode(files.get('word/_rels/document.xml.rels')!).replace('</Relationships>', `<Relationship Id="rIdGlossary" Type="${REL}/glossaryDocument" Target="glossary/document.xml"/></Relationships>`)));
+  return zip(files);
 }

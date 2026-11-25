@@ -107,6 +107,11 @@ export class Styles {
     }
   }
 
+  /** Does the document's own style sheet define this style? */
+  defines(id: string): boolean {
+    return this.styles.has(id);
+  }
+
   /** A style and everything it is based on, nearest first. */
   private chain(id: string | undefined): Style[] {
     const result: Style[] = [];
