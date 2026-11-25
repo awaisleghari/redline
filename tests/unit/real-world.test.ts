@@ -1049,3 +1049,27 @@ describe('a numbered clause that replaces the last two lines of a cell', () => {
     expect(clause).toContain(numPr);
   });
 });
+
+/**
+ * Found on real contracts (held-out run 1, ADB procurement documents): a text box holding a numbered note. The
+ * engine replaces a changed text box whole, so the note is shown removed and put back. Old clause numbers belong
+ * to the main text only; the removed copy inside the box was given one, and the redline was withheld.
+ */
+describe('a numbered paragraph inside a text box that is replaced', () => {
+  it('both Word files pass, and no old number is typed inside the box', async () => {
+    const base = (await buildPair(pairById('numbered-clause-deleted'))).original;
+    const numPr = /<w:numPr>.*?<\/w:numPr>/s.exec(decoder.decode((await unzip(base)).get('word/document.xml')!))![0];
+    const boxed = await buildPair(pairById('text-box-change'));
+    const withBox = async (from: Uint8Array): Promise<Uint8Array> => {
+      const xml = decoder.decode((await unzip(from)).get('word/document.xml')!);
+      const holder = xml.match(/<w:p>(?:(?!<w:p>|<\/w:p>).)*<w:pict>.*?<\/w:pict>.*?<\/w:p>/s)![0];
+      const inside = /(<w:txbxContent>)(.*?)(<\/w:txbxContent>)/gs;
+      const numbered = holder.replace(inside, (_, open: string, lines: string, close: string) => open + lines.replace(/<w:p>/g, `<w:p><w:pPr>${numPr}</w:pPr>`) + close);
+      expect(numbered).not.toBe(holder);
+      return editPart(base, /^word\/document\.xml$/, (main) => main.replace(/<w:p>.*?<\/w:p>/s, (first) => first + numbered));
+    };
+    const outputs = await bothPass(await withBox(boxed.original), await withBox(boxed.modified));
+    const xml = decoder.decode((await unzip(outputs.staticRedline)).get('word/document.xml')!);
+    for (const box of xml.match(/<w:txbxContent>.*?<\/w:txbxContent>/gs)!) expect(box).not.toContain('RedlineOldNumber');
+  });
+});

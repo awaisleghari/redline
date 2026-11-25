@@ -395,7 +395,15 @@ function oldNumbers(root: Element, original: OriginalContext): Map<Element, stri
   );
   // Only if the paragraphs line up one for one with the original's can the numbers be trusted.
   if (paragraphs.length !== original.info.bodyNumbers.length) return result;
-  paragraphs.forEach((paragraph, index) => result.set(paragraph, original.info.bodyNumbers[index]!));
+  // Old numbers are shown in the main text itself, not inside its text boxes (PLAN.md; found on real contracts: a
+  // text box holding a numbered note, removed whole and put back by the engine, was given one and withheld).
+  const inTextBox = (paragraph: Element): boolean => {
+    for (let up = paragraph.parentNode; up; up = up.parentNode) if (isWord(up, 'txbxContent')) return true;
+    return false;
+  };
+  paragraphs.forEach((paragraph, index) => {
+    if (!inTextBox(paragraph)) result.set(paragraph, original.info.bodyNumbers[index]!);
+  });
   return result;
 }
 
