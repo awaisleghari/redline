@@ -1,0 +1,1885 @@
+[
+ {
+  "file": "arma.ac.uk__Brunswick-Agreement.docx",
+  "source": "https://arma.ac.uk/wp-content/uploads/2025/05/Brunswick-Agreement.docx",
+  "sha256": "79f6c430f17404b038c93e808da9f0a79422fa46d7a063dadd05a84d697ba66a",
+  "pages": 33,
+  "words": 9714
+ },
+ {
+  "file": "arma.ac.uk__Long-Form-Collaboration-Agreement.docx",
+  "source": "https://arma.ac.uk/wp-content/uploads/2018/06/Long-Form-Collaboration-Agreement.docx",
+  "sha256": "a5527a2e5616d1e60d830233c617bc33893e80dc629f60924f4bc8aa6b7be5a7",
+  "pages": 21,
+  "words": 6995
+ },
+ {
+  "file": "github-StandardCap__Standard_Capital_-_Form_of_Series_A_A_R_Certificate_of_Incorporation.docx",
+  "source": "github.com/StandardCap (public repository)",
+  "sha256": "b328f31dfdd7af076bb78d8de4945b5350e7be2534ca7d810cdd3f2d75cd39b6",
+  "pages": 21,
+  "words": 11707
+ },
+ {
+  "file": "github-StandardCap__Standard_Capital_-_Form_of_Series_A_Investors_Rights_Agreement.docx",
+  "source": "github.com/StandardCap (public repository)",
+  "sha256": "9338df123441b70f9749a4a2c7084ed990b9418c345fbb093e6f4f7a9e741708",
+  "pages": 30,
+  "words": 16572
+ },
+ {
+  "file": "github-bitblu__Open_Source_Private_Placement_Memorandum_2013_06_12.docx",
+  "source": "github.com/bitblu (public repository)",
+  "sha256": "a20a3a039f11f311ab188ee06dcbf98105fe13f86ab1779aa4c60861930f2da7",
+  "pages": 33,
+  "words": 19150
+ },
+ {
+  "file": "github-dealfluence__investment-agreement-executed.docx",
+  "source": "github.com/dealfluence (public repository)",
+  "sha256": "d881d5fe379d09f680987a092f8e09bc7c6e0b1e5f62af6ab6effe206b5036c4",
+  "pages": 26,
+  "words": 11352
+ },
+ {
+  "file": "github-dealfluence__investment-agreement.docx",
+  "source": "github.com/dealfluence (public repository)",
+  "sha256": "163510858857ead0d28c82f66c121e74fb9d3419be7326c79d2aa67489909c79",
+  "pages": 26,
+  "words": 11327
+ },
+ {
+  "file": "github-dealfluence__model-services-contract-redlined.docx",
+  "source": "github.com/dealfluence (public repository)",
+  "sha256": "8ad30291fbd4709f34b282e40ed4cef566d38d19ba933064a65fa135185e4e1e",
+  "pages": 84,
+  "words": 29531
+ },
+ {
+  "file": "github-dealfluence__model-services-contract.docx",
+  "source": "github.com/dealfluence (public repository)",
+  "sha256": "43c7e8b70daf21779253921143b6bc71419ec3b59dba1071469cdc5f557a7f8e",
+  "pages": 84,
+  "words": 29514
+ },
+ {
+  "file": "github-finsrud__Series_Seed_-_Certificate_of_Incorporation.docx",
+  "source": "github.com/finsrud (public repository)",
+  "sha256": "9f7879b2c80a3f7237210c65efe390655fb39522454736ef6d689f5d50798fb0",
+  "pages": 20,
+  "words": 11757
+ },
+ {
+  "file": "github-finsrud__Series_Seed_-_Stock_Investment_Agreement.docx",
+  "source": "github.com/finsrud (public repository)",
+  "sha256": "ec8233f5d90c300eb2c7c65ef86c2ac055e56df5070b00849f85443b48ac1f17",
+  "pages": 29,
+  "words": 14419
+ },
+ {
+  "file": "github-sambacha__20140508_DESCA_2020.docx",
+  "source": "github.com/sambacha (public repository)",
+  "sha256": "f2b5a96212d13092485aa17995da5fb801a352fd4880dd784144e8dd0b4863b3",
+  "pages": 37,
+  "words": 12227
+ },
+ {
+  "file": "github-sambacha__LLM_Shipping_Law_Weeks_5_6_BOL_1.docx",
+  "source": "github.com/sambacha (public repository)",
+  "sha256": "dd316b719116571accef322bc22a16a2ed16ddd4835e64acac24de61b9bac9d2",
+  "pages": 28,
+  "words": 14439
+ },
+ {
+  "file": "github-sambacha__Model-Consortium-Agreement-FOR-APPROVAL.docx",
+  "source": "github.com/sambacha (public repository)",
+  "sha256": "28d78453cfca306555f84f96e6550d013af6829e52e3369168c9fc6c5ad05065",
+  "pages": 37,
+  "words": 16344
+ },
+ {
+  "file": "github-sambacha__modelca_cofund_version3.docx",
+  "source": "github.com/sambacha (public repository)",
+  "sha256": "634f3724054210ea35ddbedc7f14400a8f35deaa4299b982b0be76811bc1750f",
+  "pages": 46,
+  "words": 14606
+ },
+ {
+  "file": "github-sambacha__option-agreement.docx",
+  "source": "github.com/sambacha (public repository)",
+  "sha256": "ef14f3576db4aaf46f3522b9bbb778728551597f9383fbf3be5e2216ce64df79",
+  "pages": 25,
+  "words": 9562
+ },
+ {
+  "file": "github-tanko-r__target.docx",
+  "source": "github.com/tanko-r (public repository)",
+  "sha256": "09f256a3e9930b57f5c24a956235a56a8db0b3ddc79354de65e4d27f0a289117",
+  "pages": 33,
+  "words": 11616
+ },
+ {
+  "file": "github-vertis__confidential-information-and-invention-assignment-agreement-employee.docx",
+  "source": "github.com/vertis (public repository)",
+  "sha256": "9cca0f81df86f77345e25a17e15b04639b2616c67462c2fc22e8540d38e069aa",
+  "pages": 18,
+  "words": 7153
+ },
+ {
+  "file": "github-vertis__consulting-agreement.docx",
+  "source": "github.com/vertis (public repository)",
+  "sha256": "95b3eebb54fa640010134133aeb080be3d12d8ba6aebefb0daa23baa67b61b0c",
+  "pages": 20,
+  "words": 7294
+ },
+ {
+  "file": "github-vertis__option-agreement.docx",
+  "source": "github.com/vertis (public repository)",
+  "sha256": "be4bad4a343246e6d28cc608174bc6639db0accf2b5cad5a328904e5b02f454c",
+  "pages": 24,
+  "words": 9570
+ },
+ {
+  "file": "github-vertis__restricted-stock-purchase-agreement.docx",
+  "source": "github.com/vertis (public repository)",
+  "sha256": "53caabdfe810d17340c406c329907d72f3e59d74e8257e395f6f29d7c41ad343",
+  "pages": 24,
+  "words": 8384
+ },
+ {
+  "file": "kindrik.co.nz__admin-post.php.docx",
+  "source": "https://kindrik.co.nz/wp-admin/admin-post.php?action=kindrik_resource_download&resource_id=7280&file=1",
+  "sha256": "dda8dbd5b1bec6af72060cc2f753b93fc1783add682d06498e0cc5691f1a88dc",
+  "pages": 39,
+  "words": 12151
+ },
+ {
+  "file": "kindrik.co.nz__admin-post.php_10.docx",
+  "source": "https://kindrik.co.nz/wp-admin/admin-post.php?action=kindrik_resource_download&resource_id=6329&file=1",
+  "sha256": "6e16c4a3a3630e080741521b867b1049923de58f1e6881d41a6f986ee247bc96",
+  "pages": 16,
+  "words": 5599
+ },
+ {
+  "file": "kindrik.co.nz__admin-post.php_2.docx",
+  "source": "https://kindrik.co.nz/wp-admin/admin-post.php?action=kindrik_resource_download&resource_id=3561&file=1",
+  "sha256": "3da3ea31b3ea470fea74f159f6edfa4f20ddaf362cda0dc73a2258ab97f9a588",
+  "pages": 31,
+  "words": 8727
+ },
+ {
+  "file": "kindrik.co.nz__admin-post.php_3.docx",
+  "source": "https://kindrik.co.nz/wp-admin/admin-post.php?action=kindrik_resource_download&resource_id=3559&file=1",
+  "sha256": "b574d1bece34de3fad0eba0c05f3e530dfd2151559a0ac46beba56ab768c38d5",
+  "pages": 22,
+  "words": 5872
+ },
+ {
+  "file": "kindrik.co.nz__admin-post.php_4.docx",
+  "source": "https://kindrik.co.nz/wp-admin/admin-post.php?action=kindrik_resource_download&resource_id=3479&file=1",
+  "sha256": "e946e9ec5b586e8f356809b135a1b0ec27ab6abad77f6134e101b2897ccbf89e",
+  "pages": 31,
+  "words": 9125
+ },
+ {
+  "file": "kindrik.co.nz__admin-post.php_5.docx",
+  "source": "https://kindrik.co.nz/wp-admin/admin-post.php?action=kindrik_resource_download&resource_id=3481&file=1",
+  "sha256": "98531a8961d058803f76641df95ee03bc11bb59c8d48ac3c8238728a4be02892",
+  "pages": 27,
+  "words": 7515
+ },
+ {
+  "file": "kindrik.co.nz__admin-post.php_6.docx",
+  "source": "https://kindrik.co.nz/wp-admin/admin-post.php?action=kindrik_resource_download&resource_id=3477&file=1",
+  "sha256": "e6083e192694defaab9dad4090c229a9a02af86550ed335b5315a28250077567",
+  "pages": 22,
+  "words": 6501
+ },
+ {
+  "file": "kindrik.co.nz__admin-post.php_7.docx",
+  "source": "https://kindrik.co.nz/wp-admin/admin-post.php?action=kindrik_resource_download&resource_id=3475&file=1",
+  "sha256": "e73a45c86e50c072d4fbc579eb4a251026a476ec27e1b5d276cd83a3fa5001fc",
+  "pages": 19,
+  "words": 4979
+ },
+ {
+  "file": "kindrik.co.nz__admin-post.php_9.docx",
+  "source": "https://kindrik.co.nz/wp-admin/admin-post.php?action=kindrik_resource_download&resource_id=3553&file=1",
+  "sha256": "ae414f4d2d8eb93404ccdd0408e63754c6e8b6e1766f0c1d88e25d50bd519296",
+  "pages": 17,
+  "words": 4140
+ },
+ {
+  "file": "synthetic-harvey__17f496_bloomsbury-house-lease-ironclad-international-london-office.docx",
+  "source": "github.com/harveyai/harvey-labs (synthetic; sampled)",
+  "sha256": "ccf7653c7845a6dd75fbe534c7f52b55d99cae73d166e6b955819753ceef36dd",
+  "pages": 63,
+  "words": 20180
+ },
+ {
+  "file": "synthetic-harvey__1eaa0c_pre-submission-conference-request-letter.docx",
+  "source": "github.com/harveyai/harvey-labs (synthetic; sampled)",
+  "sha256": "e9d7e8285ebf420e7c28da04d901abdaa2eb32dada591add12e457153d651d2b",
+  "pages": 16,
+  "words": 6901
+ },
+ {
+  "file": "synthetic-harvey__2450aa_dpia-talentlens-workpulse.docx",
+  "source": "github.com/harveyai/harvey-labs (synthetic; sampled)",
+  "sha256": "11dbb3be99d8e3b67c68a410c974a9817017cfcf7f7eca2253b8966d240217eb",
+  "pages": 41,
+  "words": 13057
+ },
+ {
+  "file": "synthetic-harvey__2b797f_datapulse-compliance-policies.docx",
+  "source": "github.com/harveyai/harvey-labs (synthetic; sampled)",
+  "sha256": "6966fe50812a752bf23b955d09a3483915eb08547da80c0fcc4eae32783217c6",
+  "pages": 26,
+  "words": 8593
+ },
+ {
+  "file": "synthetic-harvey__2dcde5_employment-agreement-mara-c-lindholm.docx",
+  "source": "github.com/harveyai/harvey-labs (synthetic; sampled)",
+  "sha256": "30ec905fa0d0a70b7ccd3e0c4e529dc92564519a531e28814348f585a58027fe",
+  "pages": 24,
+  "words": 9367
+ },
+ {
+  "file": "synthetic-harvey__30ceb3_founders-associates-inc-409a-valuation-report-may-1-2023.docx",
+  "source": "github.com/harveyai/harvey-labs (synthetic; sampled)",
+  "sha256": "6c81f6a1bfa0172206612e9b01b451be563362b8c1e43477c1062b77972aea30",
+  "pages": 47,
+  "words": 12550
+ },
+ {
+  "file": "synthetic-harvey__3ad407_engagement-summary-lessons-learned-memorandum.docx",
+  "source": "github.com/harveyai/harvey-labs (synthetic; sampled)",
+  "sha256": "e278371ddb27a03b84eb1cf3d49a10c3cb53b31dc8119016913d7c8f312cac34",
+  "pages": 32,
+  "words": 12473
+ },
+ {
+  "file": "synthetic-harvey__457ff6_board-self-evaluation-framework.docx",
+  "source": "github.com/harveyai/harvey-labs (synthetic; sampled)",
+  "sha256": "c2278f88633819a8c8c217b3f8e98dd6957126613e057982503954cda14efee0",
+  "pages": 84,
+  "words": 20218
+ },
+ {
+  "file": "synthetic-harvey__494cbe_transmittal-letter-tmc-redline-dec-16.docx",
+  "source": "github.com/harveyai/harvey-labs (synthetic; sampled)",
+  "sha256": "629fe948fab7f5f8230b59ef063445dc190cfb3e3818593300e341af96747780",
+  "pages": 15,
+  "words": 6316
+ },
+ {
+  "file": "synthetic-harvey__4ea094_valentin-schwarz-sow-munich-tessera-adapter-support.docx",
+  "source": "github.com/harveyai/harvey-labs (synthetic; sampled)",
+  "sha256": "0bd46010aafab094fb193a18b6a1f9db505b4b7066e649ad533b14a261669a32",
+  "pages": 29,
+  "words": 8885
+ },
+ {
+  "file": "synthetic-harvey__51e66c_luis-benavides-proprietary-information-and-inventions-agreement.docx",
+  "source": "github.com/harveyai/harvey-labs (synthetic; sampled)",
+  "sha256": "559ede8c1ec74089d1f321d9bb20b5bd7d29059f748fd75113369b5c7e362403",
+  "pages": 24,
+  "words": 7939
+ },
+ {
+  "file": "synthetic-harvey__54d990_defendant-msj-brief.docx",
+  "source": "github.com/harveyai/harvey-labs (synthetic; sampled)",
+  "sha256": "a5efcecca794bfdbfc5166d547e76f183797ad0eb36d31e53643866c61db34bb",
+  "pages": 20,
+  "words": 8017
+ },
+ {
+  "file": "synthetic-harvey__58c179_indenture-spin-covenant-analysis.docx",
+  "source": "github.com/harveyai/harvey-labs (synthetic; sampled)",
+  "sha256": "09ff702b0d9c7143c4595ee86e6623043a194f2b1952034fe12b3024e3ef7ba1",
+  "pages": 19,
+  "words": 8894
+ },
+ {
+  "file": "synthetic-harvey__5fadc2_draft-interconnection-agreement-v1.docx",
+  "source": "github.com/harveyai/harvey-labs (synthetic; sampled)",
+  "sha256": "63775031a9163ca14f015ba22e90b3f03f96a864e85e1955c9ba668d682b2271",
+  "pages": 42,
+  "words": 17019
+ },
+ {
+  "file": "synthetic-harvey__61c6ad_cascadia-draft-jda.docx",
+  "source": "github.com/harveyai/harvey-labs (synthetic; sampled)",
+  "sha256": "5f8b8ac3938b178f8ad8d6bf9e31fee700e6c15b305b5ec356d023c4e689e75c",
+  "pages": 43,
+  "words": 12458
+ },
+ {
+  "file": "synthetic-harvey__68aba1_isda-2016-ny-law-vm-csa.docx",
+  "source": "github.com/harveyai/harvey-labs (synthetic; sampled)",
+  "sha256": "81b3904d6774933111dca820cce64840ea0e892fa9662b9cd858a02824655895",
+  "pages": 23,
+  "words": 8857
+ },
+ {
+  "file": "synthetic-harvey__6a8640_executed-retention-agreement-martin-s-keane.docx",
+  "source": "github.com/harveyai/harvey-labs (synthetic; sampled)",
+  "sha256": "ecf3c7e3d3daeeb6be759630724655519fadb53bc53899829d989208807b87a9",
+  "pages": 24,
+  "words": 8175
+ },
+ {
+  "file": "synthetic-harvey__76b740_meshfabric-flow-table-patent-family-supplemental-assignment.docx",
+  "source": "github.com/harveyai/harvey-labs (synthetic; sampled)",
+  "sha256": "9ac490bd8b11ad2b25ca219146253994658158c98b330a1063478a7fbdf5d4f5",
+  "pages": 37,
+  "words": 10825
+ },
+ {
+  "file": "synthetic-harvey__783325_status-report-to-client-q4-2024.docx",
+  "source": "github.com/harveyai/harvey-labs (synthetic; sampled)",
+  "sha256": "4ddfa835ccf4679af13fa5419259b8d29c2b6f5c6b7444eb03170b64b7f34bdb",
+  "pages": 31,
+  "words": 12746
+ },
+ {
+  "file": "synthetic-harvey__7b4e0a_corporate-msa-template-v3-2.docx",
+  "source": "github.com/harveyai/harvey-labs (synthetic; sampled)",
+  "sha256": "da1e421ae75468b41a8e589ebbb9c0230227ef265485983f369a28c77ca2b114",
+  "pages": 41,
+  "words": 13278
+ },
+ {
+  "file": "synthetic-harvey__7fcac4_escrow-agent-form.docx",
+  "source": "github.com/harveyai/harvey-labs (synthetic; sampled)",
+  "sha256": "b66bb0eb4594d148c24638bc491a0a67990927d05cdb215b90ccf473e1073db1",
+  "pages": 22,
+  "words": 9587
+ },
+ {
+  "file": "synthetic-harvey__810496_409a-valuation-summary.docx",
+  "source": "github.com/harveyai/harvey-labs (synthetic; sampled)",
+  "sha256": "94d6655e13c6298ec8f1334f612f73d1fc0c264386b00f4a32abf453e39177e2",
+  "pages": 20,
+  "words": 5289
+ },
+ {
+  "file": "synthetic-harvey__876126_disclosure-schedules-template.docx",
+  "source": "github.com/harveyai/harvey-labs (synthetic; sampled)",
+  "sha256": "fbcd950765b9e36efcd5f3d0d6e0c59a48c22764cbf031af441038f80d249d14",
+  "pages": 44,
+  "words": 9594
+ },
+ {
+  "file": "synthetic-harvey__8c51a9_draft-credit-agreement-v1.docx",
+  "source": "github.com/harveyai/harvey-labs (synthetic; sampled)",
+  "sha256": "f95b9c3fd01b67f65d79752783329331f3456d44ecddee6668e1edd088acb1cf",
+  "pages": 97,
+  "words": 41792
+ },
+ {
+  "file": "synthetic-harvey__943a70_crestmark-loan-term-sheet.docx",
+  "source": "github.com/harveyai/harvey-labs (synthetic; sampled)",
+  "sha256": "ace0bc2bd64c92717b4eedbc9f1de7a7b79200bb3635260f446de719330a2899",
+  "pages": 21,
+  "words": 6432
+ },
+ {
+  "file": "synthetic-harvey__9da96a_memo-confidentiality-information-barriers.docx",
+  "source": "github.com/harveyai/harvey-labs (synthetic; sampled)",
+  "sha256": "35c3d0f0971ffe3bb05e06b1ed0627fad1217e34b60ff70e488759fede9d322c",
+  "pages": 27,
+  "words": 11274
+ },
+ {
+  "file": "synthetic-harvey__9dd888_h1b-paf-deficiency-summary.docx",
+  "source": "github.com/harveyai/harvey-labs (synthetic; sampled)",
+  "sha256": "f07eb304c2d2cd81a4759f09315a09dbe7f6c6ebcc6744b90a544defae558ca0",
+  "pages": 24,
+  "words": 5093
+ },
+ {
+  "file": "synthetic-harvey__9f0f36_opposition-to-great-basin-objection.docx",
+  "source": "github.com/harveyai/harvey-labs (synthetic; sampled)",
+  "sha256": "eb94d78e5521b3484d9d5efc3bee012e35cfd66a5a2518e9c4b47a74bc50fc12",
+  "pages": 18,
+  "words": 8260
+ },
+ {
+  "file": "synthetic-harvey__a5f713_idf-2023-780-190-fastener-lot-traceability-verifier.docx",
+  "source": "github.com/harveyai/harvey-labs (synthetic; sampled)",
+  "sha256": "daa09dcf3d5263937f6963c8a0cc9fd617a8f3caaa232cc009aa9751fa4fe97c",
+  "pages": 80,
+  "words": 19906
+ },
+ {
+  "file": "synthetic-harvey__a9aa5d_longview-biologics-2022-fda-inspection-correspondence.docx",
+  "source": "github.com/harveyai/harvey-labs (synthetic; sampled)",
+  "sha256": "d710e27d99b74fd546cf675e6f04dd02a51ccedef2d2b8a5db3c8379c6497bbd",
+  "pages": 30,
+  "words": 8348
+ },
+ {
+  "file": "synthetic-harvey__bb509d_nprm-summary-analysis.docx",
+  "source": "github.com/harveyai/harvey-labs (synthetic; sampled)",
+  "sha256": "7fa0a7f5eeeb36f15b0372a97a46e6f6b778c963dabd24bbfc8d1ba2070530b7",
+  "pages": 24,
+  "words": 8522
+ },
+ {
+  "file": "synthetic-harvey__d6cbe2_iwe-vault-monthly-free-trial-terms-and-sign-up-screens-v2023-01.docx",
+  "source": "github.com/harveyai/harvey-labs (synthetic; sampled)",
+  "sha256": "c927c3fafc5cc5e57e7b7eb48858fa6498ab0f248850b56ece317535154e7541",
+  "pages": 36,
+  "words": 9544
+ },
+ {
+  "file": "synthetic-harvey__d9c0a2_claimsbridge-administration-proposal.docx",
+  "source": "github.com/harveyai/harvey-labs (synthetic; sampled)",
+  "sha256": "8859645c8159bb7f916625971880e93203df4bdec257beedda61ee94501d1d26",
+  "pages": 33,
+  "words": 13191
+ },
+ {
+  "file": "synthetic-harvey__e066b3_scc-escalation-memo-template.docx",
+  "source": "github.com/harveyai/harvey-labs (synthetic; sampled)",
+  "sha256": "4189f531416eb774df56d5635609018363c9310c48beb5eb720b03cfe9b195be",
+  "pages": 39,
+  "words": 12633
+ },
+ {
+  "file": "synthetic-harvey__e59f40_term-sheet-crestview-initial-draft.docx",
+  "source": "github.com/harveyai/harvey-labs (synthetic; sampled)",
+  "sha256": "b678d54a18a7855b80a0312f367c64d9c54b1a52c0f5075297f088b298600e87",
+  "pages": 36,
+  "words": 15494
+ },
+ {
+  "file": "synthetic-harvey__e8702a_oem-reseller-agreement-first-draft.docx",
+  "source": "github.com/harveyai/harvey-labs (synthetic; sampled)",
+  "sha256": "3a176f28412eec0ea4e30ac4a38bece177e04d58e7c92a7fa937b0249c6df6b8",
+  "pages": 37,
+  "words": 14230
+ },
+ {
+  "file": "synthetic-harvey__eafdd0_meridian-derivatives-playbook-v4-2.docx",
+  "source": "github.com/harveyai/harvey-labs (synthetic; sampled)",
+  "sha256": "87eee6f4a2819405c0ee768f7285b5ff5be2c99b31e0be6fea373781c1cae470",
+  "pages": 41,
+  "words": 12946
+ },
+ {
+  "file": "synthetic-harvey__eee4b6_executed-us-contractor-piia-mateo-garcia.docx",
+  "source": "github.com/harveyai/harvey-labs (synthetic; sampled)",
+  "sha256": "6fa642cf0a6eb25d9058b006c93775eb811539e335a1900c768a6acc1965b0bf",
+  "pages": 24,
+  "words": 8661
+ },
+ {
+  "file": "synthetic-harvey__f1b31f_ip-security-agreement.docx",
+  "source": "github.com/harveyai/harvey-labs (synthetic; sampled)",
+  "sha256": "67aed32e743083d17588dde5f2f12faa0519e438095f82897ba30fee4a5c5e31",
+  "pages": 36,
+  "words": 13863
+ },
+ {
+  "file": "synthetic-harvey__f61693_regulatory-compliance-diligence-memo.docx",
+  "source": "github.com/harveyai/harvey-labs (synthetic; sampled)",
+  "sha256": "25dcbc78f2b201e87d37d8c049ed5bae94f07c9603be8e9d7488aad7543fb4aa",
+  "pages": 44,
+  "words": 17371
+ },
+ {
+  "file": "synthetic-harvey__fd59ad_arrowpoint-mortgage-enterprise-saas-agreement-scs-ent-2024-0029.docx",
+  "source": "github.com/harveyai/harvey-labs (synthetic; sampled)",
+  "sha256": "671a8e36ce19e8305aa40e7e62a065502f9addeab0f7a16112d98ea16e868bea",
+  "pages": 54,
+  "words": 16036
+ },
+ {
+  "file": "www.adb.org__adb-sbd-large-works-red-book-jan26-1s1e-with-mpc-and-esf.docx",
+  "source": "https://www.adb.org/sites/default/files/2026-01/adb-sbd-large-works-red-book-jan26-1s1e-with-mpc-and-esf.docx",
+  "sha256": "f51b6e48c6f77368e61c88b04011c37ca3180ca521d1d1a192d44b179bc31ab1",
+  "pages": 195,
+  "words": 75511
+ },
+ {
+  "file": "www.adb.org__adb-sbd-large-works-red-book-jan26-1s1e-with-mpc-and-sps.docx",
+  "source": "https://www.adb.org/sites/default/files/2026-01/adb-sbd-large-works-red-book-jan26-1s1e-with-mpc-and-sps.docx",
+  "sha256": "9e14e561e53ee4b9f7da874cd5158d5ac4fdf42d1a081b89b3162630b56ee07d",
+  "pages": 187,
+  "words": 72139
+ },
+ {
+  "file": "www.adb.org__adb-sbd-large-works-red-book-jan26-1s1e-without-mpc-and-with-esf.docx",
+  "source": "https://www.adb.org/sites/default/files/2026-01/adb-sbd-large-works-red-book-jan26-1s1e-without-mpc-and-with-esf.docx",
+  "sha256": "fcfa71fb7f4c320009b1c57e4dfc12e6296c691f00fff7726ce2e6299c48f118",
+  "pages": 189,
+  "words": 73592
+ },
+ {
+  "file": "www.adb.org__adb-sbd-large-works-red-book-jan26-1s1e-without-mpc-and-with-sps.docx",
+  "source": "https://www.adb.org/sites/default/files/2026-01/adb-sbd-large-works-red-book-jan26-1s1e-without-mpc-and-with-sps.docx",
+  "sha256": "0e76067aba16c24b66734da23df534122349ebcb8c74c3fc6e97cb23bb5ba0c3",
+  "pages": 183,
+  "words": 70236
+ },
+ {
+  "file": "www.adb.org__adb-sbd-large-works-red-book-jan26-1s2e-with-mpc-and-esf.docx",
+  "source": "https://www.adb.org/sites/default/files/2026-01/adb-sbd-large-works-red-book-jan26-1s2e-with-mpc-and-esf.docx",
+  "sha256": "d67cd488bd0216dd9032e76666350714d65c488096651539749dff46e0275da1",
+  "pages": 197,
+  "words": 77054
+ },
+ {
+  "file": "www.adb.org__adb-sbd-large-works-red-book-jan26-1s2e-with-mpc-and-sps.docx",
+  "source": "https://www.adb.org/sites/default/files/2026-01/adb-sbd-large-works-red-book-jan26-1s2e-with-mpc-and-sps.docx",
+  "sha256": "c9dedcea3febd0bc2db75ff43b5afb2bf984c69f06c1399ac8ccab9dfb5c36eb",
+  "pages": 190,
+  "words": 73685
+ },
+ {
+  "file": "www.adb.org__adb-sbd-large-works-red-book-jan26-1s2e-without-mpc-and-with-esf.docx",
+  "source": "https://www.adb.org/sites/default/files/2026-01/adb-sbd-large-works-red-book-jan26-1s2e-without-mpc-and-with-esf.docx",
+  "sha256": "24eb961ea690b6b42729d7743f74a099241c44d90647c961c95ecbb95395824b",
+  "pages": 190,
+  "words": 75151
+ },
+ {
+  "file": "www.adb.org__adb-sbd-large-works-red-book-jan26-1s2e-without-mpc-and-with-sps.docx",
+  "source": "https://www.adb.org/sites/default/files/2026-01/adb-sbd-large-works-red-book-jan26-1s2e-without-mpc-and-with-sps.docx",
+  "sha256": "5cca7a33f64a5587f5397a617efea7684cebbb39f05e7e4eabac0584b0b4e913",
+  "pages": 187,
+  "words": 71780
+ },
+ {
+  "file": "www.adb.org__sbd-collaborative-om-jan26-1s2e-mpc-esf.docx",
+  "source": "https://www.adb.org/sites/default/files/institutional-document/1148286/sbd-collaborative-om-jan26-1s2e-mpc-esf.docx",
+  "sha256": "bcea44992dc3830eb7282a59152fcec8c8f083ee3669946c0e10922b4352f99d",
+  "pages": 271,
+  "words": 140334
+ },
+ {
+  "file": "www.adb.org__sbd-collaborative-om-jan26-1s2e-mpc-sps.docx",
+  "source": "https://www.adb.org/sites/default/files/institutional-document/1148286/sbd-collaborative-om-jan26-1s2e-mpc-sps.docx",
+  "sha256": "85359e14d781a49370ddbe9b1775b6d028acc7c1a20cf29a5d1893b086ce6182",
+  "pages": 272,
+  "words": 137521
+ },
+ {
+  "file": "www.adb.org__sbd-dbo-jan26-1s1e-mpc-esf.docx",
+  "source": "https://www.adb.org/sites/default/files/institutional-document/1155416/sbd-dbo-jan26-1s1e-mpc-esf.docx",
+  "sha256": "d44b7157adb15099654c890f2260f784526361ea7d0709a9d681e27ae4f4425a",
+  "pages": 279,
+  "words": 105082
+ },
+ {
+  "file": "www.adb.org__sbd-dbo-jan26-1s1e-mpc-sps.docx",
+  "source": "https://www.adb.org/sites/default/files/institutional-document/1155416/sbd-dbo-jan26-1s1e-mpc-sps.docx",
+  "sha256": "105620825787d9d7793ae1e1d5f7428bdbb147fc0e5086d3762eebf4ca6eba72",
+  "pages": 274,
+  "words": 103125
+ },
+ {
+  "file": "www.adb.org__sbd-dbo-jan26-1s1e-without-mpc-esf.docx",
+  "source": "https://www.adb.org/sites/default/files/institutional-document/1155416/sbd-dbo-jan26-1s1e-without-mpc-esf.docx",
+  "sha256": "2b2065776d838ee743e865e6d30151960118f628a76a3cde3526dc1a849b8a8c",
+  "pages": 275,
+  "words": 103048
+ },
+ {
+  "file": "www.adb.org__sbd-dbo-jan26-1s1e-without-mpc-sps.docx",
+  "source": "https://www.adb.org/sites/default/files/institutional-document/1155416/sbd-dbo-jan26-1s1e-without-mpc-sps.docx",
+  "sha256": "e7f86504baed2c9de093a53875a3fb775254b55e656e34720e32bfdd6685370a",
+  "pages": 274,
+  "words": 103150
+ },
+ {
+  "file": "www.adb.org__sbd-dbo-jan26-1s2e-mpc-esf.docx",
+  "source": "https://www.adb.org/sites/default/files/institutional-document/1155416/sbd-dbo-jan26-1s2e-mpc-esf.docx",
+  "sha256": "962ec7050a7e1296f7f18c4db0f5ff76a1cdfb49437e08d2dcb7c435f3216062",
+  "pages": 283,
+  "words": 106431
+ },
+ {
+  "file": "www.adb.org__sbd-dbo-jan26-1s2e-mpc-sps.docx",
+  "source": "https://www.adb.org/sites/default/files/institutional-document/1155416/sbd-dbo-jan26-1s2e-mpc-sps.docx",
+  "sha256": "bc48404015f20bfcf8085f342025c497d03577c64a79caf2acdddfa3999f73cc",
+  "pages": 279,
+  "words": 104518
+ },
+ {
+  "file": "www.adb.org__sbd-dbo-jan26-1s2e-without-mpc-esf.docx",
+  "source": "https://www.adb.org/sites/default/files/institutional-document/1155416/sbd-dbo-jan26-1s2e-without-mpc-esf.docx",
+  "sha256": "b23cccff06a7a60fc586343bc3fd2ed4d11a56524c54152c954ebe714be3defc",
+  "pages": 279,
+  "words": 104395
+ },
+ {
+  "file": "www.adb.org__sbd-dbo-jan26-1s2e-without-mpc-sps.docx",
+  "source": "https://www.adb.org/sites/default/files/institutional-document/1155416/sbd-dbo-jan26-1s2e-without-mpc-sps.docx",
+  "sha256": "256919612fe469a326451650d5693eeef2bf086d04792fb2ad2f1bb2dba266e5",
+  "pages": 273,
+  "words": 102626
+ },
+ {
+  "file": "www.adb.org__sbd-goods-jan26-1s1e-with-mpc-esf.docx",
+  "source": "https://www.adb.org/sites/default/files/2026-03/sbd-goods-jan26-1s1e-with-mpc-esf.docx",
+  "sha256": "3ea7f2f6ab44720e96ded07beba1f7d638e27aeaf4732205cb5a0820b89e4151",
+  "pages": 134,
+  "words": 49019
+ },
+ {
+  "file": "www.adb.org__sbd-goods-jan26-1s1e-with-mpc-sps.docx",
+  "source": "https://www.adb.org/sites/default/files/2026-03/sbd-goods-jan26-1s1e-with-mpc-sps.docx",
+  "sha256": "2334ffb3743c461a96831febbb84f16fb64f71a668b0260a809a5c5a81b9b349",
+  "pages": 126,
+  "words": 46842
+ },
+ {
+  "file": "www.adb.org__sbd-goods-jan26-1s1e-without-mpc-with-esf.docx",
+  "source": "https://www.adb.org/sites/default/files/2026-03/sbd-goods-jan26-1s1e-without-mpc-with-esf.docx",
+  "sha256": "03abf71b1d2890758f27ac2950fd68cdb2df147183c587f8a250e83ded770ae4",
+  "pages": 126,
+  "words": 48340
+ },
+ {
+  "file": "www.adb.org__sbd-goods-jan26-1s1e-without-mpc-with-sps.docx",
+  "source": "https://www.adb.org/sites/default/files/2026-03/sbd-goods-jan26-1s1e-without-mpc-with-sps.docx",
+  "sha256": "352e7895937f1a235a4f21746990f0b99a0fe2cbccce9c222974619f9ff2b393",
+  "pages": 122,
+  "words": 46127
+ },
+ {
+  "file": "www.adb.org__sbd-goods-jan26-1s2e-with-mpc-esf.docx",
+  "source": "https://www.adb.org/sites/default/files/2026-03/sbd-goods-jan26-1s2e-with-mpc-esf.docx",
+  "sha256": "ac3fb6ec8a7a7d6be96df7c0d6efd3ac2b01999dfcb99aa20d985bd2e3efc71e",
+  "pages": 135,
+  "words": 50001
+ },
+ {
+  "file": "www.adb.org__sbd-goods-jan26-1s2e-with-mpc-sps.docx",
+  "source": "https://www.adb.org/sites/default/files/2026-03/sbd-goods-jan26-1s2e-with-mpc-sps.docx",
+  "sha256": "f9f90b73bc5731e4fb155bf4894865d15a0b1a76c654ffc64e9a8a827d9985fa",
+  "pages": 130,
+  "words": 47967
+ },
+ {
+  "file": "www.adb.org__sbd-goods-jan26-1s2e-without-mpc-with-esf.docx",
+  "source": "https://www.adb.org/sites/default/files/2026-03/sbd-goods-jan26-1s2e-without-mpc-with-esf.docx",
+  "sha256": "2b01b7647501c94115e3b3aba1f5d3897cf5a868559ec14c9adb5cef138ebeab",
+  "pages": 130,
+  "words": 49234
+ },
+ {
+  "file": "www.adb.org__sbd-goods-jan26-1s2e-without-mpc-with-sps.docx",
+  "source": "https://www.adb.org/sites/default/files/2026-03/sbd-goods-jan26-1s2e-without-mpc-with-sps.docx",
+  "sha256": "fee31cbee88e528be3d71310552735a708db76f3764920b01d4307a0b0ffc09b",
+  "pages": 124,
+  "words": 47088
+ },
+ {
+  "file": "www.adb.org__sbd-it-product-services-jan26-1s1e-with-mpc-esf.docx",
+  "source": "https://www.adb.org/sites/default/files/2026-02/sbd-it-product-services-jan26-1s1e-with-mpc-esf.docx",
+  "sha256": "ec605cb40f97cd1c75eb16b69b6a50246b62d5963caae2f22a56816dbad8e914",
+  "pages": 139,
+  "words": 51982
+ },
+ {
+  "file": "www.adb.org__sbd-it-product-services-jan26-1s1e-with-mpc-sps.docx",
+  "source": "https://www.adb.org/sites/default/files/2026-02/sbd-it-product-services-jan26-1s1e-with-mpc-sps.docx",
+  "sha256": "2a875e99fa047821488a03946a4774fd9f1df67d1b8dade890d33948fc65a264",
+  "pages": 137,
+  "words": 50064
+ },
+ {
+  "file": "www.adb.org__sbd-it-product-services-jan26-1s1e-without-mpc-with-esf.docx",
+  "source": "https://www.adb.org/sites/default/files/2026-02/sbd-it-product-services-jan26-1s1e-without-mpc-with-esf.docx",
+  "sha256": "629d2544e4a1178a67a6c7fdd30541d65a9ece2700eb068e87c86c3eeac23202",
+  "pages": 135,
+  "words": 49927
+ },
+ {
+  "file": "www.adb.org__sbd-it-product-services-jan26-1s1e-without-mpc-with-sps.docx",
+  "source": "https://www.adb.org/sites/default/files/2026-02/sbd-it-product-services-jan26-1s1e-without-mpc-with-sps.docx",
+  "sha256": "db6eddcffafb5ad9441c0496cb05bb4fe0ac5a376f503ef38752bbb029c4c6a7",
+  "pages": 132,
+  "words": 48438
+ },
+ {
+  "file": "www.adb.org__sbd-it-product-services-jan26-1s2e-with-mpc-esf.docx",
+  "source": "https://www.adb.org/sites/default/files/2026-02/sbd-it-product-services-jan26-1s2e-with-mpc-esf.docx",
+  "sha256": "b6ff93a6b8ee9e3f8ee78be52d6f7f2b0289d0ba5ff25b29cb3808be92a04864",
+  "pages": 143,
+  "words": 53320
+ },
+ {
+  "file": "www.adb.org__sbd-it-product-services-jan26-1s2e-with-mpc-sps.docx",
+  "source": "https://www.adb.org/sites/default/files/2026-02/sbd-it-product-services-jan26-1s2e-with-mpc-sps.docx",
+  "sha256": "73ed7b9fac67b0a780a6829694de4defe69336b3efcccfff8072479678556538",
+  "pages": 140,
+  "words": 51394
+ },
+ {
+  "file": "www.adb.org__sbd-it-product-services-jan26-1s2e-without-mpc-with-esf.docx",
+  "source": "https://www.adb.org/sites/default/files/2026-02/sbd-it-product-services-jan26-1s2e-without-mpc-with-esf.docx",
+  "sha256": "488947dc35065f425b71e3147ba35b3b2170e4e796a042ca25047b5024421a7a",
+  "pages": 139,
+  "words": 51405
+ },
+ {
+  "file": "www.adb.org__sbd-it-product-services-jan26-1s2e-without-mpc-with-sps.docx",
+  "source": "https://www.adb.org/sites/default/files/2026-02/sbd-it-product-services-jan26-1s2e-without-mpc-with-sps.docx",
+  "sha256": "d9c89683b4949c6bc4d85b5b146fd228fbcf21bef0a9e9c389eecd2ceb2da3ec",
+  "pages": 135,
+  "words": 49488
+ },
+ {
+  "file": "www.adb.org__sbd-large-works-red-book-sec-8-9-plugin-esf.docx",
+  "source": "https://www.adb.org/sites/default/files/institutional-document/1145491/sbd-large-works-red-book-sec-8-9-plugin-esf.docx",
+  "sha256": "029cd5cfd0e9c8b042db7eaef3c1114c728a0b879b1ab4b5209fb091c7c05a8e",
+  "pages": 76,
+  "words": 33866
+ },
+ {
+  "file": "www.adb.org__sbd-large-works-red-book-sec-8-9-plugin-sps.docx",
+  "source": "https://www.adb.org/sites/default/files/institutional-document/1145491/sbd-large-works-red-book-sec-8-9-plugin-sps.docx",
+  "sha256": "51554848e710113841777e7c4a3eb7053d43514c1fbd60ab645c3eccd7025f26",
+  "pages": 71,
+  "words": 30590
+ },
+ {
+  "file": "www.adb.org__sbd-large-works-yellow-book-jan26-1s1e-with-mpc-esf.docx",
+  "source": "https://www.adb.org/sites/default/files/2026-01/sbd-large-works-yellow-book-jan26-1s1e-with-mpc-esf.docx",
+  "sha256": "28d56f16027b2fabcb1d9577e92c8edc7e40283ba705f17ca6b277ad7e1c1bcc",
+  "pages": 186,
+  "words": 75194
+ },
+ {
+  "file": "www.adb.org__sbd-large-works-yellow-book-jan26-1s1e-with-mpc-sps.docx",
+  "source": "https://www.adb.org/sites/default/files/2026-01/sbd-large-works-yellow-book-jan26-1s1e-with-mpc-sps.docx",
+  "sha256": "413879eb1f848b951826e6ca35a639f797eb1b6926682b0f40358896faeb3f89",
+  "pages": 180,
+  "words": 71742
+ },
+ {
+  "file": "www.adb.org__sbd-large-works-yellow-book-jan26-1s1e-without-mpc-with-esf.docx",
+  "source": "https://www.adb.org/sites/default/files/2026-01/sbd-large-works-yellow-book-jan26-1s1e-without-mpc-with-esf.docx",
+  "sha256": "25aa02a535c62ad791b2088b3d10a4abd4dcbb5b18668168cea7e2aaaf02690e",
+  "pages": 180,
+  "words": 73109
+ },
+ {
+  "file": "www.adb.org__sbd-large-works-yellow-book-jan26-1s1e-without-mpc-with-sps.docx",
+  "source": "https://www.adb.org/sites/default/files/2026-01/sbd-large-works-yellow-book-jan26-1s1e-without-mpc-with-sps.docx",
+  "sha256": "7c4ed70b6f87a0ba9fa6d31127c97fe28060ea1645c4cb1c6d9c04f26046e634",
+  "pages": 173,
+  "words": 69639
+ },
+ {
+  "file": "www.adb.org__sbd-large-works-yellow-book-jan26-1s2e-with-mpc-esf.docx",
+  "source": "https://www.adb.org/sites/default/files/2026-01/sbd-large-works-yellow-book-jan26-1s2e-with-mpc-esf.docx",
+  "sha256": "04212e3f2fb5a7aafc88875cbabed315e2c6c22ad5ce486d97d89f1900826c02",
+  "pages": 186,
+  "words": 76696
+ },
+ {
+  "file": "www.adb.org__sbd-large-works-yellow-book-jan26-1s2e-with-mpc-sps.docx",
+  "source": "https://www.adb.org/sites/default/files/2026-01/sbd-large-works-yellow-book-jan26-1s2e-with-mpc-sps.docx",
+  "sha256": "c186595f36e586c7307027e153162d5ca80f07dcc26746fd81788dbd50fac351",
+  "pages": 183,
+  "words": 73306
+ },
+ {
+  "file": "www.adb.org__sbd-large-works-yellow-book-jan26-1s2e-without-mpc-with-esf.docx",
+  "source": "https://www.adb.org/sites/default/files/2026-01/sbd-large-works-yellow-book-jan26-1s2e-without-mpc-with-esf.docx",
+  "sha256": "89fde4b27dd0542a12f38956b8a96e879cb6bfcab287e4b11d6689e283164bee",
+  "pages": 179,
+  "words": 74724
+ },
+ {
+  "file": "www.adb.org__sbd-large-works-yellow-book-jan26-1s2e-without-mpc-with-sps.docx",
+  "source": "https://www.adb.org/sites/default/files/2026-01/sbd-large-works-yellow-book-jan26-1s2e-without-mpc-with-sps.docx",
+  "sha256": "7c73e3398d040f610038851a86ad892f4c1d503c3621795cebac0f7f388caff7",
+  "pages": 179,
+  "words": 71557
+ },
+ {
+  "file": "www.adb.org__sbd-plant-enaa-jan26-1s1e-mpc-esf.docx",
+  "source": "https://www.adb.org/sites/default/files/institutional-document/1150746/sbd-plant-enaa-jan26-1s1e-mpc-esf.docx",
+  "sha256": "abb3d000bfa570293f5e0901e228351ed1735c834e20daeebd0293e3ceaded16",
+  "pages": 244,
+  "words": 88195
+ },
+ {
+  "file": "www.adb.org__sbd-plant-enaa-jan26-1s1e-mpc-sps.docx",
+  "source": "https://www.adb.org/sites/default/files/institutional-document/1150746/sbd-plant-enaa-jan26-1s1e-mpc-sps.docx",
+  "sha256": "0074670e84b9c48902480878223c096e4625951b0c7ed3e9b3cdf82595d4045e",
+  "pages": 238,
+  "words": 85797
+ },
+ {
+  "file": "www.adb.org__sbd-plant-enaa-jan26-1s1e-without-mpc-esf.docx",
+  "source": "https://www.adb.org/sites/default/files/institutional-document/1150746/sbd-plant-enaa-jan26-1s1e-without-mpc-esf.docx",
+  "sha256": "fb7c4c997c03a37ffec6bc6eb2c4a8b2fcdb6bebe54e1ee13db3d68299b5d9c6",
+  "pages": 239,
+  "words": 86660
+ },
+ {
+  "file": "www.adb.org__sbd-plant-enaa-jan26-1s1e-without-mpc-sps.docx",
+  "source": "https://www.adb.org/sites/default/files/institutional-document/1150746/sbd-plant-enaa-jan26-1s1e-without-mpc-sps.docx",
+  "sha256": "4d144874372b0a422852180be8298b36e7dc58fafdb53cc68edca5dadff7f410",
+  "pages": 235,
+  "words": 84276
+ },
+ {
+  "file": "www.adb.org__sbd-plant-enaa-jan26-1s2e-mpc-esf.docx",
+  "source": "https://www.adb.org/sites/default/files/institutional-document/1150746/sbd-plant-enaa-jan26-1s2e-mpc-esf.docx",
+  "sha256": "5df5d04270b2a5cf82967abac29c661bf27e2b3f62fb65d132b778ee9d581b23",
+  "pages": 247,
+  "words": 89765
+ },
+ {
+  "file": "www.adb.org__sbd-plant-enaa-jan26-1s2e-mpc-sps.docx",
+  "source": "https://www.adb.org/sites/default/files/institutional-document/1150746/sbd-plant-enaa-jan26-1s2e-mpc-sps.docx",
+  "sha256": "4e5922532f6bb3d01831b84071ab1b10352651d0736cfd6599b5ac700e59b9ee",
+  "pages": 242,
+  "words": 87429
+ },
+ {
+  "file": "www.adb.org__sbd-plant-enaa-jan26-1s2e-without-mpc-esf.docx",
+  "source": "https://www.adb.org/sites/default/files/institutional-document/1150746/sbd-plant-enaa-jan26-1s2e-without-mpc-esf.docx",
+  "sha256": "3bfabb525ffd45cad91a76be915ba5c25d64a2e2ff4dc755eea321454f26296a",
+  "pages": 244,
+  "words": 88058
+ },
+ {
+  "file": "www.adb.org__sbd-plant-enaa-jan26-1s2e-without-mpc-sps.docx",
+  "source": "https://www.adb.org/sites/default/files/institutional-document/1150746/sbd-plant-enaa-jan26-1s2e-without-mpc-sps.docx",
+  "sha256": "21c02a44604065e61ff37e10ea8cec81cbd9460a60eb5abb686b8b2e28c18e96",
+  "pages": 237,
+  "words": 85708
+ },
+ {
+  "file": "www.adb.org__sbd-small-works-jan26-1s1e-with-mpc-esf.docx",
+  "source": "https://www.adb.org/sites/default/files/2026-03/sbd-small-works-jan26-1s1e-with-mpc-esf.docx",
+  "sha256": "05e83fe31d8c9aa8e24fd54dbafbb9dd14cb5aa3b26b74c8864df2b561107417",
+  "pages": 176,
+  "words": 71404
+ },
+ {
+  "file": "www.adb.org__sbd-small-works-jan26-1s1e-with-mpc-sps.docx",
+  "source": "https://www.adb.org/sites/default/files/2026-03/sbd-small-works-jan26-1s1e-with-mpc-sps.docx",
+  "sha256": "6f22e1f3f2c6fcbd4c04dd0b194939a96d7be86a002471ba19473fbf0cab42b4",
+  "pages": 169,
+  "words": 69035
+ },
+ {
+  "file": "www.adb.org__sbd-small-works-jan26-1s1e-without-mpc-with-esf.docx",
+  "source": "https://www.adb.org/sites/default/files/2026-03/sbd-small-works-jan26-1s1e-without-mpc-with-esf.docx",
+  "sha256": "7377f62ec2df5691c549337b40729a8ec7241da92da4143f8e0b132f0f5436c6",
+  "pages": 171,
+  "words": 69059
+ },
+ {
+  "file": "www.adb.org__sbd-small-works-jan26-1s1e-without-mpc-with-sps.docx",
+  "source": "https://www.adb.org/sites/default/files/2026-03/sbd-small-works-jan26-1s1e-without-mpc-with-sps.docx",
+  "sha256": "eb4f50af8663b0706638e76bb2bd42806561e0eb154c8b40797f3d30e77d80b7",
+  "pages": 168,
+  "words": 66777
+ },
+ {
+  "file": "www.adb.org__sbd-small-works-jan26-1s2e-with-mpc-esf.docx",
+  "source": "https://www.adb.org/sites/default/files/2026-03/sbd-small-works-jan26-1s2e-with-mpc-esf.docx",
+  "sha256": "2e133a0b734a06e14a523cbf1d3421360d8a6651ffc6b7d7e133bdd240faafc6",
+  "pages": 180,
+  "words": 72796
+ },
+ {
+  "file": "www.adb.org__sbd-small-works-jan26-1s2e-with-mpc-sps.docx",
+  "source": "https://www.adb.org/sites/default/files/2026-03/sbd-small-works-jan26-1s2e-with-mpc-sps.docx",
+  "sha256": "54e5424da521256fb4f52b7b9ed55ba94bd0917c5d1041a640e48a2dc620b260",
+  "pages": 175,
+  "words": 70512
+ },
+ {
+  "file": "www.adb.org__sbd-small-works-jan26-1s2e-without-mpc-with-esf.docx",
+  "source": "https://www.adb.org/sites/default/files/2026-03/sbd-small-works-jan26-1s2e-without-mpc-with-esf.docx",
+  "sha256": "8130040f5870161daff0160b3572b2b15bdf6c8f150cb78b8b9802c3f242964a",
+  "pages": 174,
+  "words": 70526
+ },
+ {
+  "file": "www.adb.org__sbd-small-works-jan26-1s2e-without-mpc-with-sps.docx",
+  "source": "https://www.adb.org/sites/default/files/2026-03/sbd-small-works-jan26-1s2e-without-mpc-with-sps.docx",
+  "sha256": "50f54863bf46385e1593476e73ebc37cbf819f26bb80108d954d5a1a7a53a4ee",
+  "pages": 172,
+  "words": 68216
+ },
+ {
+  "file": "www.england.nhs.uk__013-nhssc-fl-sub-con-fl-2627.docx",
+  "source": "https://www.england.nhs.uk/wp-content/uploads/2026/02/013-nhssc-fl-sub-con-fl-2627.docx",
+  "sha256": "2edc517dd590370cbc2ab47e3412960732850c0234caa7c4c52292f90767494a",
+  "pages": 45,
+  "words": 12469
+ },
+ {
+  "file": "www.england.nhs.uk__014-nhssc-sf-sub-con-2627.docx",
+  "source": "https://www.england.nhs.uk/wp-content/uploads/2026/02/014-nhssc-sf-sub-con-2627.docx",
+  "sha256": "713041acbde90e2bffe963723f67e6356426938b3951d64ae5d04b07604b75b8",
+  "pages": 31,
+  "words": 8541
+ },
+ {
+  "file": "www.england.nhs.uk__017-nhssc-fl-sub-con-mult-head-providers-2627.docx",
+  "source": "https://www.england.nhs.uk/wp-content/uploads/2026/02/017-nhssc-fl-sub-con-mult-head-providers-2627.docx",
+  "sha256": "bea3e7539f49f63c4e5234db7f1b8c67e1376dad66fb964e9713b567161a9a2b",
+  "pages": 47,
+  "words": 13184
+ },
+ {
+  "file": "www.england.nhs.uk__02-NHS-Standard-Contract-2024-to-2025-Particulars-full-length-version-2-April-2024.docx",
+  "source": "https://www.england.nhs.uk/wp-content/uploads/2024/02/02-NHS-Standard-Contract-2024-to-2025-Particulars-full-length-version-2-April-2024.docx",
+  "sha256": "ea721543e8c135fdfe5cf0ba1cc41cbc0f0345c62d28c5de5b80a220530299d7",
+  "pages": 55,
+  "words": 9149
+ },
+ {
+  "file": "www.england.nhs.uk__02-nhssc-2526-full-length-particulars-final.docx",
+  "source": "https://www.england.nhs.uk/wp-content/uploads/2025/05/02-nhssc-2526-full-length-particulars-final.docx",
+  "sha256": "69f1ab342247d1ea64ed6f223dd9d1161e59d9b2038a7017de81e083a889beb9",
+  "pages": 56,
+  "words": 9424
+ },
+ {
+  "file": "www.england.nhs.uk__02-nhssc-2627-full-length-particulars-sched-2-v2.docx",
+  "source": "https://www.england.nhs.uk/wp-content/uploads/2026/01/02-nhssc-2627-full-length-particulars-sched-2-v2.docx",
+  "sha256": "6b98108103b5651beb5036a0c050407d2b075f796c5a0ea7b8d7c3189fa1196c",
+  "pages": 60,
+  "words": 9933
+ },
+ {
+  "file": "www.england.nhs.uk__05-nhssc-2627-shorter-form-particulars.docx",
+  "source": "https://www.england.nhs.uk/wp-content/uploads/2026/01/05-nhssc-2627-shorter-form-particulars.docx",
+  "sha256": "14d816690f430e3289466e5e3b9f1c25d01dc772060dae8c72b9e28502c301e4",
+  "pages": 25,
+  "words": 4680
+ },
+ {
+  "file": "www.england.nhs.uk__10-nhssc-collaborative-commissioning-agreement-single-contract-dec-23.docx",
+  "source": "https://www.england.nhs.uk/wp-content/uploads/2023/12/10-nhssc-collaborative-commissioning-agreement-single-contract-dec-23.docx",
+  "sha256": "0da37750a1b32a14bdee59701493b4fa4f376a890c70f0bc2003b5a2cb258b50",
+  "pages": 27,
+  "words": 6098
+ },
+ {
+  "file": "www.england.nhs.uk__11-nhssc-collaborative-commissioning-agreement-multi-contract-dec-23.docx",
+  "source": "https://www.england.nhs.uk/wp-content/uploads/2023/12/11-nhssc-collaborative-commissioning-agreement-multi-contract-dec-23.docx",
+  "sha256": "36069f2d04da19937a109105db6b69f67102f003c5b8e9f3d43378751639851e",
+  "pages": 26,
+  "words": 6279
+ },
+ {
+  "file": "www.england.nhs.uk__14-NV-1920-FL.docx",
+  "source": "https://www.england.nhs.uk/wp-content/uploads/2019/03/14-NV-1920-FL.docx",
+  "sha256": "948e20b0688c68f2dee3d9145a9b35cf0d46185c78f877770f1ee5d25a631a2d",
+  "pages": 57,
+  "words": 13590
+ },
+ {
+  "file": "www.england.nhs.uk__PRN01903x-sub-contract-for-the-provision-of-services-related-to-the-network-contract-des-2.docx",
+  "source": "https://www.england.nhs.uk/wp-content/uploads/2025/04/PRN01903x-sub-contract-for-the-provision-of-services-related-to-the-network-contract-des-25-26-v2.docx",
+  "sha256": "5348bcfd0902ce468c5f7fba049a97706a6aecf32dfba607a5db0c267cbbc45d",
+  "pages": 48,
+  "words": 14094
+ },
+ {
+  "file": "www.england.nhs.uk__PRN02355x-sub-contract-provision-of-services-related-to-network-contract-des-26-27-highlig.docx",
+  "source": "https://www.england.nhs.uk/wp-content/uploads/2026/03/PRN02355x-sub-contract-provision-of-services-related-to-network-contract-des-26-27-highlighted.docx",
+  "sha256": "1207fa8fb2b9ab90247e00dd1bc0c6e247babd903b9cfd74773b2e81e493ed89",
+  "pages": 59,
+  "words": 14095
+ },
+ {
+  "file": "www.england.nhs.uk__nhs-closed-framework-agreement-supply-of-goods-provision-of-services-pa23.docx",
+  "source": "https://www.england.nhs.uk/wp-content/uploads/2022/09/nhs-closed-framework-agreement-supply-of-goods-provision-of-services-pa23.docx",
+  "sha256": "7f2128e3ff7bae574721a729c43396dad49af21d6e0061484b1a73867933a4f9",
+  "pages": 123,
+  "words": 55726
+ },
+ {
+  "file": "www.england.nhs.uk__nhs-education-funding-agreement-main-body-terms.docx",
+  "source": "https://www.england.nhs.uk/wp-content/uploads/2024/05/nhs-education-funding-agreement-main-body-terms.docx",
+  "sha256": "52bfabab40b5a443fa74f214eb93bce97294017b3a702334e28f4ff4ff64b552",
+  "pages": 64,
+  "words": 22890
+ },
+ {
+  "file": "www.england.nhs.uk__nhs-education-funding-agreement-schedule-4-part-a-tri-partite-agreement-undergraduate-dent.docx",
+  "source": "https://www.england.nhs.uk/wp-content/uploads/2024/05/nhs-education-funding-agreement-schedule-4-part-a-tri-partite-agreement-undergraduate-dental.docx",
+  "sha256": "fa868ff9526f2d5f40062d23b9ae11ec60c9a1106c06ac34fd651122325cc42c",
+  "pages": 26,
+  "words": 8216
+ },
+ {
+  "file": "www.england.nhs.uk__nhs-terms-and-conditions-for-the-supply-of-goods-and-the-provision-of-services-po-version..docx",
+  "source": "https://www.england.nhs.uk/wp-content/uploads/2022/09/nhs-terms-and-conditions-for-the-supply-of-goods-and-the-provision-of-services-po-version.docx",
+  "sha256": "a1215f6f89b2ab81c48db9bf38a7a72760255b1b15e966bd163173e03feaf736",
+  "pages": 65,
+  "words": 30497
+ },
+ {
+  "file": "www.england.nhs.uk__nhs-terms-conditions-provision-of-services-contract-version-pa23.docx",
+  "source": "https://www.england.nhs.uk/wp-content/uploads/2022/09/nhs-terms-conditions-provision-of-services-contract-version-pa23.docx",
+  "sha256": "56a64bbd14977d1f4377958a89dedf3d18d8d4d2f08394d84f94fee02db1234e",
+  "pages": 91,
+  "words": 40283
+ },
+ {
+  "file": "www.england.nhs.uk__nhs-terms-conditions-provision-of-services-po-version-pa23.docx",
+  "source": "https://www.england.nhs.uk/wp-content/uploads/2022/09/nhs-terms-conditions-provision-of-services-po-version-pa23.docx",
+  "sha256": "ea0ae31ef00e030ea79acbf3a4e9ed24f2f58d57121baa0691e5f5c550b707ea",
+  "pages": 60,
+  "words": 27343
+ },
+ {
+  "file": "www.england.nhs.uk__prn01988-iii-nhs-open-framework-agreement-for-the-supply-of-goods-and-the-provision-of-ser.docx",
+  "source": "https://www.england.nhs.uk/wp-content/uploads/2022/09/prn01988-iii-nhs-open-framework-agreement-for-the-supply-of-goods-and-the-provision-of-services-pa2023.docx",
+  "sha256": "b5b0209f4d859239d4440b20844958eba78dcc4322a9fd1ea192afd7924dc109",
+  "pages": 127,
+  "words": 56298
+ },
+ {
+  "file": "www.england.nhs.uk__transforming-care-partnership-s75-agreement.docx",
+  "source": "https://www.england.nhs.uk/wp-content/uploads/2018/07/transforming-care-partnership-s75-agreement.docx",
+  "sha256": "141b6613684c100f385fcceb050a47ad693a089819f6c2b8b11ffa177669059f",
+  "pages": 56,
+  "words": 19245
+ },
+ {
+  "file": "www.info.buy.nsw.gov.au__2.-consultancy_services_tender_schedules_11-July-2022.docx",
+  "source": "https://www.info.buy.nsw.gov.au/__data/assets/word_doc/0003/638076/2.-consultancy_services_tender_schedules_11-July-2022.docx",
+  "sha256": "d5ea7c3fa5c9a875178847d43f0016f182e8d82cd4409c7346f990b272eb263d",
+  "pages": 20,
+  "words": 4663
+ },
+ {
+  "file": "www.info.buy.nsw.gov.au__2.-pms_tender-schedules_11-July-2022.docx",
+  "source": "https://www.info.buy.nsw.gov.au/__data/assets/word_doc/0011/639785/2.-pms_tender-schedules_11-July-2022.docx",
+  "sha256": "63b02febf24c34b558139987b1891f40694afcd1610278576f8aa5ef0e6ddea9",
+  "pages": 26,
+  "words": 5739
+ },
+ {
+  "file": "www.info.buy.nsw.gov.au__3.-consultancy_services_conditions_of_agreement_plus_agreement_information_2-May-2023.docx",
+  "source": "https://www.info.buy.nsw.gov.au/__data/assets/word_doc/0010/638524/3.-consultancy_services_conditions_of_agreement_plus_agreement_information_2-May-2023.docx",
+  "sha256": "08f446f797ede7b03f55c6d5319b94fc38f6345191f5853e98bc382d4e349ded",
+  "pages": 36,
+  "words": 12847
+ },
+ {
+  "file": "www.info.buy.nsw.gov.au__3.-pms_conditions_of_agreement_plus-agreement-information_11-July-2022.docx",
+  "source": "https://www.info.buy.nsw.gov.au/__data/assets/word_doc/0004/1091047/3.-pms_conditions_of_agreement_plus-agreement-information_11-July-2022.docx",
+  "sha256": "ae5420aeab9ebc38f67ab55689e2494312b563dfac6a35c875e1d7f20023d184",
+  "pages": 35,
+  "words": 12665
+ },
+ {
+  "file": "www.info.buy.nsw.gov.au__Core-and-Combined-Solution-Requirements_August2025.docx",
+  "source": "https://www.info.buy.nsw.gov.au/__data/assets/word_doc/0011/709175/Core-and-Combined-Solution-Requirements_August2025.docx",
+  "sha256": "05d84c9fc39e741dae04803cce9d1caef50824c1fcabc4f05b7b8037bca3b293",
+  "pages": 31,
+  "words": 7570
+ },
+ {
+  "file": "www.info.buy.nsw.gov.au__CoreCombined-Solution-Requirements-contracts-between-2-December-2024-22-August-2025.docx",
+  "source": "https://www.info.buy.nsw.gov.au/__data/assets/file/0020/1382312/CoreCombined-Solution-Requirements-contracts-between-2-December-2024-22-August-2025.docx",
+  "sha256": "7456abd30114fec1d3ba3dcfd27c9fe75286bc3e812efc6eae94ab699c9ed920",
+  "pages": 31,
+  "words": 7443
+ },
+ {
+  "file": "www.info.buy.nsw.gov.au__IA-Services_contract-long-form.docx",
+  "source": "https://www.info.buy.nsw.gov.au/__data/assets/word_doc/0008/1184723/IA-Services_contract-long-form.docx",
+  "sha256": "e15de5e4b8d6f422d98464a337d48ca41c8ab4a8e8553abaa9f5f860c85db79d",
+  "pages": 118,
+  "words": 42434
+ },
+ {
+  "file": "www.info.buy.nsw.gov.au__IA-Services_contract-short-form_amended.docx",
+  "source": "https://www.info.buy.nsw.gov.au/__data/assets/word_doc/0009/1184724/IA-Services_contract-short-form_amended.docx",
+  "sha256": "b667a9b0af1d73341e3c6d93487989ca88842c62d4103eb739cdaab185d5fd3e",
+  "pages": 49,
+  "words": 18976
+ },
+ {
+  "file": "www.info.buy.nsw.gov.au__ICT-Agreement-for-contracts-between-2-December-2024-22-August-2025.docx",
+  "source": "https://www.info.buy.nsw.gov.au/__data/assets/word_doc/0005/1382306/ICT-Agreement-for-contracts-between-2-December-2024-22-August-2025.docx",
+  "sha256": "127ccc7010691c1b7e39eb1a330854057801053a59f0cd95bd2e0fe2877dfd94",
+  "pages": 185,
+  "words": 64231
+ },
+ {
+  "file": "www.info.buy.nsw.gov.au__ICT-Agreement-for-contracts-established-from-28-11-2023-to-01-12-2024.docx",
+  "source": "https://www.info.buy.nsw.gov.au/__data/assets/word_doc/0004/1339879/ICT-Agreement-for-contracts-established-from-28-11-2023-to-01-12-2024.docx",
+  "sha256": "b61d7e7d3589af5d1ce9884997e448eea9f1279095569a573a9dc59cae842c13",
+  "pages": 185,
+  "words": 63811
+ },
+ {
+  "file": "www.info.buy.nsw.gov.au__ICT-Purchasing-Framework-Hardware-and-Other-ICT-Deliverables-Module_December2024.docx",
+  "source": "https://www.info.buy.nsw.gov.au/__data/assets/word_doc/0012/993918/ICT-Purchasing-Framework-Hardware-and-Other-ICT-Deliverables-Module_December2024.docx",
+  "sha256": "2c1983d495d02dcb35fbe5ba3f6530e324a5b8c4237bd57dd809a5a97c6a524c",
+  "pages": 24,
+  "words": 7194
+ },
+ {
+  "file": "www.info.buy.nsw.gov.au__ICT-Purchasing-Framework-Hardware-and-other-ICT-deliverables-module-for-contracts-establis.docx",
+  "source": "https://www.info.buy.nsw.gov.au/__data/assets/word_doc/0008/1339892/ICT-Purchasing-Framework-Hardware-and-other-ICT-deliverables-module-for-contracts-established-from-21-09-2021-to-02-12-2024.docx",
+  "sha256": "d715ff39580342bd5b539b73ebd4c78aa1b4090cb5d967280c86da89dcf40fc5",
+  "pages": 20,
+  "words": 5705
+ },
+ {
+  "file": "www.info.buy.nsw.gov.au__ICT-Purchasing-Framework-ICT-Agreement-for-contracts-established-between-21-09-23-to-27-11.docx",
+  "source": "https://www.info.buy.nsw.gov.au/__data/assets/word_doc/0012/1339878/ICT-Purchasing-Framework-ICT-Agreement-for-contracts-established-between-21-09-23-to-27-11-23.docx",
+  "sha256": "a7465ad78051be644af0c3e600e44dd12e5e79bea446096db12f78e000c9c773",
+  "pages": 184,
+  "words": 63405
+ },
+ {
+  "file": "www.info.buy.nsw.gov.au__ICT-Purchasing-Framework-ICT-Agreement_August_2025.docx",
+  "source": "https://www.info.buy.nsw.gov.au/__data/assets/word_doc/0009/993906/ICT-Purchasing-Framework-ICT-Agreement_August_2025.docx",
+  "sha256": "cec0920b2d14a44c783ece1a97d484243e3cba1eb2bf98a781f650081191bd77",
+  "pages": 190,
+  "words": 66528
+ },
+ {
+  "file": "www.info.buy.nsw.gov.au__ICTA-Cloud-Module_August2025.docx",
+  "source": "https://www.info.buy.nsw.gov.au/__data/assets/word_doc/0004/993901/ICTA-Cloud-Module_August2025.docx",
+  "sha256": "560943222f3b0fb28548aec77b68bf894bdcb111d1e085ac84bb7bfa6bbfb8a6",
+  "pages": 16,
+  "words": 4746
+ },
+ {
+  "file": "www.info.buy.nsw.gov.au__ICTA-Services-Module_August2025.docx",
+  "source": "https://www.info.buy.nsw.gov.au/__data/assets/word_doc/0010/993898/ICTA-Services-Module_August2025.docx",
+  "sha256": "2bba2283a47f13c080008213cf2de1fe528f35f806c142b3778a50b08e360bd6",
+  "pages": 25,
+  "words": 7884
+ },
+ {
+  "file": "www.info.buy.nsw.gov.au__ICTA-Software-Module_August2025.docx",
+  "source": "https://www.info.buy.nsw.gov.au/__data/assets/word_doc/0003/993900/ICTA-Software-Module_August2025.docx",
+  "sha256": "fa9d431106cc00bf71c7244d3a8dbb62a8b556138b8d1d376182069cd78e86cc",
+  "pages": 18,
+  "words": 5347
+ },
+ {
+  "file": "www.info.buy.nsw.gov.au__MW21-LG-Conditions-of-Quotation-09-2026.docx",
+  "source": "https://www.info.buy.nsw.gov.au/__data/assets/word_doc/0003/1281306/MW21-LG-Conditions-of-Quotation-09-2026.docx",
+  "sha256": "bbf5b4420e72d8a9ecf66d470c1567d6b786778de0d8140d2d889b1c81223c2e",
+  "pages": 21,
+  "words": 12937
+ },
+ {
+  "file": "www.info.buy.nsw.gov.au__MW21-LG-General-Conditions-09-2026.docx",
+  "source": "https://www.info.buy.nsw.gov.au/__data/assets/word_doc/0006/1281309/MW21-LG-General-Conditions-09-2026.docx",
+  "sha256": "ca92b0bcebf53bb1d42526c7ad39ccfdb531271c5144933e5fc9a28b7795b8b4",
+  "pages": 42,
+  "words": 43465
+ },
+ {
+  "file": "www.info.buy.nsw.gov.au__MW21-LG-Preliminaries-09-2026.docx",
+  "source": "https://www.info.buy.nsw.gov.au/__data/assets/word_doc/0005/1281308/MW21-LG-Preliminaries-09-2026.docx",
+  "sha256": "3fae8e2adc4d0a9b5b6460ee8687897174897342ec84d128f2bf84bdc8af1e30",
+  "pages": 46,
+  "words": 23714
+ },
+ {
+  "file": "www.info.buy.nsw.gov.au__MW21-LG-Returnable-Schedules-09-2026.docx",
+  "source": "https://www.info.buy.nsw.gov.au/__data/assets/word_doc/0004/1281307/MW21-LG-Returnable-Schedules-09-2026.docx",
+  "sha256": "f151b604830c938969e79f2fadc366d645d5a3ebefa0efb87d8cbb21a4b43eb3",
+  "pages": 34,
+  "words": 11314
+ },
+ {
+  "file": "www.info.buy.nsw.gov.au__Master-ICT-Agreement-Final-30.6.21.DOCX",
+  "source": "https://www.info.buy.nsw.gov.au/__data/assets/word_doc/0009/993897/Master-ICT-Agreement-Final-30.6.21.DOCX",
+  "sha256": "abd181e066fc5cc9e8997ad159e6bdf7fc2e1245e93f16915f7ad682a8434627",
+  "pages": 53,
+  "words": 14676
+ },
+ {
+  "file": "www.info.buy.nsw.gov.au__RRLSP-Annexure-B-to-the-Deed-Service-Level-Agreement.docx",
+  "source": "https://www.info.buy.nsw.gov.au/__data/assets/word_doc/0006/1065237/RRLSP-Annexure-B-to-the-Deed-Service-Level-Agreement.docx",
+  "sha256": "b2f4864b65557e5d4f9bc584a7e20d270f674fe6654b20b8ffa1b13bd145b655",
+  "pages": 104,
+  "words": 30390
+ },
+ {
+  "file": "www.info.buy.nsw.gov.au__Standard-Form-Contract_MMW-23-02-2026.docx",
+  "source": "https://www.info.buy.nsw.gov.au/__data/assets/word_doc/0006/623787/Standard-Form-Contract_MMW-23-02-2026.docx",
+  "sha256": "7357fdd6d65de6a3db27f3f44100935c4c88e3a61214b028a81fe8c7638116fc",
+  "pages": 27,
+  "words": 11867
+ },
+ {
+  "file": "www.info.buy.nsw.gov.au__gc21-edition-2-general-conditions-of-contract-08-09-2026.docx",
+  "source": "https://www.info.buy.nsw.gov.au/__data/assets/word_doc/0008/613295/gc21-edition-2-general-conditions-of-contract-08-09-2026.docx",
+  "sha256": "8cccf5299dd1327eb368f32451a638bbe8aa7e4b97608932a2fbd5f84cc9b225",
+  "pages": 124,
+  "words": 54522
+ },
+ {
+  "file": "www.info.buy.nsw.gov.au__gc21-edition-2-preliminaries-08-09-2026.docx",
+  "source": "https://www.info.buy.nsw.gov.au/__data/assets/word_doc/0008/617489/gc21-edition-2-preliminaries-08-09-2026.docx",
+  "sha256": "e8967a3191ba7e7eeb627b7765693e68863ba9ba857b667eea9510ce573c47fa",
+  "pages": 33,
+  "words": 23133
+ },
+ {
+  "file": "www.info.buy.nsw.gov.au__gc21-edition-2-tender-schedules-08-09-2026.docx",
+  "source": "https://www.info.buy.nsw.gov.au/__data/assets/word_doc/0003/617565/gc21-edition-2-tender-schedules-08-09-2026.docx",
+  "sha256": "c7b2cdb9483f145821ffa214a98b4884b3fa925c0dd057ea34b51eb4c998a2cd",
+  "pages": 42,
+  "words": 14350
+ },
+ {
+  "file": "www.info.buy.nsw.gov.au__minor-construction-consultancy-services-standard-form-up-to-_50K-11-July-2022.docx",
+  "source": "https://www.info.buy.nsw.gov.au/__data/assets/word_doc/0010/625573/minor-construction-consultancy-services-standard-form-up-to-$50K-11-July-2022.docx",
+  "sha256": "6a2a60fce96c86c8f6009aa47b4d6fa032bf3b12d3d0c247a2cef6cb743d025e",
+  "pages": 21,
+  "words": 5351
+ },
+ {
+  "file": "www.info.buy.nsw.gov.au__mw21-general-conditions-of-contract-15-05-2026.docx",
+  "source": "https://www.info.buy.nsw.gov.au/__data/assets/word_doc/0003/624162/mw21-general-conditions-of-contract-15-05-2026.docx",
+  "sha256": "cb8ff7f22e2cc230dfc154f3c940c3401131082cba719c0c86bd7d60bd79eb11",
+  "pages": 43,
+  "words": 43177
+ },
+ {
+  "file": "www.info.buy.nsw.gov.au__mw21-preliminaries-15-05-2026.docx",
+  "source": "https://www.info.buy.nsw.gov.au/__data/assets/word_doc/0006/627270/mw21-preliminaries-15-05-2026.docx",
+  "sha256": "77364e0fe9f53aa9fd2f34cfe67c3716b21d0ad3a351753013661cc87b5669ce",
+  "pages": 49,
+  "words": 23795
+ },
+ {
+  "file": "www.info.buy.nsw.gov.au__mw21-tender-schedules-15-05-2026.docx",
+  "source": "https://www.info.buy.nsw.gov.au/__data/assets/word_doc/0004/627322/mw21-tender-schedules-15-05-2026.docx",
+  "sha256": "11b81a82086f6bb7ed8faabafb0863d601a13b64c0a4acb9118772608e8372c2",
+  "pages": 31,
+  "words": 9563
+ },
+ {
+  "file": "www.medicinesaustralia.com.au__Clinical-Trial-Research-Agreement-Collaborative-or-Research-Group-CRG-Studies-8-March-2017.docx",
+  "source": "https://www.medicinesaustralia.com.au/wp-content/uploads/sites/65/2021/11/Clinical-Trial-Research-Agreement-Collaborative-or-Research-Group-CRG-Studies-8-March-2017-a.docx",
+  "sha256": "febe9b17f684e2bf061dd2f81a31c4012e8aa45144f739e2f9882ed747be7751",
+  "pages": 23,
+  "words": 7711
+ },
+ {
+  "file": "www.modelcommerciallease.co.uk__mcl-afl-01.docx",
+  "source": "https://www.modelcommerciallease.co.uk/download/mcl-afl-01/",
+  "sha256": "5f73c99fd5724bfcb7f7acbaa24b4f3be1a4e50cece74f346cdd89fcdd979262",
+  "pages": 30,
+  "words": 12651
+ },
+ {
+  "file": "www.modelcommerciallease.co.uk__mcl-afl-02.docx",
+  "source": "https://www.modelcommerciallease.co.uk/download/mcl-afl-02/",
+  "sha256": "3d6c72347c5561c67114bf5616454112ffed79efcaf3d5c91690a13cd6f0cb90",
+  "pages": 26,
+  "words": 10077
+ },
+ {
+  "file": "www.modelcommerciallease.co.uk__mcl-food-drink-01.docx",
+  "source": "https://www.modelcommerciallease.co.uk/download/mcl-food-drink-01/",
+  "sha256": "6e8ab5849ef67da314553829c39b9ecd13ce98c031f7b3de00150847455ebf0c",
+  "pages": 59,
+  "words": 23427
+ },
+ {
+  "file": "www.modelcommerciallease.co.uk__mcl-food-drink-02.docx",
+  "source": "https://www.modelcommerciallease.co.uk/download/mcl-food-drink-02/",
+  "sha256": "643a30fa4a56cff205f5a34a2da05f75791ffc864c4aa67f507712f7e26f44b0",
+  "pages": 77,
+  "words": 30473
+ },
+ {
+  "file": "www.modelcommerciallease.co.uk__mcl-food-drink-03.docx",
+  "source": "https://www.modelcommerciallease.co.uk/download/mcl-food-drink-03/",
+  "sha256": "91c17f71b3e77a8ad3cf900a47731d18479778bf0512fcc7221b9fb3a762aea3",
+  "pages": 79,
+  "words": 31521
+ },
+ {
+  "file": "www.modelcommerciallease.co.uk__mcl-food-drink-04.docx",
+  "source": "https://www.modelcommerciallease.co.uk/download/mcl-food-drink-04/",
+  "sha256": "5c081f291c984c69b93e5a4eeb052c3ada9702e73371c2407a933bb2778af586",
+  "pages": 85,
+  "words": 34133
+ },
+ {
+  "file": "www.modelcommerciallease.co.uk__mcl-food-drink-05.docx",
+  "source": "https://www.modelcommerciallease.co.uk/download/mcl-food-drink-05/",
+  "sha256": "2aa0dccee44c40aa6ee07de8452a5327839227fa04a0944e2290760ffa6e8184",
+  "pages": 79,
+  "words": 31597
+ },
+ {
+  "file": "www.modelcommerciallease.co.uk__mcl-fooddrink-06.docx",
+  "source": "https://www.modelcommerciallease.co.uk/download/mcl-fooddrink-06/",
+  "sha256": "95a116a750d91a4c5b90edbab0b1e6a1b65f4a16c9c8651a3963f968184ce60f",
+  "pages": 96,
+  "words": 39718
+ },
+ {
+  "file": "www.modelcommerciallease.co.uk__mcl-fooddrink-07.docx",
+  "source": "https://www.modelcommerciallease.co.uk/download/mcl-fooddrink-07/",
+  "sha256": "814328d6495b0fdb074aec7927115040e5e3ba108f9c564c0f50a79bdc1a9abe",
+  "pages": 102,
+  "words": 42327
+ },
+ {
+  "file": "www.modelcommerciallease.co.uk__mcl-fooddrink-08.docx",
+  "source": "https://www.modelcommerciallease.co.uk/download/mcl-fooddrink-08/",
+  "sha256": "59044d2bbf5312a3d586ab9828bb5c042a6054bf41ce18a3fd751340a9f1f4cf",
+  "pages": 97,
+  "words": 39794
+ },
+ {
+  "file": "www.modelcommerciallease.co.uk__mcl-logistic-01.docx",
+  "source": "https://www.modelcommerciallease.co.uk/download/mcl-logistic-01/",
+  "sha256": "9f896d0cbb585a9e4d53e1b1c3b5cc6bbd40039c4d596236fd34e28c91aa8087",
+  "pages": 54,
+  "words": 21267
+ },
+ {
+  "file": "www.modelcommerciallease.co.uk__mcl-logistic-02.docx",
+  "source": "https://www.modelcommerciallease.co.uk/download/mcl-logistic-02/",
+  "sha256": "713dafbbb045b0ee5d89fc7c9ed6bc5e41844ba340580677f46a4ada532e0c82",
+  "pages": 70,
+  "words": 28055
+ },
+ {
+  "file": "www.modelcommerciallease.co.uk__mcl-office-01.docx",
+  "source": "https://www.modelcommerciallease.co.uk/download/mcl-office-01/",
+  "sha256": "7373d2cde9412e635ad4763cf55ab2408ea99e3697abb4283f8e3616f95baced",
+  "pages": 53,
+  "words": 20603
+ },
+ {
+  "file": "www.modelcommerciallease.co.uk__mcl-office-01_2.docx",
+  "source": "https://www.modelcommerciallease.co.uk/download/mcl-office-01/?version=1-8a",
+  "sha256": "9d6e6580e404048d0aa2bac4e8f54292e56d0540c050eef510872b30223e5462",
+  "pages": 52,
+  "words": 20400
+ },
+ {
+  "file": "www.modelcommerciallease.co.uk__mcl-office-01_3.docx",
+  "source": "https://www.modelcommerciallease.co.uk/download/mcl-office-01/?version=1-8",
+  "sha256": "d7ad7331e717600f472eecae07dbf68034d0820f2dc6a27c6d68658a0a4941f9",
+  "pages": 53,
+  "words": 20454
+ },
+ {
+  "file": "www.modelcommerciallease.co.uk__mcl-office-01_4.docx",
+  "source": "https://www.modelcommerciallease.co.uk/download/mcl-office-01/?version=1-7",
+  "sha256": "5d93720c3e37194a5422aedcde5f6310a4e134f9947bbb30bb774bdc628d99ae",
+  "pages": 52,
+  "words": 20114
+ },
+ {
+  "file": "www.modelcommerciallease.co.uk__mcl-office-01_5.docx",
+  "source": "https://www.modelcommerciallease.co.uk/download/mcl-office-01/?version=1-6",
+  "sha256": "fc44fd1b83081bb40252bf38bf75b95e3f6bbc2a77da42290231327e26e18e90",
+  "pages": 52,
+  "words": 19985
+ },
+ {
+  "file": "www.modelcommerciallease.co.uk__mcl-office-02.docx",
+  "source": "https://www.modelcommerciallease.co.uk/download/mcl-office-02/",
+  "sha256": "de5913d765d57eef894ef6a151a3869e838c5e6daf40276154ce77aba67aa266",
+  "pages": 71,
+  "words": 28293
+ },
+ {
+  "file": "www.modelcommerciallease.co.uk__mcl-office-03.docx",
+  "source": "https://www.modelcommerciallease.co.uk/download/mcl-office-03/",
+  "sha256": "f5a4b167c9d73e1142de71160cd66df51ad79036346b5ca04c06a6a757c212a5",
+  "pages": 68,
+  "words": 27391
+ },
+ {
+  "file": "www.modelcommerciallease.co.uk__mcl-office-04.docx",
+  "source": "https://www.modelcommerciallease.co.uk/download/mcl-office-04/",
+  "sha256": "4114cbaf35efb5be278725e435a7d75985e9d3655f70e5552abfab646539cb42",
+  "pages": 75,
+  "words": 30661
+ },
+ {
+  "file": "www.modelcommerciallease.co.uk__mcl-retail-01.docx",
+  "source": "https://www.modelcommerciallease.co.uk/download/mcl-retail-01/",
+  "sha256": "db1ebb0be88476f77fdd2a8479719c24600a127e7b0dce02666e1884f924b088",
+  "pages": 53,
+  "words": 20995
+ },
+ {
+  "file": "www.modelcommerciallease.co.uk__mcl-retail-02.docx",
+  "source": "https://www.modelcommerciallease.co.uk/download/mcl-retail-02/",
+  "sha256": "879f889168213d70b4f78f9d87b6251c193e81571bf4d3d4f521565899d5c6b8",
+  "pages": 70,
+  "words": 27888
+ },
+ {
+  "file": "www.modelcommerciallease.co.uk__mcl-retail-03.docx",
+  "source": "https://www.modelcommerciallease.co.uk/download/mcl-retail-03/",
+  "sha256": "d9893fb620aadd578d56a2fa8580a4d1d6ebd80fee7bf7b89a04f6a4b849f418",
+  "pages": 72,
+  "words": 28936
+ },
+ {
+  "file": "www.modelcommerciallease.co.uk__mcl-retail-04.docx",
+  "source": "https://www.modelcommerciallease.co.uk/download/mcl-retail-04/",
+  "sha256": "050ad857627ab70565c70a2f5404a635d5b43ef2642e210a946661057b083b67",
+  "pages": 89,
+  "words": 36849
+ },
+ {
+  "file": "www.modelcommerciallease.co.uk__mcl-retail-05.docx",
+  "source": "https://www.modelcommerciallease.co.uk/download/mcl-retail-05/",
+  "sha256": "153d2e1301c491a4aa50d32e528065743d3bb7231bd332705e312442216dde2d",
+  "pages": 79,
+  "words": 31530
+ },
+ {
+  "file": "www.modelcommerciallease.co.uk__mcl-retail-06-2.docx",
+  "source": "https://www.modelcommerciallease.co.uk/download/mcl-retail-06-2/",
+  "sha256": "869d80a69b3636d25435781f84f225cd493e6f0054b920bb79bb87a9d4397ed2",
+  "pages": 96,
+  "words": 39440
+ },
+ {
+  "file": "www.modelcommerciallease.co.uk__mcl-retail-07.docx",
+  "source": "https://www.modelcommerciallease.co.uk/download/mcl-retail-07/",
+  "sha256": "5e8b83916cc9bf15381904b5c90284ea6784e278f8a7bbbfd3acbcc420a9683e",
+  "pages": 72,
+  "words": 29012
+ },
+ {
+  "file": "www.modelcommerciallease.co.uk__mcl-retail-08.docx",
+  "source": "https://www.modelcommerciallease.co.uk/download/mcl-retail-08/",
+  "sha256": "5abdd8a10cc88624fbeb32ea890195ff8c241651f2103caec90a041773e642dc",
+  "pages": 90,
+  "words": 36925
+ },
+ {
+  "file": "www.myresearchproject.org.uk__ATMP_mCTA_v4_0_August_2026.docx",
+  "source": "https://www.myresearchproject.org.uk/help/help%20documents/ATMP_mCTA_v4_0_August_2026.docx",
+  "sha256": "27d128558d3d4f956ad88e1e8e1f8d6e8b2bfe390c92ffd280c1705b579c3cec",
+  "pages": 90,
+  "words": 33085
+ },
+ {
+  "file": "www.myresearchproject.org.uk__CRO-mCIA_Version_2-0_April_2023.docx",
+  "source": "https://www.myresearchproject.org.uk/help/help%20documents/CRO-mCIA_Version_2-0_April_2023.docx",
+  "sha256": "9caa96278334637f5c0af662e48b53338677f96414ba92720ff33b12af11a6e4",
+  "pages": 61,
+  "words": 21328
+ },
+ {
+  "file": "www.myresearchproject.org.uk__CRO-mCTA_May_2022.docx",
+  "source": "https://www.myresearchproject.org.uk/help/help%20documents/CRO-mCTA_May_2022.docx",
+  "sha256": "4151963bdf6c2940b1df00ff9d87e5cb1bc90ffc81fd48427b50986776015284",
+  "pages": 63,
+  "words": 22286
+ },
+ {
+  "file": "www.myresearchproject.org.uk__CRO-mCTA_Oct_2023.docx",
+  "source": "https://www.myresearchproject.org.uk/help/help%20documents/CRO-mCTA_Oct_2023.docx",
+  "sha256": "04127ce346d464f29446e625ea68dfc9c5ed52dfdde45a5863cd59e828bdaa53",
+  "pages": 75,
+  "words": 26834
+ },
+ {
+  "file": "www.myresearchproject.org.uk__CRO-mNISA_v1-0_Jan2022.docx",
+  "source": "https://www.myresearchproject.org.uk/help/help%20documents/CRO-mNISA_v1-0_Jan2022.docx",
+  "sha256": "d9ccc6bd0e44ed0bde6230ad0d3ae20f2cdf3b16311e6061554f9a9f983217c9",
+  "pages": 52,
+  "words": 16489
+ },
+ {
+  "file": "www.myresearchproject.org.uk__CRO_ATMP_mCTA_August_2026_v4_0.docx",
+  "source": "https://www.myresearchproject.org.uk/help/help%20documents/CRO_ATMP_mCTA_August_2026_v4_0.docx",
+  "sha256": "fbfd1ad3803043f34d73a794f64ed100cb0401a36b1975785652041fe079a012",
+  "pages": 94,
+  "words": 34843
+ },
+ {
+  "file": "www.myresearchproject.org.uk__CRO_mCCIA_20250620_V1_0.docx",
+  "source": "https://www.myresearchproject.org.uk/help/help%20documents/CRO_mCCIA_20250620_V1_0.docx",
+  "sha256": "4f14ed60a76354d573355f3434db0d6b1904a2b163959cef8b3b913107ee6323",
+  "pages": 53,
+  "words": 17559
+ },
+ {
+  "file": "www.myresearchproject.org.uk__CRO_mCCIA_August_2026_V3_0.docx",
+  "source": "https://www.myresearchproject.org.uk/help/help%20documents/CRO_mCCIA_August_2026_V3_0.docx",
+  "sha256": "96912bb107b764471218529f9b975205af7dc5d152eb44a4a90aaa3818a38754",
+  "pages": 57,
+  "words": 19419
+ },
+ {
+  "file": "www.myresearchproject.org.uk__CRO_mCIA_V6_0_August_2026.docx",
+  "source": "https://www.myresearchproject.org.uk/help/help%20documents/CRO_mCIA_V6_0_August_2026.docx",
+  "sha256": "c50a54c7f3b4b831e2658360c007e7f053c339fe8f971bfc0c42f7971782759b",
+  "pages": 85,
+  "words": 31141
+ },
+ {
+  "file": "www.myresearchproject.org.uk__CRO_mCTA_August_2026.docx",
+  "source": "https://www.myresearchproject.org.uk/help/help%20documents/CRO_mCTA_August_2026.docx",
+  "sha256": "b0e4b0175e8dad762e0ff55511cf33239a4e8674b3f20ee41e17d400ba05e1dc",
+  "pages": 88,
+  "words": 33090
+ },
+ {
+  "file": "www.myresearchproject.org.uk__CRO_mCTA_July_2025.docx",
+  "source": "https://www.myresearchproject.org.uk/Help/Help%20Documents/CRO_mCTA_July_2025.docx",
+  "sha256": "a08d6c09c62e3ec2a83db097481891ea7822fb4df16650b4995394ba3728f8c7",
+  "pages": 80,
+  "words": 29162
+ },
+ {
+  "file": "www.myresearchproject.org.uk__CRO_mCTA_May_2025.docx",
+  "source": "https://www.myresearchproject.org.uk/help/help%20documents/CRO_mCTA_May_2025.docx",
+  "sha256": "8032d5123d0d8137e48551e03c4434f3e5974bd330997004f14c99ba91c3b1cb",
+  "pages": 80,
+  "words": 29123
+ },
+ {
+  "file": "www.myresearchproject.org.uk__CRO_mNISA_v6_0_August_2026.docx",
+  "source": "https://www.myresearchproject.org.uk/help/help%20documents/CRO_mNISA_v6_0_August_2026.docx",
+  "sha256": "8ce48d3e605093ff762b792f1487ba16e23595302d42f1516a4eda55af7c7881",
+  "pages": 71,
+  "words": 25186
+ },
+ {
+  "file": "www.myresearchproject.org.uk__CROmNISA_v3_1_December_2023.docx",
+  "source": "https://www.myresearchproject.org.uk/help/help%20documents/CROmNISA_v3_1_December_2023.docx",
+  "sha256": "de2d3122802abfa9f0abfff80b7d5fce88470afc9c3e535edc1b89c4ab57badb",
+  "pages": 62,
+  "words": 20975
+ },
+ {
+  "file": "www.myresearchproject.org.uk__Commercial_Hub_and_Spoke_Agreement_V5_0_August_2026.docx",
+  "source": "https://www.myresearchproject.org.uk/help/help%20documents/Commercial_Hub_and_Spoke_Agreement_V5_0_August_2026.docx",
+  "sha256": "cafec5e708d40bef06367a420d6ee6d37bd6acadd5a28a561e321e5388d0543f",
+  "pages": 61,
+  "words": 21156
+ },
+ {
+  "file": "www.myresearchproject.org.uk__Model_Clinical_Trial_Agreement_mCTA_Jan_2021.docx",
+  "source": "https://www.myresearchproject.org.uk/help/help%20documents/Model_Clinical_Trial_Agreement_mCTA_Jan_2021.docx",
+  "sha256": "ffdc17be752bcca3b7d340bc37a3614834742ba59227497ce253fb96c13dfef9",
+  "pages": 60,
+  "words": 20498
+ },
+ {
+  "file": "www.myresearchproject.org.uk__Multiparty_Collaboration_Agreement_Template_v2_8_17_July_2026.docx",
+  "source": "https://www.myresearchproject.org.uk/help/help%20documents/Multiparty_Collaboration_Agreement_Template_v2_8_17_July_2026.docx",
+  "sha256": "27ce51d5a873481fcd0271426aa4af21d1c13203bb5d943e697d6b3cc41c99fa",
+  "pages": 45,
+  "words": 14594
+ },
+ {
+  "file": "www.myresearchproject.org.uk__NonCommercial_Hub_and_Spoke_Agreement_V1_December_2023.docx",
+  "source": "https://www.myresearchproject.org.uk/help/help%20documents/NonCommercial_Hub_and_Spoke_Agreement_V1_December_2023.docx",
+  "sha256": "3505ffc8991b73b6571d4b4b7cab13ec442dd692b391bb2ca96b9692a788d859",
+  "pages": 34,
+  "words": 10911
+ },
+ {
+  "file": "www.myresearchproject.org.uk__Non_Commercial_Hub_and_Spoke_Agreement_V2_0_28_April_2026.docx",
+  "source": "https://www.myresearchproject.org.uk/help/help%20documents/Non_Commercial_Hub_and_Spoke_Agreement_V2_0_28_April_2026.docx",
+  "sha256": "3c6f8cfbe7e0c49bdcde647d7275a05a2d763bf4dd7f31361051c8f006a781d4",
+  "pages": 37,
+  "words": 12257
+ },
+ {
+  "file": "www.myresearchproject.org.uk__Organisation_Information_Document_NonCommercial_v1-8_April_2024.docx",
+  "source": "https://www.myresearchproject.org.uk/help/help%20documents/Organisation_Information_Document_NonCommercial_v1-8_April_2024.docx",
+  "sha256": "e3cb86ee6976c7982695ad1717eca2fdf00c72452789b694756b91673aeaa447",
+  "pages": 36,
+  "words": 11163
+ },
+ {
+  "file": "www.myresearchproject.org.uk__PrimaryCare_mCTA_Bipartite_Version_3_1_December_2023.docx",
+  "source": "https://www.myresearchproject.org.uk/help/help%20documents/PrimaryCare_mCTA_Bipartite_Version_3_1_December_2023.docx",
+  "sha256": "9d10c1c532a851e861431f38c3c538de9dd41d550fb5879cb072b1b352040dcc",
+  "pages": 71,
+  "words": 25551
+ },
+ {
+  "file": "www.myresearchproject.org.uk__Primary_Care_mCTA_Bipartite_V6_0_August_2026.docx",
+  "source": "https://www.myresearchproject.org.uk/help/help%20documents/Primary_Care_mCTA_Bipartite_V6_0_August_2026.docx",
+  "sha256": "eda2717ba2e94964377ddb704babf138cd7da0c21eba3f0c1aee1dd7ffd1005c",
+  "pages": 84,
+  "words": 31386
+ },
+ {
+  "file": "www.myresearchproject.org.uk__Primary_Care_mCTA_Tripartite_V6_0_August_2026.docx",
+  "source": "https://www.myresearchproject.org.uk/help/help%20documents/Primary_Care_mCTA_Tripartite_V6_0_August_2026.docx",
+  "sha256": "538fc90a90d2c1390b90aaaab4da0c82d4a0870fab67bad1d67dc706b3eee5b1",
+  "pages": 85,
+  "words": 31952
+ },
+ {
+  "file": "www.myresearchproject.org.uk__Primary_Care_mCTA_Tripartite_Version_4_1_July_2025.docx",
+  "source": "https://www.myresearchproject.org.uk/Help/Help%20Documents/Primary_Care_mCTA_Tripartite_Version_4_1_July_2025.docx",
+  "sha256": "5052d82a01e7e0dfe2ea2b827296165e0d7958d4de13ca1cdcfd21eae6739a77",
+  "pages": 76,
+  "words": 28093
+ },
+ {
+  "file": "www.myresearchproject.org.uk__mCCIA_20250620_V2_0.docx",
+  "source": "https://www.myresearchproject.org.uk/help/help%20documents/mCCIA_20250620_V2_0.docx",
+  "sha256": "d9f9ae0aa40cb553403ef09709bf9928d2d14decdf91e7c03a3e340a1e650140",
+  "pages": 48,
+  "words": 16432
+ },
+ {
+  "file": "www.myresearchproject.org.uk__mCCIA_August_2026_V4_0.docx",
+  "source": "https://www.myresearchproject.org.uk/help/help%20documents/mCCIA_August_2026_V4_0.docx",
+  "sha256": "931bc0bc513076dfe528322caf8383c62b590bcca447fef4d68cc5eeb643f489",
+  "pages": 52,
+  "words": 18125
+ },
+ {
+  "file": "www.myresearchproject.org.uk__mCCIA_v1_0_April_2025.docx",
+  "source": "https://www.myresearchproject.org.uk/help/help%20documents/mCCIA_v1_0_April_2025.docx",
+  "sha256": "3366be69df06d03ab1b04310a018ce92d95eef419e731ffe1d0ff99086452a71",
+  "pages": 48,
+  "words": 15910
+ },
+ {
+  "file": "www.myresearchproject.org.uk__mCIA_V_6_0_August_2026.docx",
+  "source": "https://www.myresearchproject.org.uk/help/help%20documents/mCIA_V_6_0_August_2026.docx",
+  "sha256": "24cbaad8e6d4ec1109a0daa567b6a8f4ef7a2036de5053d5eb466714c3b22ee5",
+  "pages": 80,
+  "words": 29501
+ },
+ {
+  "file": "www.myresearchproject.org.uk__mCTA_August_2026.docx",
+  "source": "https://www.myresearchproject.org.uk/help/help%20documents/mCTA_August_2026.docx",
+  "sha256": "a293a130093b2871bc1cd9ea9c33e8c0f96e304e7bceedd826a7f68bb760cc80",
+  "pages": 84,
+  "words": 31299
+ },
+ {
+  "file": "www.myresearchproject.org.uk__mCTA_December_2023.docx",
+  "source": "https://www.myresearchproject.org.uk/help/help%20documents/mCTA_December_2023.docx",
+  "sha256": "733f686a3a7d3bcf51ca459667ef0148f011c582aab667be716fb8cf4b5b229d",
+  "pages": 71,
+  "words": 25506
+ },
+ {
+  "file": "www.myresearchproject.org.uk__mCTA_May_2025.docx",
+  "source": "https://www.myresearchproject.org.uk/help/help%20documents/mCTA_May_2025.docx",
+  "sha256": "d8f9cc0a6a131124374b6b17c65b2f8c8c988ad416d32507da1564cc2cf1d60d",
+  "pages": 77,
+  "words": 27577
+ },
+ {
+  "file": "www.myresearchproject.org.uk__mCTA_Oct_2023.docx",
+  "source": "https://www.myresearchproject.org.uk/help/help%20documents/mCTA_Oct_2023.docx",
+  "sha256": "1c87c114954ee5ea6b42639602ccf2e20394ed24009f96ef6175d60b11830a05",
+  "pages": 71,
+  "words": 25462
+ },
+ {
+  "file": "www.myresearchproject.org.uk__mC_PIC_Agreement_July_2025.docx",
+  "source": "https://www.myresearchproject.org.uk/Help/Help%20Documents/mC_PIC_Agreement_July_2025.docx",
+  "sha256": "5ad39c9e1de9d812f5d38e6dc1e499134780732f98f3262de73eb87955d93536",
+  "pages": 25,
+  "words": 8067
+ },
+ {
+  "file": "www.myresearchproject.org.uk__mNCA_July_2022.docx",
+  "source": "https://www.myresearchproject.org.uk/help/help%20documents/mNCA_July_2022.docx",
+  "sha256": "098bd83d86f251774739ae254a108ca9899cc4510e8e4c8a701044a8a1e6cd6f",
+  "pages": 53,
+  "words": 14669
+ },
+ {
+  "file": "www.myresearchproject.org.uk__mNCA_v3_2_August_2026.docx",
+  "source": "https://www.myresearchproject.org.uk/help/help%20documents/mNCA_v3_2_August_2026.docx",
+  "sha256": "5532eee3445779042032eca6bf35d79cba4d2dea42dbdb8b2668f0ad0ac254df",
+  "pages": 71,
+  "words": 20730
+ },
+ {
+  "file": "www.myresearchproject.org.uk__mNC_PIC_Agreement_Sponsor-PIC__v1-0_Sept2021.docx",
+  "source": "https://www.myresearchproject.org.uk/help/help%20documents/mNC_PIC_Agreement(Sponsor-PIC)_v1-0_Sept2021.docx",
+  "sha256": "ff308882250c25c7a6c9459758c7db1f673602368bf2f98acf4dae7b6728a7d2",
+  "pages": 16,
+  "words": 4031
+ },
+ {
+  "file": "www.myresearchproject.org.uk__mNC_PIC_Agreement__TrialSite-PIC__v1-4_Sept2021__Accessible_.docx",
+  "source": "https://www.myresearchproject.org.uk/help/help%20documents/mNC_PIC_Agreement_(TrialSite-PIC)_v1-4_Sept2021_(Accessible).docx",
+  "sha256": "25db570b13433e5ee4d0161ef83aced972998ebbf61d3bc39d3944d2acd40f8d",
+  "pages": 16,
+  "words": 4328
+ },
+ {
+  "file": "www.myresearchproject.org.uk__mNC_PIC_Agreement_v1-3_January2021__Accessible_.docx",
+  "source": "https://www.myresearchproject.org.uk/help/help%20documents/mNC_PIC_Agreement_v1-3_January2021_(Accessible).docx",
+  "sha256": "02c8ce482f34cf9aa9c844b330dfc9c57d17df1e896cf36a7804d84ab7f853db",
+  "pages": 16,
+  "words": 4333
+ },
+ {
+  "file": "www.myresearchproject.org.uk__mNISA_v2-0_April_2023.docx",
+  "source": "https://www.myresearchproject.org.uk/help/help%20documents/mNISA_v2-0_April_2023.docx",
+  "sha256": "990550cc60463d858e17b6c2ce5e3708edfed4dd037ed34b2d0bc01249b2d6eb",
+  "pages": 48,
+  "words": 15734
+ },
+ {
+  "file": "www.myresearchproject.org.uk__mNISA_v3_1_December_2023.docx",
+  "source": "https://www.myresearchproject.org.uk/help/help%20documents/mNISA_v3_1_December_2023.docx",
+  "sha256": "89c459940905957ecb056e41afe72dd5ad653ad86373aa6629a6395f91451604",
+  "pages": 58,
+  "words": 19619
+ },
+ {
+  "file": "www.myresearchproject.org.uk__mNISA_v4-0_May_2025.docx",
+  "source": "https://www.myresearchproject.org.uk/help/help%20documents/mNISA_v4-0_May_2025.docx",
+  "sha256": "98cb5c86e16777e994d18358aa52ed50717793881ce1bd1cb56bc4d12b9bb191",
+  "pages": 61,
+  "words": 21267
+ },
+ {
+  "file": "www.myresearchproject.org.uk__mNISA_v4_1_July_2025.docx",
+  "source": "https://www.myresearchproject.org.uk/Help/Help%20Documents/mNISA_v4_1_July_2025.docx",
+  "sha256": "f4e1c7f285b6ed0341664e2812da8dbed3b191260d299c347db52c9d8fdd7274",
+  "pages": 63,
+  "words": 21318
+ },
+ {
+  "file": "www.myresearchproject.org.uk__mNISA_v6_0_August_2026.docx",
+  "source": "https://www.myresearchproject.org.uk/help/help%20documents/mNISA_v6_0_August_2026.docx",
+  "sha256": "cfe96a3003b8c3c8e473898b4cd27bfb9421645bbb68bb832fad49797b0cc7e1",
+  "pages": 67,
+  "words": 23618
+ },
+ {
+  "file": "www.seca.ch__2-seca-investment-agreement_5th-edition_large.docx",
+  "source": "https://www.seca.ch/media/2utdvdcn/2-seca-investment-agreement_5th-edition_large.docx",
+  "sha256": "5ec8cfcea3a147ac9cbcdc7ec477faa2971dd4aa1169284e079adcee2f56beb3",
+  "pages": 62,
+  "words": 17903
+ },
+ {
+  "file": "www.seca.ch__3-seca-shareholders-agreement_5th-edition_large.docx",
+  "source": "https://www.seca.ch/media/5r1iaeyg/3-seca-shareholders-agreement_5th-edition_large.docx",
+  "sha256": "a201dbe0b0c7268b15484e6c5d1925cd425f72d80e4082ee085d6bc6a9157b98",
+  "pages": 63,
+  "words": 18554
+ },
+ {
+  "file": "www.seca.ch__51-seca-articles_den_5th-edition_large.docx",
+  "source": "https://www.seca.ch/media/2xrnv5u4/51-seca-articles_den_5th-edition_large.docx",
+  "sha256": "d314676b0a404b48437f0df4586f64e933ed0b01decac37237676e87c5ddcf75",
+  "pages": 20,
+  "words": 8529
+ },
+ {
+  "file": "www.seca.ch__b-seca-investment-agreement_light.docx",
+  "source": "https://www.seca.ch/media/yzeja1f1/b-seca-investment-agreement_light.docx",
+  "sha256": "72a8016ae10dabcf4889ddf176098f687b835fbadc1efe0dc11076327897c3b5",
+  "pages": 29,
+  "words": 7982
+ },
+ {
+  "file": "www.seca.ch__c-seca-shareholders-agreement_light.docx",
+  "source": "https://www.seca.ch/media/nnvph3c2/c-seca-shareholders-agreement_light.docx",
+  "sha256": "8b3a0875a21398d15d69e861e5b02616f253acacfce579064899154bb26880c2",
+  "pages": 27,
+  "words": 7736
+ },
+ {
+  "file": "www.svca.org.sg__CARE_-_Convertible_Agreement_Regarding_Equity_updated_2025.docx",
+  "source": "https://www.svca.org.sg/sites/default/files/2025-04/CARE%20-%20Convertible%20Agreement%20Regarding%20Equity%20updated%202025.docx",
+  "sha256": "2d5198f755204bc2cce62190ec15a84649245ba841cf519caa9234f265d3975a",
+  "pages": 22,
+  "words": 7570
+ },
+ {
+  "file": "www.svca.org.sg__VIMA_2.0_Model_Constitution.docx",
+  "source": "https://www.svca.org.sg/sites/default/files/2022-09/VIMA%202.0%20Model%20Constitution.docx",
+  "sha256": "93e72e68074dbb24ba1a6fc9c0237d338888f6865b04a7362a5f020e2b4bc7a5",
+  "pages": 52,
+  "words": 21154
+ },
+ {
+  "file": "www.svca.org.sg__VIMA_2.0_Model_Convertible_Note_Purchase_Agreement.DOCX",
+  "source": "https://www.svca.org.sg/sites/default/files/2022-09/VIMA%202.0%20Model%20Convertible%20Note%20Purchase%20Agreement.DOCX",
+  "sha256": "6ea05384748e044880ce1f08f35fa597eed3b7a4b592b2320a6b91916d795d3e",
+  "pages": 47,
+  "words": 17532
+ },
+ {
+  "file": "www.svca.org.sg__VIMA_2.0_Model_Subscription_Agreement.docx",
+  "source": "https://www.svca.org.sg/sites/default/files/2022-09/VIMA%202.0%20Model%20Subscription%20Agreement.docx",
+  "sha256": "0f070eed27d18a5030caa38b6f406f3a513ee55157a84c2016dca53e46fd8ffc",
+  "pages": 56,
+  "words": 15774
+ },
+ {
+  "file": "www.svca.org.sg__VIMA_2.1_Model_Shareholders_Agreement.docx",
+  "source": "https://www.svca.org.sg/sites/default/files/2025-04/VIMA%202.1%20Model%20Shareholders%27%20Agreement.docx",
+  "sha256": "9760a83e675e1a66abcef7412b5ade478a3038b2ddf80e159eb7eba4ef57f7e1",
+  "pages": 69,
+  "words": 22529
+ },
+ {
+  "file": "www.wa.gov.au__Template-Request-01072022.DOCX",
+  "source": "https://www.wa.gov.au/system/files/2022-06/Template-Request-01072022.DOCX",
+  "sha256": "bc931220eb63f7752c4b68e572f4b92f8e6e94f73e627d2736c8324526e46fc1",
+  "pages": 43,
+  "words": 12643
+ },
+ {
+  "file": "www.wa.gov.au__if2020-interior-fitout-and-workplace-design-services-panel-2020-request-v1.6-oct-2026.docx",
+  "source": "https://www.wa.gov.au/system/files/2026-10/if2020-interior-fitout-and-workplace-design-services-panel-2020-request-v1.6-oct-2026.docx",
+  "sha256": "dae95ccedae57292d3d06fda32d42d7f32c6ebde52f76d8f62c58455a26f37b8",
+  "pages": 110,
+  "words": 29947
+ },
+ {
+  "file": "www.wa.gov.au__osh2014-occupational-safety-and-health-panel-2014-request-v18-oct-2026.docx",
+  "source": "https://www.wa.gov.au/system/files/2026-10/osh2014-occupational-safety-and-health-panel-2014-request-v18-oct-2026.docx",
+  "sha256": "f5d8dbf9654451c191efd2738390bf8119a9b31c22411515444953a39dd46317",
+  "pages": 88,
+  "words": 23555
+ },
+ {
+  "file": "www.wa.gov.au__template-request-01052026.DOCX",
+  "source": "https://www.wa.gov.au/system/files/2026-06/template-request-01052026.DOCX",
+  "sha256": "79c9acec1f0d8a4f63d9b6b8089692e55051f60d21b4b33d3849aca5d46be637",
+  "pages": 68,
+  "words": 23088
+ },
+ {
+  "file": "www.wa.gov.au__template-request-cleaning-01052026.DOCX",
+  "source": "https://www.wa.gov.au/system/files/2026-06/template-request-cleaning-01052026.DOCX",
+  "sha256": "5e82b0711c88db9de985ded83bbd30d13c515d18a1091b607f436fc5d3e126ec",
+  "pages": 57,
+  "words": 17833
+ }
+]
