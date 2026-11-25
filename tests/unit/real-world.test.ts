@@ -829,6 +829,13 @@ describe('a legacy picture element that holds only a shape template', () => {
     expect(await failed(checkTrackedChanges({ original: pair.original, modified: pair.modified, output: await add(tracked, template) }))).toEqual([]);
   });
 
+  it('nor does one that holds nothing at all (what the engine leaves where it took a template from)', async () => {
+    const pair = await buildPair(pairById('one-word-change'));
+    const tracked = await produceTrackedChanges(pair.original, pair.modified);
+    const emptied = await editPart(tracked, /^word\/document\.xml$/, (xml) => xml.replace('<w:r>', '<w:r><w:pict/></w:r><w:r>'));
+    expect(await failed(checkTrackedChanges({ original: pair.original, modified: pair.modified, output: emptied }))).toEqual([]);
+  });
+
   it('an actual shape is still an object: an output with one the uploads do not have is refused', async () => {
     const pair = await buildPair(pairById('one-word-change'));
     const tracked = await produceTrackedChanges(pair.original, pair.modified);
