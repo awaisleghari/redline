@@ -431,7 +431,8 @@ function alternateContentBranch(element: XmlElement, context: Context, read: (br
     // Every branch (there may be several Choices) must read the same: text, text boxes and note references.
     const readings = branches.map((branch) => {
       const probe = newContext(context.view, [], { ...context.source, partsRead: new Set(), links: [], inks: [], repeatRows: [] });
-      const inline = read(branch, probe);
+      // (These readings only compare the forms; they must not use up clause numbers.)
+      const inline = context.source.numbering.withoutCounting(() => read(branch, probe));
       // Pictures are stored differently in the modern and legacy forms, so linked files are left out of this comparison.
       const texts = (list: Para[]): string[] => list.map((entry) => entry.text);
       // A text box holding nothing but empty paragraphs shows no text: a drawing saved as shapes with such a box

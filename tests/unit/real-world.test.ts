@@ -1350,3 +1350,31 @@ describe('wording typed into the footnote separator', () => {
     expect(separator).not.toMatch(/<w:(ins|del)\b/);
   });
 });
+
+/**
+ * Found on a real contract (held-out run 1, an ADB document): one numbered list running through a text box and
+ * on into the main text. Word stores a text box twice (a modern form and a legacy one) and shows it once. The
+ * redline counted both stored forms when working out a removed clause's old number, and the Checker, comparing
+ * the two forms, counted them three times; neither agreed with Word, or with each other.
+ */
+describe('a numbered list that runs through a text box and on into the main text', () => {
+  const NS_BOX = 'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" xmlns:v="urn:schemas-microsoft-com:vml"';
+  const withBoxedItem = async (docx: Uint8Array): Promise<Uint8Array> => {
+    const numPr = /<w:numPr>.*?<\/w:numPr>/s.exec(decoder.decode((await unzip(docx)).get('word/document.xml')!))![0];
+    const box = `<w:txbxContent><w:p><w:pPr>${numPr}</w:pPr><w:r><w:t xml:space="preserve">A note that opens the list</w:t></w:r></w:p></w:txbxContent>`;
+    const holder = `<w:p><w:r><mc:AlternateContent ${NS_BOX}><mc:Choice Requires="wps"><w:drawing><wps:txbx>${box}</wps:txbx></w:drawing></mc:Choice><mc:Fallback><w:pict><v:textbox>${box}</v:textbox></w:pict></mc:Fallback></mc:AlternateContent></w:r></w:p>`;
+    return editPart(docx, /^word\/document\.xml$/, (xml) => xml.replace(/<w:p>.*?<\/w:p>/s, (first) => first + holder));
+  };
+  const oldNumberIn = async (staticRedline: Uint8Array): Promise<string> => {
+    const xml = decoder.decode((await unzip(staticRedline)).get('word/document.xml')!);
+    return /RedlineOldNumber"\/>.*?<w:t[^>]*>([^<]*)</s.exec(xml)![1]!;
+  };
+
+  it('a removed clause shows the number Word gave it: the text box counted once', async () => {
+    const pair = await buildPair(pairById('numbered-clause-deleted'));
+    const plain = await oldNumberIn((await bothPass(pair.original, pair.modified)).staticRedline);
+    const boxed = await oldNumberIn((await bothPass(await withBoxedItem(pair.original), await withBoxedItem(pair.modified))).staticRedline);
+    expect(plain).toBe('(b)');
+    expect(boxed).toBe('(c)');
+  });
+});
