@@ -988,3 +988,29 @@ describe('the one line of a cell replaced, written as a removed paragraph and an
     });
   }
 });
+
+/** Review findings on the second batch of held-out fixes: a table in a kept cell that comes or goes, with what follows it. */
+describe('a table that comes or goes inside a kept cell, review findings', () => {
+  const P = (text: string): string => (text === '' ? '<w:p/>' : `<w:p><w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`);
+  const table = (width: number, rows: string[][]): string =>
+    `<w:tbl><w:tblPr><w:tblW w:w="${width * rows[0]!.length}" w:type="dxa"/></w:tblPr><w:tblGrid>${rows[0]!.map(() => `<w:gridCol w:w="${width}"/>`).join('')}</w:tblGrid>${rows
+      .map((row) => `<w:tr>${row.map((cell) => `<w:tc><w:tcPr><w:tcW w:w="${width}" w:type="dxa"/></w:tcPr>${cell}</w:tc>`).join('')}</w:tr>`)
+      .join('')}</w:tbl>`;
+  const inner = table(4000, ['Term of years', 'Initial rent payable', 'Rent free period', 'Rent review pattern'].map((label) => [P(label), P(`[${label} value]`)]));
+  const outer = (cell: string): string => table(9000, [[P('Dated today here')], [cell]]);
+  const withBlock = (docx: Uint8Array, block: string): Promise<Uint8Array> => editPart(docx, /^word\/document\.xml$/, (xml) => xml.replace(/<w:p>.*?<\/w:p>/s, (first) => first + block));
+  const LEAD = P('Heads of terms follow');
+  const NOTES = P('Notes follow the table');
+
+  for (const [name, before, after] of [
+    ['a table and the empty paragraph after it added after a line', LEAD, LEAD + inner + P('')],
+    ['a table and the line after it replaced by another line', inner + NOTES, P('Completely different wording now')],
+    ['a table and the line after it removed after a kept line', LEAD + inner + NOTES, LEAD],
+    ['a table and a line after it added after a kept line', LEAD, LEAD + inner + NOTES],
+  ] as const) {
+    it(`both Word files pass: ${name}`, async () => {
+      const pair = await buildPair(pairById('one-word-change'));
+      await bothPass(await withBlock(pair.original, outer(before)), await withBlock(pair.original, outer(after)));
+    });
+  }
+});

@@ -690,7 +690,9 @@ class PartConverter {
         // version is a different paragraph's. So the change is shown on this empty paragraph's own mark.
         const tableBefore = before[before.length - 2];
         const rowsBefore = tableBefore && isWord(tableBefore, 'tbl') ? kids(tableBefore).filter((c) => isWord(c, 'tr')) : [];
-        const followsChangedTable = content.length === 0 && rowsBefore.length > 0 && rowsBefore.every((r) => this.cellChange.get(r) === (removal ? 'deleted' : 'inserted'));
+        // (The paragraph may also have had text that went, or came, with the table: review finding.)
+        const whollyAdded = !removal && content.length > 0 && content.every((c) => isW(c, markKind === 'inserted' ? 'ins' : 'moveTo'));
+        const followsChangedTable = (content.length === 0 || whollyRemoved || whollyAdded) && rowsBefore.length > 0 && rowsBefore.every((r) => this.cellChange.get(r) === (removal ? 'deleted' : 'inserted'));
         const index = previous && isWord(previous, 'p') ? this.markToken.get(previous) : undefined;
         // (A run of removed paragraphs ending in one of which part remains is left as it is: which clause number
         // the remaining part should carry cannot be told here, and the Checker judges the result.)
