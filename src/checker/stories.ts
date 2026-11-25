@@ -604,10 +604,11 @@ function inlineText(element: XmlElement, context: Context): string {
           continue;
         case 'drawing':
         case 'pict':
-          // A legacy picture element holding nothing but shape types (templates for shapes, see below) draws
+          // A legacy picture element holding nothing at all (found on real contracts: what the engine leaves behind
+          // when it moves a template out), or nothing but shape types (templates for shapes, see below), draws
           // nothing: it is a place where definitions are kept. Found on real contracts: a program that rewrites the
           // file may gather a definition into such an element of its own, and a reader sees no difference.
-          if (node.name === 'pict' && node.children.length > 0 && node.children.every((child) => child.ns === V_NS && child.name === 'shapetype')) {
+          if (node.name === 'pict' && node.children.every((child) => child.ns === V_NS && child.name === 'shapetype')) {
             // What it defines is still noted: shapes elsewhere may be drawn from it (see missingShapeTypes).
             for (const definition of node.children) {
               const id = attribute(definition, '', 'id');

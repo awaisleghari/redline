@@ -16,7 +16,7 @@ import { compareDocuments } from 'docxodus/core';
 import { repairNotes } from '../../src/producer/repair-notes';
 import { repairParagraphProperties } from '../../src/producer/repair-paragraphs';
 import { unwrapRowControls, unwrapRowControlsInPart } from '../../src/producer/unwrap-row-controls';
-import { withBlueDoubleUnderline, withCellsInContentControls, withGlossary, withInk, withSvgPicture, SVG_PICTURE, withParagraphsAtCellEnd, withRedStrikethrough, withClauseStyle, withRowsInContentControls, withNumberedClausesInCell, withDocumentWideSpaces, withNoteInTable, withSections } from '../fixtures/real-world';
+import { withBlueDoubleUnderline, withCellsInContentControls, withGlossary, withInk, withNestedTable, withSvgPicture, SVG_PICTURE, withParagraphsAtCellEnd, withRedStrikethrough, withClauseStyle, withRowsInContentControls, withNumberedClausesInCell, withDocumentWideSpaces, withNoteInTable, withSections } from '../fixtures/real-world';
 
 const COVER = { originalName: 'original.docx', modifiedName: 'modified.docx', comparedAt: '24 November 2026 at 10:00 (UTC+00:00)' };
 const decoder = new TextDecoder();
@@ -829,6 +829,13 @@ describe('a legacy picture element that holds only a shape template', () => {
     expect(await failed(checkTrackedChanges({ original: pair.original, modified: pair.modified, output: await add(tracked, template) }))).toEqual([]);
   });
 
+  it('nor does one that holds nothing at all (what the engine leaves where it took a template from)', async () => {
+    const pair = await buildPair(pairById('one-word-change'));
+    const tracked = await produceTrackedChanges(pair.original, pair.modified);
+    const emptied = await editPart(tracked, /^word\/document\.xml$/, (xml) => xml.replace('<w:r>', '<w:r><w:pict/></w:r><w:r>'));
+    expect(await failed(checkTrackedChanges({ original: pair.original, modified: pair.modified, output: emptied }))).toEqual([]);
+  });
+
   it('an actual shape is still an object: an output with one the uploads do not have is refused', async () => {
     const pair = await buildPair(pairById('one-word-change'));
     const tracked = await produceTrackedChanges(pair.original, pair.modified);
@@ -920,4 +927,90 @@ describe('held-out fixes, review findings', () => {
     expect(failures).toContain('accept-all');
     expect(failures).toContain('reject-all');
   });
+});
+
+/**
+ * Found on real contracts (held-out run 1, seven leases): the front page is a table whose last row holds a table.
+ * When a row is added above it, the engine removes the inner table from that row (leaving the new row's text
+ * there) and puts it back in a new row of its own. The inner table's rows then carry no flag of their own, and the
+ * empty paragraph after the removed table has no neighbouring paragraph mark to show its removal on.
+ */
+describe('a table inside the last row of a table, with rows added or removed around it', () => {
+  const OUTER = ['Dated', '', 'The landlord and the tenant and the guarantor', '', 'Lease relating to premises known as the address', '', 'Whole office open market rent'];
+  const INNER = ['Term of years', 'Initial rent payable', 'Rent free period', 'Rent review pattern', 'Rent review basis'];
+  const INNER_MORE = [INNER[0]!, 'Foregoing stated that notwithstanding law', ...INNER.slice(1)];
+  const NEW_ROW = 'Liability in schedule without notice writing';
+  for (const [name, before, after] of [
+    ['a row added above it and a row added inside it', [OUTER, INNER], [[...OUTER, NEW_ROW], INNER_MORE]],
+    ['the reverse: both rows removed', [[...OUTER, NEW_ROW], INNER_MORE], [OUTER, INNER]],
+    ['rows added, removed and emptied above it', [OUTER, INNER], [[OUTER[0]!, OUTER[1]!, OUTER[2]!, 'To provided writing', '', '', OUTER[6]!, 'Liability in schedule'], INNER_MORE]],
+    ['two rows added above it', [OUTER, INNER], [[...OUTER, NEW_ROW, 'Second new row here'], INNER_MORE]],
+    ['the inner table rewritten', [OUTER, INNER], [[...OUTER, 'Liability'], ['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon', 'Zeta']]],
+  ] as const) {
+    it(`both Word files pass: ${name}`, async () => {
+      const pair = await buildPair(pairById('one-word-change'));
+      await bothPass(await withNestedTable(pair.original, [...before[0]], [...before[1]]), await withNestedTable(pair.original, [...after[0]], [...after[1]]));
+    });
+  }
+});
+
+/**
+ * Found on a real contract (held-out run 1, a draft carrying tracked changes): a cell's one line is replaced, and
+ * the engine writes the old line removed together with its mark, then the new line added with the cell's last mark.
+ * The cell has one paragraph in each version; shown as two paragraphs, one version always read as two.
+ */
+describe('the one line of a cell replaced, written as a removed paragraph and an added one', () => {
+  const OLD = 'Total exercise price of the option';
+  const NEW = 'Type of option granted to the holder';
+  const run = (text: string): string => `<w:r><w:t xml:space="preserve">${text}</w:t></w:r>`;
+  const change = (tag: 'ins' | 'del', id: number): string => `<w:${tag} w:id="${9000 + id}" w:author="Redline" w:date="2026-11-25T00:00:00Z"`;
+  const removed = (text: string): string => `<w:p><w:pPr><w:rPr>${change('del', 1)}/></w:rPr></w:pPr>${change('del', 2)}><w:r><w:delText xml:space="preserve">${text}</w:delText></w:r></w:del></w:p>`;
+  const added = (text: string): string => `<w:p><w:pPr><w:rPr>${change('ins', 3)}/></w:rPr></w:pPr>${change('ins', 4)}>${run(text)}</w:ins></w:p>`;
+
+  for (const [name, first, second, before, after] of [
+    ['old line removed, new line added', removed(OLD), added(NEW), OLD, NEW],
+    ['new line added, old line removed', added(NEW), removed(OLD), OLD, NEW],
+  ] as const) {
+    it(`the static redline passes and shows one paragraph: ${name}`, async () => {
+      const pair = await buildPair(pairById('one-word-change'));
+      const original = await withParagraphsAtCellEnd(pair.original, [before]);
+      const modified = await withParagraphsAtCellEnd(pair.original, [after]);
+      const tracked = await editPart(await withParagraphsAtCellEnd(pair.original, [OLD, NEW]), /^word\/document\.xml$/, (xml) => xml.replace(`<w:p>${run(OLD)}</w:p><w:p>${run(NEW)}</w:p>`, first + second));
+      expect(await failed(checkTrackedChanges({ original, modified, output: tracked }))).toEqual([]);
+      const made = await makeStaticRedline(tracked, original, COVER);
+      const report = await checkStaticRedline({ original, modified, output: made.docx, ...COVER });
+      expect(report.checks.filter((c) => !c.passed)).toEqual([]);
+      const xml = decoder.decode((await unzip(made.docx)).get('word/document.xml')!);
+      const cell = /<w:tc>.*?<\/w:tc>/s.exec(xml)![0];
+      expect(cell.match(/<w:p[ >]/g)).toHaveLength(2); // the cell's first paragraph, and the replaced line as one
+      expect(cell.indexOf(OLD)).toBeGreaterThan(-1);
+      expect(cell.indexOf(NEW)).toBeGreaterThan(-1);
+    });
+  }
+});
+
+/** Review findings on the second batch of held-out fixes: a table in a kept cell that comes or goes, with what follows it. */
+describe('a table that comes or goes inside a kept cell, review findings', () => {
+  const P = (text: string): string => (text === '' ? '<w:p/>' : `<w:p><w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`);
+  const table = (width: number, rows: string[][]): string =>
+    `<w:tbl><w:tblPr><w:tblW w:w="${width * rows[0]!.length}" w:type="dxa"/></w:tblPr><w:tblGrid>${rows[0]!.map(() => `<w:gridCol w:w="${width}"/>`).join('')}</w:tblGrid>${rows
+      .map((row) => `<w:tr>${row.map((cell) => `<w:tc><w:tcPr><w:tcW w:w="${width}" w:type="dxa"/></w:tcPr>${cell}</w:tc>`).join('')}</w:tr>`)
+      .join('')}</w:tbl>`;
+  const inner = table(4000, ['Term of years', 'Initial rent payable', 'Rent free period', 'Rent review pattern'].map((label) => [P(label), P(`[${label} value]`)]));
+  const outer = (cell: string): string => table(9000, [[P('Dated today here')], [cell]]);
+  const withBlock = (docx: Uint8Array, block: string): Promise<Uint8Array> => editPart(docx, /^word\/document\.xml$/, (xml) => xml.replace(/<w:p>.*?<\/w:p>/s, (first) => first + block));
+  const LEAD = P('Heads of terms follow');
+  const NOTES = P('Notes follow the table');
+
+  for (const [name, before, after] of [
+    ['a table and the empty paragraph after it added after a line', LEAD, LEAD + inner + P('')],
+    ['a table and the line after it replaced by another line', inner + NOTES, P('Completely different wording now')],
+    ['a table and the line after it removed after a kept line', LEAD + inner + NOTES, LEAD],
+    ['a table and a line after it added after a kept line', LEAD, LEAD + inner + NOTES],
+  ] as const) {
+    it(`both Word files pass: ${name}`, async () => {
+      const pair = await buildPair(pairById('one-word-change'));
+      await bothPass(await withBlock(pair.original, outer(before)), await withBlock(pair.original, outer(after)));
+    });
+  }
 });
