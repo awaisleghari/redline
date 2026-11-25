@@ -20,11 +20,18 @@ npm install
 npm run dev
 ```
 
-Then open the address it prints (normally http://localhost:5173). Drop in an
-original and a modified `.docx` and press Compare. The page shows the redline,
-a summary of the changes and a check report, and offers two Word downloads: one
-with tracked changes, one with the static (Litera-style) redline. Each is
+Then open the address it prints (normally http://localhost:5173). The site has
+three screens: the landing page (`/`), the workspace (`/app`) and the docs
+(`/docs`). In the workspace, add an original and a modified `.docx` and press
+create redline. The page shows the redline, a summary of the changes and the
+checks, and offers three downloads from one button: a PDF, a Word file with the
+static (Litera-style) redline, and a Word file with tracked changes. Each is
 offered only if every check on it passed.
+
+The docs articles are plain files, one per article, in
+`src/app/docs/articles/` (see the README there). The design the screens are
+built to is recorded in the status log in `PLAN.md` (2026-11-25, interface
+redesign).
 
 The comparison engine is [docxodus](https://www.npmjs.com/package/docxodus), a
 .NET engine compiled to WebAssembly. `npm run dev` and `npm run build` copy its

@@ -1,0 +1,49 @@
+/* Shared by the landing page, the workspace and the docs. Every value is the design's (see the handoff's tokens.json). */
+
+/* Fonts are served from this site (public/fonts/, with their licences); nothing is loaded from elsewhere. */
+@font-face { font-family: 'Newsreader'; src: url('/fonts/Newsreader-Regular.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Newsreader'; src: url('/fonts/Newsreader-Medium.woff2') format('woff2'); font-weight: 500; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Geist'; src: url('/fonts/Geist-Regular.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Geist'; src: url('/fonts/Geist-Medium.woff2') format('woff2'); font-weight: 500; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Geist Mono'; src: url('/fonts/GeistMono-Regular.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Geist Mono'; src: url('/fonts/GeistMono-Medium.woff2') format('woff2'); font-weight: 500; font-style: normal; font-display: swap; }
+
+[hidden] { display: none !important; }
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+.rl-btn { transition: background-color .15s ease, border-color .15s ease, color .15s ease, opacity .15s ease; cursor: pointer; font-family: inherit; }
+.rl-btn:focus-visible { outline: 2px solid #5585FF; outline-offset: 2px; }
+.rl-ghost:hover { background: rgba(255,255,255,0.06); color: #F4F4F2; }
+
+/* The redline marks, on a dark surface. */
+.rl-ins { color: #A9C1FF; text-decoration: underline double #5585FF; text-underline-offset: 3px; }
+.rl-del { color: #FF8E90; text-decoration: line-through #FF5A5C; }
+.rl-mvf { color: #6FDDAE; text-decoration: line-through double #2CC285; }
+.rl-mvt { color: #6FDDAE; text-decoration: underline double #2CC285; text-underline-offset: 3px; }
+
+.rl-fade { -webkit-mask-image: linear-gradient(to bottom, #000 0%, transparent 100%); mask-image: linear-gradient(to bottom, #000 0%, transparent 100%); }
+.rl-glass { -webkit-backdrop-filter: blur(14px) saturate(150%); backdrop-filter: blur(14px) saturate(150%); }
+.rl-scroll { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.14) transparent; }
+.rl-chev { transition: transform .18s ease; }
+.rl-chev-open { transform: rotate(180deg); }
+@media (prefers-reduced-motion: reduce) { .rl-chev { transition: none; } }
+
+/* The two-panel shell shared by the workspace and the docs. */
+.rl-app { height: 100vh; min-height: 640px; box-sizing: border-box; display: flex; gap: 8px; padding: 8px; background: #0A0B0D; color: #F4F4F2; font-family: 'Geist', system-ui, sans-serif; font-size: 14px; }
+.rl-side { width: 308px; flex: none; box-sizing: border-box; display: flex; flex-direction: column; gap: 22px; padding: 10px 8px 12px 10px; overflow-y: auto; min-height: 0; }
+.rl-main { flex: 1; min-width: 0; position: relative; display: flex; flex-direction: column; background: #111215; border: 1px solid rgba(255,255,255,0.07); border-radius: 12px; overflow: hidden; }
+.rl-band { position: absolute; top: 0; left: 0; width: 100%; height: 300px; display: block; pointer-events: none; }
+.rl-topbar { position: relative; z-index: 2; height: 52px; flex: none; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 12px 0 20px; background: rgba(17,18,21,0.5); border-bottom: 1px solid rgba(255,255,255,0.06); }
+.rl-home { display: block; }
+.rl-home img { width: 104.24px; height: 22px; display: block; }
+.rl-spacer { flex: 1; }
+.rl-foot { display: flex; gap: 8px; padding: 12px 4px 0; border-top: 1px solid rgba(255,255,255,0.06); }
+.rl-foot svg { flex: none; margin-top: 1px; }
+.rl-foot p { margin: 0; font-size: 12px; line-height: 1.5; color: #8B9099; }
+.rl-kbd { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 11px; border-radius: 5px; padding: 1px 5px; }
+
+@media (max-width: 860px) {
+  .rl-app { height: auto; min-height: 0; flex-direction: column; }
+  .rl-side { width: auto; }
+  .rl-main { min-height: 760px; }
+}

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72.00 72.00" width="72" height="72" role="img" aria-label="redline">
+  <title>redline</title>
+  <rect width="72" height="72" rx="16" fill="#0E0F12"/>
+  <path d="M16.750 16.750H44.250 M16.750 22.750H44.250" stroke="#FF5A5C" stroke-width="3.500" stroke-linecap="round" fill="none"/>
+  <path d="M27.750 33.000H55.250 M27.750 39.000H55.250" stroke="#2CC285" stroke-width="3.500" stroke-linecap="round" fill="none"/>
+  <path d="M16.750 49.250H44.250 M16.750 55.250H44.250" stroke="#5585FF" stroke-width="3.500" stroke-linecap="round" fill="none"/>
+</svg>
