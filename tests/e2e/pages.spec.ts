@@ -66,7 +66,11 @@ test.describe('the landing page', () => {
       expect(before.lit).toBeGreaterThan(10_000);
       await expect.poll(async () => (await inkOf(page, id)).sum, { timeout: 5_000 }).not.toBe(before.sum);
     }
-    await expect(page.locator('.rl-hero').first()).toHaveCSS('height', '560px');
+    // The grids are 560px tall as designed (a few pixels more when the window is a little taller than the page).
+    const heights = await page.locator('.rl-hero').evaluateAll((all) => all.map((hero) => hero.getBoundingClientRect().height));
+    expect(heights[0]).toBeGreaterThanOrEqual(560);
+    expect(heights[0]).toBeLessThan(575);
+    expect(heights[1]).toBe(heights[0]);
     expect(outside).toEqual([]);
     expect(errors).toEqual([]);
 
@@ -85,12 +89,32 @@ test.describe('the landing page', () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-    await expect(page.locator('.rl-hero').first()).toHaveCSS('height', '400px');
+    expect(await page.locator('.rl-hero').first().evaluate((hero) => hero.getBoundingClientRect().height)).toBeGreaterThanOrEqual(400);
     expect((await page.getByRole('link', { name: 'get started' }).boundingBox())!.width).toBe(104);
     expect((await page.getByRole('img', { name: 'redline' }).boundingBox())!.height).toBe(24);
     const headline = page.getByRole('heading', { level: 1 });
     await expect(headline).toHaveCSS('font-size', '32px');
     expect((await headline.boundingBox())!.height).toBeLessThanOrEqual(32 * 1.06 * 3 + 1);
+  });
+
+  test('on a large display the grids grow to fill the window, with the headline in the middle and no empty strip below', async ({ page }) => {
+    for (const [width, height] of [[2560, 1340], [1920, 1080], [1440, 2000]] as const) {
+      await page.setViewportSize({ width, height });
+      await page.goto('/');
+      const bottom = await page.locator('.rl-hero').last().evaluate((hero) => hero.getBoundingClientRect().bottom);
+      expect(Math.round(bottom)).toBe(height);
+      expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBe(height);
+      const headline = (await page.getByRole('heading', { level: 1 }).boundingBox())!;
+      expect(Math.abs(headline.y + headline.height / 2 - height / 2)).toBeLessThan(2);
+      // The bottom grid is drawn right down to the edge of the window.
+      const lit = await page.locator('#grid-bottom').evaluate((canvas: HTMLCanvasElement) => {
+        const data = canvas.getContext('2d')!.getImageData(0, canvas.height - 12, canvas.width, 12).data;
+        let count = 0;
+        for (let i = 3; i < data.length; i += 4) if (data[i]! > 40) count++;
+        return count;
+      });
+      expect(lit).toBeGreaterThan(1000);
+    }
   });
 
   test('with reduced motion the grids are drawn once and stay still', async ({ page }) => {

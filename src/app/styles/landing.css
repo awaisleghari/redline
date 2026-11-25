@@ -5,7 +5,8 @@ html, body { margin: 0; background: #0E0F12; }
 a { color: #F4F4F2; }
 a:hover { color: #FFFFFF; }
 
-.rl-page { position: relative; background: #0E0F12; color: #F4F4F2; font-family: 'Geist', system-ui, sans-serif; display: flex; flex-direction: column; overflow: hidden; }
+/* The page is as tall as the window at least: on a tall screen the two grids grow to fill it, the headline staying in the middle. */
+.rl-page { position: relative; min-height: 100vh; box-sizing: border-box; background: #0E0F12; color: #F4F4F2; font-family: 'Geist', system-ui, sans-serif; display: flex; flex-direction: column; overflow: hidden; }
 
 .rl-bar { position: absolute; top: 0; left: 0; right: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; padding: 20px clamp(20px, 4vw, 48px); background: rgba(14,15,18,0.46); -webkit-backdrop-filter: blur(14px) saturate(150%); backdrop-filter: blur(14px) saturate(150%); }
 .rl-logo { display: block; text-decoration: none; }
@@ -19,7 +20,8 @@ a:hover { color: #FFFFFF; }
 .rl-cta-secondary { background: transparent; color: #F4F4F2; border: 1px solid rgba(255,255,255,0.16); }
 .rl-cta-secondary:hover { background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.28); color: #FFFFFF; }
 
-.rl-hero { position: relative; height: 560px; }
+/* 560px as designed, and never less; more only when the window is taller than the design. */
+.rl-hero { position: relative; flex: 1 0 560px; }
 .rl-hero canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: block; }
 .rl-grid { -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 30%, transparent 100%); mask-image: linear-gradient(to bottom, #000 0%, #000 30%, transparent 100%); }
 .rl-grid-b { -webkit-mask-image: linear-gradient(to top, #000 0%, #000 30%, transparent 100%); mask-image: linear-gradient(to top, #000 0%, #000 30%, transparent 100%); }
@@ -31,7 +33,7 @@ a:hover { color: #FFFFFF; }
 .rl-nowrap { white-space: nowrap; }
 
 @media (max-width: 640px) {
-  .rl-hero { height: 400px; }
+  .rl-hero { flex-basis: 400px; }
   .rl-logo img { width: 113.72px; height: 24px; }
   .rl-cta { width: 104px; }
 }
