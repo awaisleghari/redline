@@ -14,6 +14,7 @@ import { repairNotes } from './repair-notes';
 import { restorePictures } from './restore-pictures';
 import { unwrapRowControls } from './unwrap-row-controls';
 import { repairParagraphProperties } from './repair-paragraphs';
+import { repairSeparators } from './repair-separators';
 import { repairSectionReferences } from './repair-section-references';
 import { REVISION_AUTHOR } from './protocol';
 
@@ -43,6 +44,14 @@ export async function produceTrackedChanges(original: Uint8Array, modified: Uint
   if (modifiedMain && trackedMain) {
     const repaired = repairParagraphProperties(trackedMain, decoder.decode(modifiedMain));
     if (repaired) parts.set('word/document.xml', repaired);
+  }
+  // A change of wording in a footnote or endnote separator, which the engine does not compare, is shown (repair-separators.ts).
+  for (const name of ['word/footnotes.xml', 'word/endnotes.xml']) {
+    const [mine, before, after] = [parts.get(name), originalFiles.get(name), modifiedFiles.get(name)];
+    if (!mine || !before || !after) continue;
+    const date = /\bw:date="([^"]+)"/.exec(parts.get('word/document.xml') ?? '')?.[1] ?? new Date().toISOString().replace(/\.\d+Z$/, 'Z');
+    const repaired = repairSeparators(mine, decoder.decode(before), decoder.decode(after), date);
+    if (repaired) parts.set(name, repaired);
   }
   // Where a section break is shown removed and added, the engine names the wrong headers for later sections (repair-section-references.ts).
   const relsOf = (from: Map<string, Uint8Array>): string => decoder.decode(from.get('word/_rels/document.xml.rels') ?? new Uint8Array());

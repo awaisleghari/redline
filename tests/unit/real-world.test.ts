@@ -1282,3 +1282,38 @@ describe('a section break shown removed and added again', () => {
     expect(decoder.decode((await unzip(tracked)).get('word/document.xml')!).split('<w:sectPr').length - 1).toBe(5);
   });
 });
+
+/**
+ * Found on a real contract (held-out run 1, a tender schedule): words typed into the footnote separator (the
+ * rule between the text and the footnotes), used as a second footer. The engine does not compare separators, so
+ * a change of wording there was missing from the redline, which was withheld.
+ */
+describe('wording typed into the footnote separator', () => {
+  const withSeparatorText = (docx: Uint8Array, wording: string): Promise<Uint8Array> =>
+    editPart(docx, /^word\/footnotes\.xml$/, (xml) => {
+      const typed = `<w:p><w:r><w:t xml:space="preserve">${wording}</w:t></w:r><w:r><w:tab/></w:r></w:p>`;
+      const out = xml.replace(/(<w:footnote\b[^>]*w:type="separator"[^>]*>)/, `$1${typed}`);
+      if (out === xml) throw new Error('the fixture has no footnote separator');
+      return out;
+    });
+
+  it('a change of wording there is shown, and both Word files pass', async () => {
+    const pair = await buildPair(pairById('footnote-change'));
+    const original = await withSeparatorText(pair.original, 'Contract No: 1 Revision date: 1 May');
+    const modified = await withSeparatorText(pair.modified, 'Contract No: 1 Revision date: 9 June');
+    const { tracked, staticRedline } = await bothPass(original, modified);
+    const notes = decoder.decode((await unzip(tracked)).get('word/footnotes.xml')!);
+    expect(notes).toMatch(/<w:del\b[^>]*>(?:(?!<\/w:del>).)*Revision date: 1 May/s);
+    expect(notes).toMatch(/<w:ins\b[^>]*>(?:(?!<\/w:ins>).)*Revision date: 9 June/s);
+    expect(decoder.decode((await unzip(staticRedline)).get('word/footnotes.xml')!)).toContain('Revision date: 1 May');
+  });
+
+  it('the same wording in both is left exactly as the engine wrote it', async () => {
+    const pair = await buildPair(pairById('footnote-change'));
+    const original = await withSeparatorText(pair.original, 'Contract No: 1');
+    const modified = await withSeparatorText(pair.modified, 'Contract No: 1');
+    const { tracked } = await bothPass(original, modified);
+    const separator = /<w:footnote\b[^>]*w:type="separator"[^>]*>.*?<\/w:footnote>/s.exec(decoder.decode((await unzip(tracked)).get('word/footnotes.xml')!))![0];
+    expect(separator).not.toMatch(/<w:(ins|del)\b/);
+  });
+});
