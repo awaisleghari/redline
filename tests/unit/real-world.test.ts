@@ -11,7 +11,9 @@ import { unzip, zip } from '../../src/common/zip';
 import { makeSpacesExplicit, makeSpacesExplicitInPart } from '../../src/producer/explicit-spaces';
 import { makeStaticRedline } from '../../src/producer/make-static-redline';
 import { produceTrackedChanges } from '../../src/producer/produce';
-import { buildPair, pairById } from '../fixtures/pairs';
+import { buildDocx, buildPair, pairById } from '../fixtures/pairs';
+import type { DocSpec } from '../fixtures/pairs';
+import { freshRelationshipIds, renameInPart } from '../../src/producer/fresh-relationship-ids';
 import { compareDocuments } from 'docxodus/core';
 import { repairNotes } from '../../src/producer/repair-notes';
 import { repairParagraphProperties } from '../../src/producer/repair-paragraphs';
@@ -1051,6 +1053,55 @@ describe('a numbered clause that replaces the last two lines of a cell', () => {
 });
 
 /**
+ * Found on a real contract (held-out run 1, an NHS contract carrying tracked changes): every clause in a table
+ * cell removed. The engine writes that as a removal on every paragraph mark but the cell's last, whose text is
+ * removed. Read by the cell-end rule, the first paragraph of that run is the one that stays (emptied) and the
+ * ones below it went; the redline typed an old clause number on the first as well, and was withheld.
+ */
+describe('a run of numbered clauses removed at the end of a cell', () => {
+  const build = async (kept: string): Promise<{ original: Uint8Array; modified: Uint8Array; tracked: Uint8Array }> => {
+    const base = (await buildPair(pairById('numbered-clause-deleted'))).original;
+    const numPr = /<w:numPr>.*?<\/w:numPr>/s.exec(decoder.decode((await unzip(base)).get('word/document.xml')!))![0];
+    const run = (text: string): string => (text === '' ? '' : `<w:r><w:t xml:space="preserve">${text}</w:t></w:r>`);
+    const change = (tag: string, id: number): string => `<w:${tag} w:id="${9200 + id}" w:author="Redline" w:date="2026-11-25T00:00:00Z"`;
+    const gone = (text: string, id: number): string => `${change('del', id)}><w:r><w:delText xml:space="preserve">${text}</w:delText></w:r></w:del>`;
+    const markGone = (id: number): string => `<w:rPr>${change('del', id)}/></w:rPr>`;
+    const withCell = (paragraphs: string): Promise<Uint8Array> =>
+      editPart(base, /^word\/document\.xml$/, (xml) => xml.replace(/<w:p>.*?<\/w:p>/s, (first) => `${first}<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="9000" w:type="dxa"/></w:tcPr>${paragraphs}</w:tc></w:tr></w:tbl>`));
+    const numbered = (text: string): string => `<w:p><w:pPr>${numPr}</w:pPr>${run(text)}</w:p>`;
+    const A = 'give notice in writing of the change';
+    const B = 'implement the change on the date mandated';
+    const C = 'bear its own costs of the change';
+    return {
+      original: await withCell(numbered(kept === '' ? A : kept) + numbered(B) + numbered(C)),
+      modified: await withCell(numbered(kept)),
+      tracked: await withCell(
+        `<w:p><w:pPr>${numPr}${markGone(1)}</w:pPr>${kept === '' ? gone(A, 2) : run(kept)}</w:p>` +
+          `<w:p><w:pPr>${numPr}${markGone(3)}</w:pPr>${gone(B, 4)}</w:p>` +
+          `<w:p><w:pPr>${numPr}</w:pPr>${gone(C, 5)}</w:p>`,
+      ),
+    };
+  };
+  const oldNumbersIn = (xml: string): number => xml.split('RedlineOldNumber"/>').length - 1;
+
+  it('with the clause above them kept: the two that went show their old numbers, the kept one none', async () => {
+    const { original, modified, tracked } = await build('The supplier must pay the fee');
+    expect(await failed(checkTrackedChanges({ original, modified, output: tracked }))).toEqual([]);
+    const made = await makeStaticRedline(tracked, original, COVER);
+    expect((await checkStaticRedline({ original, modified, output: made.docx, ...COVER })).checks.filter((c) => !c.passed)).toEqual([]);
+    expect(oldNumbersIn(decoder.decode((await unzip(made.docx)).get('word/document.xml')!))).toBe(2);
+  });
+
+  it('with every clause in the cell removed: the first is the one emptied, the two below it went', async () => {
+    const { original, modified, tracked } = await build('');
+    expect(await failed(checkTrackedChanges({ original, modified, output: tracked }))).toEqual([]);
+    const made = await makeStaticRedline(tracked, original, COVER);
+    expect((await checkStaticRedline({ original, modified, output: made.docx, ...COVER })).checks.filter((c) => !c.passed)).toEqual([]);
+    expect(oldNumbersIn(decoder.decode((await unzip(made.docx)).get('word/document.xml')!))).toBe(2);
+  });
+});
+
+/**
  * Found on real contracts (held-out run 1, ADB procurement documents): a text box holding a numbered note. The
  * engine replaces a changed text box whole, so the note is shown removed and put back. Old clause numbers belong
  * to the main text only; the removed copy inside the box was given one, and the redline was withheld.
@@ -1071,5 +1122,50 @@ describe('a numbered paragraph inside a text box that is replaced', () => {
     const outputs = await bothPass(await withBox(boxed.original), await withBox(boxed.modified));
     const xml = decoder.decode((await unzip(outputs.staticRedline)).get('word/document.xml')!);
     for (const box of xml.match(/<w:txbxContent>.*?<\/w:txbxContent>/gs)!) expect(box).not.toContain('RedlineOldNumber');
+  });
+});
+
+/**
+ * Found on real contracts (held-out run 1, ADB procurement documents, on drafts that were themselves made by the
+ * compare engine): inside a Word file each link is tied to its address by a short internal name. The engine
+ * names what it adds R1, R2, ...; a file it produced already holds such names, the new ones collide with them,
+ * and a link came out tied to a picture, or to nothing. The names are replaced before the engine sees them.
+ */
+describe('a document whose internal reference names look like the engine\'s own', () => {
+  const link = (n: number, extra = ''): unknown => ({ kind: 'linked', text: '', before: `Clause ${n}${extra} is published at `, linkText: `site ${n}`, url: `https://example.com/page-${n}`, after: '.' });
+  const line = (text: string): unknown => ({ kind: 'paragraph', text });
+  const build = (blocks: unknown[]): Promise<Uint8Array> => buildDocx({ blocks } as DocSpec);
+  /** Rename every relationship of the main document R1, R2, ... as the engine would have. */
+  const engineNamed = async (docx: Uint8Array): Promise<Uint8Array> => {
+    const files = await unzip(docx);
+    const rels = decoder.decode(files.get('word/_rels/document.xml.rels')!);
+    const names = new Map([...rels.matchAll(/Id="([^"]+)"/g)].map((m, i) => [m[1]!, `R${i + 1}`]));
+    files.set('word/_rels/document.xml.rels', encoder.encode(rels.replace(/Id="([^"]+)"/g, (_, id: string) => `Id="${names.get(id)}"`)));
+    files.set('word/document.xml', encoder.encode(decoder.decode(files.get('word/document.xml')!).replace(/r:(id|embed)="([^"]+)"/g, (_, a: string, id: string) => `r:${a}="${names.get(id)}"`)));
+    return zip(files);
+  };
+
+  it('both Word files pass, with every link pointing where it did', async () => {
+    const original = await build([line('Heading'), link(1), link(2), link(3), link(4), link(5), line('End')]);
+    const modified = await engineNamed(await build([line('Heading'), link(1, ' as amended'), link(2), link(6), link(3, ' new'), link(4), link(5), line('End')]));
+    expect(decoder.decode((await unzip(modified)).get('word/document.xml')!)).toMatch(/<w:hyperlink [^>]*r:id="R\d+"/);
+    await bothPass(original, modified);
+    await bothPass(modified, original);
+  });
+
+  it('a document with no such name is passed on byte for byte', async () => {
+    const docx = await build([line('Heading'), link(1)]);
+    expect(await freshRelationshipIds(docx)).toBe(docx);
+  });
+
+  it('only the names are replaced, wherever a part uses them', () => {
+    const names = new Map([['R1', 'rIdU1'], ['R2a', 'rIdU2']]);
+    const part =
+      `<w:document xmlns:w="w" xmlns:rel='http://schemas.openxmlformats.org/officeDocument/2006/relationships' xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:v="v">` +
+      `<w:hyperlink rel:id="R1" w:anchor="R1"><w:t>R1 and "R2a"</w:t></w:hyperlink><v:imagedata o:relid='R2a' o:title="R1"/><a:blip rel:embed="rId7" rel:link = "R2a"/></w:document>`;
+    expect(renameInPart(part, names)).toBe(
+      `<w:document xmlns:w="w" xmlns:rel='http://schemas.openxmlformats.org/officeDocument/2006/relationships' xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:v="v">` +
+        `<w:hyperlink rel:id="rIdU1" w:anchor="R1"><w:t>R1 and "R2a"</w:t></w:hyperlink><v:imagedata o:relid="rIdU2" o:title="R1"/><a:blip rel:embed="rId7" rel:link = "rIdU2"/></w:document>`,
+    );
   });
 });

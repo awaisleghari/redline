@@ -6,6 +6,7 @@
 import { compareDocuments } from 'docxodus/core';
 import { unzip, zip } from '../common/zip';
 import { acceptTrackedChanges } from './accept-changes';
+import { freshRelationshipIds } from './fresh-relationship-ids';
 import { makeSpacesExplicit } from './explicit-spaces';
 import { dropUnusedHeadersAndFooters } from './drop-unused-headers';
 import { labelAuthors } from './label-authors';
@@ -20,7 +21,8 @@ export async function produceTrackedChanges(original: Uint8Array, modified: Uint
   // The engine loses a document-wide "keep white space" setting; write it onto each piece of text first (explicit-spaces.ts).
   // Tracked changes already in an upload count as accepted (accept-changes.ts).
   // ...and table rows wrapped in content controls are unwrapped, which the engine cannot handle (unwrap-row-controls.ts).
-  const prepare = async (upload: Uint8Array): Promise<Uint8Array> => makeSpacesExplicit(await unwrapRowControls(await acceptTrackedChanges(upload)));
+  // ...and internal reference names of the form the engine itself writes are replaced, or the engine's own collide with them (fresh-relationship-ids.ts).
+  const prepare = async (upload: Uint8Array): Promise<Uint8Array> => freshRelationshipIds(await makeSpacesExplicit(await unwrapRowControls(await acceptTrackedChanges(upload))));
   const preparedModified = await prepare(modified);
   const preparedOriginal = await prepare(original);
   const result = await compareDocuments(preparedOriginal, preparedModified, { authorName: REVISION_AUTHOR });
