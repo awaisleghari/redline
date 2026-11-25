@@ -877,3 +877,21 @@ describe('a picture stored as text (SVG)', () => {
     expect((await svgsIn(tracked)).map((svg) => decoder.decode(svg)).sort()).toEqual([decoder.decode(SVG_PICTURE), decoder.decode(other)].sort());
   });
 });
+
+/**
+ * Found on a real contract (held-out run 1): a cell holding two alternatives with "or" between them, both
+ * alternatives removed. The static redline shows the removal of the cell's last paragraph on the mark of "or",
+ * next to the removed mark of the first alternative; "or" itself stays, so the run of removed paragraphs stops there.
+ */
+describe('a kept line between two removed paragraphs at the end of a cell', () => {
+  for (const [name, before, after] of [
+    ['two alternatives removed, "or" kept', ['Clause eighteen of the general conditions applies here.', 'or', 'Clause eighteen of the general conditions has no application.'], ['or']],
+    ['the same with a line kept above', ['Choose one.', 'Clause eighteen of the general conditions applies here.', 'or', 'Clause eighteen of the general conditions has no application.'], ['Choose one.', 'or']],
+    ['two alternatives added around "or"', ['or'], ['Clause eighteen of the general conditions applies here.', 'or', 'Clause eighteen of the general conditions has no application.']],
+  ] as const) {
+    it(`both Word files pass: ${name}`, async () => {
+      const pair = await buildPair(pairById('one-word-change'));
+      await bothPass(await withParagraphsAtCellEnd(pair.original, [...before]), await withParagraphsAtCellEnd(pair.original, [...after]));
+    });
+  }
+});

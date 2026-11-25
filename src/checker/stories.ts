@@ -822,26 +822,33 @@ function cellEndMarks(cell: XmlElement, colours: ChangeColours): Map<XmlElement,
   };
   const kind = markOf(before);
   if (!kind || markOf(last)) return undefined;
-  // Several paragraphs in a row may have come or gone at the end of the cell. Their marks then show the change
-  // from one paragraph further up, all the way: the first mark of that run is the one that is really untouched.
-  let first = before;
-  for (let i = blocks.length - 3; i >= 0 && w(blocks[i]!, 'p') && markOf(blocks[i]!) === kind; i--) first = blocks[i]!;
-  const runs: XmlElement[] = [];
-  const collect = (element: XmlElement): void => {
-    for (const c of element.children) {
-      if (w(c, 'r')) {
-        if (c.children.some((x) => !w(x, 'rPr'))) runs.push(c);
-      } else if (!w(c, 'pPr')) collect(c);
-    }
-  };
-  collect(last);
   const styleOf = (run: XmlElement): string | undefined => {
     const style = child(run, W, 'rPr') && child(child(run, W, 'rPr')!, W, 'rStyle');
     return style ? attribute(style, W, 'val') : undefined;
   };
-  // The old clause number typed in front of a removed paragraph is the redline's own addition, not the paragraph's content.
-  const content = runs.filter((run) => styleOf(run) !== STATIC_STYLE.oldNumber);
-  if (content.length === 0 || !content.every((run) => staticKindOf(child(run, W, 'rPr'), colours) === kind)) return undefined;
+  /** What a paragraph holds, leaving out the old clause number typed in front of a removed paragraph (the redline's own addition). */
+  const contentOf = (paragraph: XmlElement): XmlElement[] => {
+    const runs: XmlElement[] = [];
+    const collect = (element: XmlElement): void => {
+      for (const c of element.children) {
+        if (w(c, 'r')) {
+          if (c.children.some((x) => !w(x, 'rPr'))) runs.push(c);
+        } else if (!w(c, 'pPr')) collect(c);
+      }
+    };
+    collect(paragraph);
+    return runs.filter((run) => styleOf(run) !== STATIC_STYLE.oldNumber);
+  };
+  const whollyChanged = (paragraph: XmlElement): boolean => contentOf(paragraph).every((run) => staticKindOf(child(run, W, 'rPr'), colours) === kind);
+  const content = contentOf(last);
+  if (content.length === 0 || !whollyChanged(last)) return undefined;
+  // Several paragraphs in a row may have come or gone at the end of the cell. Their marks then show the change
+  // from one paragraph further up, all the way: the first mark of that run is the one that is really untouched.
+  // That holds only while the paragraphs below came or went whole. A paragraph of which something remains
+  // (found on a real contract: "or" between two removed alternatives) was not removed, so the mark above it
+  // shows a change of its own, and the run stops there.
+  let first = before;
+  for (let i = blocks.length - 3; i >= 0 && w(blocks[i]!, 'p') && markOf(blocks[i]!) === kind && whollyChanged(blocks[i + 1]!); i--) first = blocks[i]!;
   return new Map<XmlElement, StaticKind | undefined>([[first, undefined], [last, kind]]);
 }
 
