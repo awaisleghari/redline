@@ -35,11 +35,11 @@ test.describe('the landing page', () => {
     });
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/');
-    await expect(page).toHaveTitle('redline — For the paragraphs someone tweaked at 11:58 PM.');
+    await expect(page).toHaveTitle('redline — for the paragraphs someone tweaked at 11:58 PM');
     await expect(page.locator('link[rel="icon"]')).toHaveAttribute('href', '/redline-favicon.svg');
     expect((await page.request.get('/redline-favicon.svg')).headers()['content-type']).toContain('image/svg+xml');
     const headline = page.getByRole('heading', { level: 1 });
-    await expect(headline).toHaveText('For the paragraphs someone tweaked at 11:58 PM.');
+    await expect(headline).toHaveText('for the paragraphs someone tweaked at 11:58 PM');
     await expect(headline).toHaveCSS('font-family', /Newsreader/);
     await expect(headline).toHaveCSS('font-size', '60px');
     await expect(headline.locator('span')).toHaveCSS('white-space', 'nowrap');
@@ -171,7 +171,7 @@ const HIDDEN = [
 test('a shared link shows a title, a description and the picture, without running any script', async ({ request }) => {
   // Link previews (WhatsApp, LinkedIn, X, iMessage…) read the page as sent, so the tags must be in the HTML itself.
   const tag = (html: string, key: string): string | undefined => new RegExp(`<meta (?:property|name)="${key}" content="([^"]*)"`).exec(html)?.[1];
-  for (const [path, title] of [['/', 'redline — For the paragraphs someone tweaked at 11:58 PM.'], ['/docs', 'redline — docs'], ['/docs/quick-start', 'redline — docs'], ['/app', 'redline — workspace']] as const) {
+  for (const [path, title] of [['/', 'redline — for the paragraphs someone tweaked at 11:58 PM'], ['/docs', 'redline — docs'], ['/docs/quick-start', 'redline — docs'], ['/app', 'redline — workspace']] as const) {
     const html = await (await request.get(path)).text();
     expect(tag(html, 'og:title'), path).toBe(title);
     expect(tag(html, 'og:description')?.length, path).toBeGreaterThan(40);
