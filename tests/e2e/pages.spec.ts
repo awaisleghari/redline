@@ -36,11 +36,11 @@ test.describe('the landing page', () => {
     });
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/');
-    await expect(page).toHaveTitle('redline — generate free legal-quality redlines in seconds');
+    await expect(page).toHaveTitle('redline — For the paragraphs someone tweaked at 11:58 PM.');
     await expect(page.locator('link[rel="icon"]')).toHaveAttribute('href', '/redline-favicon.svg');
     expect((await page.request.get('/redline-favicon.svg')).headers()['content-type']).toContain('image/svg+xml');
     const headline = page.getByRole('heading', { level: 1 });
-    await expect(headline).toHaveText('generate free legal-quality redlines in seconds');
+    await expect(headline).toHaveText('For the paragraphs someone tweaked at 11:58 PM.');
     await expect(headline).toHaveCSS('font-family', /Newsreader/);
     await expect(headline).toHaveCSS('font-size', '60px');
     await expect(headline.locator('span')).toHaveCSS('white-space', 'nowrap');
