@@ -999,17 +999,21 @@ describe('the one line of a cell replaced, written as a removed paragraph and an
  * empty paragraph added with the cell's last mark. A rule added in the third batch wrongly left this case out.
  */
 describe('the one line of a cell replaced by an empty line', () => {
-  it('the static redline passes and the cell holds one paragraph', async () => {
+  for (const mirrored of [false, true]) it(`the static redline passes and the cell holds one paragraph${mirrored ? ' (an empty line replaced by a line of text)' : ''}`, async () => {
     const OLD = 'Applicant entry goes on this line';
     const change = (tag: string, id: number): string => `<w:${tag} w:id="${9500 + id}" w:author="Redline" w:date="2026-11-26T00:00:00Z"`;
     const cellOf = (paragraphs: string): string => `<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="9000" w:type="dxa"/></w:tcPr>${paragraphs}</w:tc></w:tr></w:tbl>`;
     const base = (await buildPair(pairById('one-word-change'))).original;
     const withCell = (paragraphs: string): Promise<Uint8Array> => editPart(base, /^word\/document\.xml$/, (xml) => xml.replace(/<w:p>.*?<\/w:p>/s, (first) => first + cellOf(paragraphs)));
-    const original = await withCell(`<w:p><w:r><w:t xml:space="preserve">${OLD}</w:t></w:r></w:p>`);
-    const modified = await withCell('<w:p/>');
+    const full = await withCell(`<w:p><w:r><w:t xml:space="preserve">${OLD}</w:t></w:r></w:p>`);
+    const empty = await withCell('<w:p/>');
+    const [original, modified] = mirrored ? [empty, full] : [full, empty];
     const tracked = await withCell(
-      `<w:p><w:pPr><w:rPr>${change('del', 1)}/></w:rPr></w:pPr>${change('del', 2)}><w:r><w:delText xml:space="preserve">${OLD}</w:delText></w:r></w:del></w:p>` +
-        `<w:p><w:pPr><w:rPr>${change('ins', 3)}/></w:rPr></w:pPr></w:p>`,
+      mirrored
+        ? `<w:p><w:pPr><w:rPr>${change('ins', 1)}/></w:rPr></w:pPr>${change('ins', 2)}><w:r><w:t xml:space="preserve">${OLD}</w:t></w:r></w:ins></w:p>` +
+            `<w:p><w:pPr><w:rPr>${change('del', 3)}/></w:rPr></w:pPr></w:p>`
+        : `<w:p><w:pPr><w:rPr>${change('del', 1)}/></w:rPr></w:pPr>${change('del', 2)}><w:r><w:delText xml:space="preserve">${OLD}</w:delText></w:r></w:del></w:p>` +
+            `<w:p><w:pPr><w:rPr>${change('ins', 3)}/></w:rPr></w:pPr></w:p>`,
     );
     expect(await failed(checkTrackedChanges({ original, modified, output: tracked }))).toEqual([]);
     const made = await makeStaticRedline(tracked, original, COVER);
@@ -1479,6 +1483,22 @@ describe('a text box whose two stored forms show the same words, one of them thr
     const damage = (docx: Uint8Array): Promise<Uint8Array> =>
       editPart(docx, /^word\/document\.xml$/, (xml) => {
         const out = xml.replace('http://www.example.org', 'http://www.example.net');
+        if (out === xml) throw new Error('nothing was damaged');
+        return out;
+      });
+    expect(await failed(checkTrackedChanges({ original, modified, output: await damage(tracked) }))).not.toEqual([]);
+    const report = await checkStaticRedline({ original, modified, output: await damage(staticRedline), ...COVER });
+    expect(report.checks.filter((c) => !c.passed)).not.toEqual([]);
+  });
+
+  it('where the hidden link changes between the versions, the removed copy is held to the original (review finding)', async () => {
+    const pair = await buildPair(pairById('one-word-change'));
+    const original = await withBox(pair.original);
+    const modified = await editPart(await withBox(pair.modified), /^word\/document\.xml$/, (xml) => xml.replace('http://www.example.org', 'http://www.example.net'));
+    const { tracked, staticRedline } = await bothPass(original, modified);
+    const damage = (docx: Uint8Array): Promise<Uint8Array> =>
+      editPart(docx, /^word\/document\.xml$/, (xml) => {
+        const out = xml.replace('http://www.example.org', 'http://elsewhere.example');
         if (out === xml) throw new Error('nothing was damaged');
         return out;
       });

@@ -7,7 +7,7 @@ import { NS } from '../common/namespaces';
 import { describeFormat, FORMAT, FORMAT_MASK, STANDARD_COLOURS, staticKindOf, type ChangeColours, type StaticKind } from './formatting';
 import type { DocxPackage } from './package';
 import type { CheckFailure } from './report';
-import { CHAR, isStructureMark, STATIC_STYLE, type Para, type Story } from './stories';
+import { CHAR, FORM_READING, isStructureMark, STATIC_STYLE, type Para, type Story } from './stories';
 import { attribute, child, descendants, is, type XmlElement } from './xml';
 
 const W = NS.w;
@@ -142,10 +142,13 @@ export function numberingFailure(modified: Story[], accepted: Story[]): CheckFai
 }
 
 /** Which paragraphs are numbered in the stored forms of text boxes that are not the form read: the same as in the modified document. */
-export function otherFormsFailure(modified: string[], accepted: string[]): CheckFailure | undefined {
-  if (modified.length === accepted.length && modified.every((form, i) => form === accepted[i])) return undefined;
+export function otherFormsFailure(upload: string[], output: string[], side: 'modified' | 'original' = 'modified'): CheckFailure | undefined {
+  // On the old side only the readings are compared: a removed paragraph in a static redline gives up its numbering by design.
+  const of = (list: string[]): string[] => (side === 'original' ? list.filter((entry) => entry.startsWith(FORM_READING)) : list);
+  const [want, got] = [of(upload), of(output)];
+  if (want.length === got.length && want.every((form, i) => form === got[i])) return undefined;
   return {
-    message: 'A text box is stored in a second form (for older programs) whose numbered paragraphs or field instructions differ from the modified document.',
+    message: `A text box is stored in a second form (for older programs) whose numbered paragraphs or field instructions differ from the ${side} document.`,
     where: 'text boxes and drawings',
   };
 }

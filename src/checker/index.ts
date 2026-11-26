@@ -137,7 +137,7 @@ export async function checkTrackedChanges(input: CheckInput): Promise<CheckRepor
       return failure ? fail('reject-all', failure) : pass('reject-all', hadTrackedChanges(original) ? ACCEPTED_READING.original : undefined);
     }),
     guarded('formatting', () => verdict('formatting', formattingFailure(modifiedText().stories, accepted().stories, false))),
-    guarded('numbering', () => verdict('numbering', numberingFailure(modifiedText().stories, accepted().stories) ?? otherFormsFailure(modifiedText().otherForms, accepted().otherForms))),
+    guarded('numbering', () => verdict('numbering', numberingFailure(modifiedText().stories, accepted().stories) ?? otherFormsFailure(modifiedText().otherForms, accepted().otherForms) ?? otherFormsFailure(originalText().otherForms, rejected().otherForms, 'original'))),
     guarded('completeness', () => {
       const problems = [
         ...unreadText(original, [originalText()], 'original document', deletedSide(original), true),
@@ -288,7 +288,7 @@ export async function checkStaticRedline(input: StaticCheckInput): Promise<Check
     }),
     guarded('formatting', () => verdict('formatting', formattingFailure(modifiedText().stories, newSide().stories, true))),
     guarded('format-marks', () => verdict('format-marks', formatMarksFailure(originalText().stories, oldSide().stories, newSide().stories))),
-    guarded('numbering', () => verdict('numbering', numberingFailure(modifiedText().stories, newSide().stories) ?? otherFormsFailure(modifiedText().otherForms, newSide().otherForms) ?? oldNumberFailure(originalText().stories, oldSide().stories))),
+    guarded('numbering', () => verdict('numbering', numberingFailure(modifiedText().stories, newSide().stories) ?? otherFormsFailure(modifiedText().otherForms, newSide().otherForms) ?? otherFormsFailure(originalText().otherForms, oldSide().otherForms, 'original') ?? oldNumberFailure(originalText().stories, oldSide().stories))),
     guarded('completeness', () => {
       const problems = [
         ...unreadText(original, [originalText()], 'original document', deletedSide(original), true),

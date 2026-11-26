@@ -425,8 +425,10 @@ function absorb(outer: Context, inner: Context): void {
   }
 }
 
-/** A field's instruction, from its start to where the words it shows begin. */
-const FIELD_INSTRUCTION = new RegExp(`${MARK.fieldBegin}[^⟦]*${MARK.fieldResult}`, 'g');
+/** A field with nothing nested in it: its instruction, the words it shows (captured), and its end. */
+/** Marks an entry of `otherForms` that is a form's full reading (the others record which paragraphs are numbered). */
+export const FORM_READING = 'reading:';
+const SIMPLE_FIELD = new RegExp(`${MARK.fieldBegin}[^⟦]*${MARK.fieldResult}([^⟦]*)${MARK.fieldEnd}`, 'g');
 
 /**
  * mc:AlternateContent offers the same content in two forms (modern and
@@ -478,7 +480,8 @@ function alternateContentBranch(element: XmlElement, context: Context, read: (br
       // contract: a web address typed as plain text in one form and as a link showing the same words in the
       // other.) The instructions are not dropped: where the forms differ in them, the forms that are not read
       // are recorded in full, and must be the same in the output as in the modified document.
-      return reading.split(MARK.fieldEnd).join('').replace(FIELD_INSTRUCTION, '');
+      // (Only a whole, simple field is reduced to the words it shows; anything else stays as it is and is compared in full.)
+      return reading.replace(SIMPLE_FIELD, '$1');
     });
     instructionsDiffer = new Set(readings).size === 1 && new Set(formReadings).size > 1;
     if (new Set(readings).size > 1) {
@@ -495,12 +498,12 @@ function alternateContentBranch(element: XmlElement, context: Context, read: (br
     if (strokes.length > 0) {
       context.source.inks.push(...strokes);
       context.source.otherForms.push(...formNumbers.filter((form, i) => form !== '' && branches[i] !== fallback));
-      if (instructionsDiffer) context.source.otherForms.push(...formReadings.filter((_, i) => branches[i] !== fallback));
+      if (instructionsDiffer) context.source.otherForms.push(...formReadings.filter((_, i) => branches[i] !== fallback).map((r) => FORM_READING + r));
       return fallback;
     }
   }
   context.source.otherForms.push(...formNumbers.slice(1).filter((form) => form !== ''));
-  if (instructionsDiffer) context.source.otherForms.push(...formReadings.slice(1));
+  if (instructionsDiffer) context.source.otherForms.push(...formReadings.slice(1).map((r) => FORM_READING + r));
   return branches[0];
 }
 
