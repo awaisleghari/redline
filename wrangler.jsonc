@@ -6,9 +6,16 @@
   "main": "worker/index.ts",
   "compatibility_date": "2026-11-23",
 
-  // The site is reachable at https://redline.<account>.workers.dev and nowhere else:
-  // no per-version preview addresses.
-  "workers_dev": true,
+  // The site is reachable at https://useredline.dev and https://www.useredline.dev
+  // and nowhere else: the old redline.<account>.workers.dev address is off, and there
+  // are no per-version preview addresses. Both domains are "custom domains": on each
+  // deployment Cloudflare points them at this Worker and issues their certificates.
+  // The domain must be in the same Cloudflare account as the Worker.
+  "routes": [
+    { "pattern": "useredline.dev", "custom_domain": true },
+    { "pattern": "www.useredline.dev", "custom_domain": true }
+  ],
+  "workers_dev": false,
   "preview_urls": false,
 
   // The web page itself: the built files in dist/. Cloudflare serves these directly.

@@ -4,7 +4,7 @@ import { defineConfig, devices } from '@playwright/test';
 // `vite preview`, so they exercise the same bundled files a real deployment
 // serves. With REDLINE_URL set they run against that address instead: the
 // Worker under `wrangler dev`, or the live site.
-//   REDLINE_URL=https://redline.<account>.workers.dev npm run test:e2e
+//   REDLINE_URL=https://useredline.dev npm run test:e2e
 // (Docker is still needed: a few tests make deliberately wrong PDFs locally.)
 const target = process.env.REDLINE_URL?.replace(/\/+$/, '');
 

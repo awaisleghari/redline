@@ -2,7 +2,7 @@
  * Checks a deployed site from outside, without a browser (the browser tests do
  * the rest: REDLINE_URL=<address> npm run test:e2e).
  *
- * Usage: npm run test:live -- https://redline.<account>.workers.dev
+ * Usage: npm run test:live -- https://useredline.dev
  *
  * It checks that the page and its security headers are served, measures how
  * much a first visit downloads, makes real PDFs through the live converter and
