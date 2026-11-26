@@ -2,16 +2,30 @@
 section: get started
 label: quick start
 title: Quick start
-intro: From two Word files to a finished redline in under a minute.
+intro: Two <code>.docx</code> files in, one full redline out. Usually finishes before desktop Word would even stop bouncing in your dock.
 order: 2
 icon: bolt
 -->
-<ol class="doc-steps">
-  <li><div><h3 id="qs-1" data-toc="Open redline">Open redline</h3><p>Press get started on the home page, or open redline from the top of these docs.</p></div></li>
-  <li><div><h3 id="qs-2" data-toc="Add the original">Add the original</h3><p>Drop the earlier version into the original box, or click the box to choose a file. Word documents (.docx) only, up to 25 MB.</p></div></li>
-  <li><div><h3 id="qs-3" data-toc="Add the modified version">Add the modified version</h3><p>Do the same with the later version in the modified box.</p></div></li>
-  <li><div><h3 id="qs-4" data-toc="Create the redline">Create the redline</h3><p>Press create redline. The comparison runs in your browser and takes a few seconds.</p></div></li>
-  <li><div><h3 id="qs-5" data-toc="Read it">Read it</h3><p>Use the arrows at the top to jump from change to change. Switch between continuous and pages, or between a dark and a light page.</p></div></li>
-  <li><div><h3 id="qs-6" data-toc="Download it">Download it</h3><p>Press download pdf, or choose a Word format from the arrow next to it. Each file is checked before it is offered.</p></div></li>
-</ol>
-<p>If either document already contains tracked changes, redline compares them as if every change had been accepted, and says so above the redline.</p>
+<h2 id="qs-open">Open the workspace</h2>
+<p>Click <b>Get started</b> on the home page, or hit <b>open redline</b> in the top bar of these docs. No login screen, no onboarding tour, just two empty dropzones waiting for files.</p>
+
+<h2 id="qs-original">Drop in the original</h2>
+<p>Drag the earlier draft into the <b>Original</b> box, or click the box to browse your computer.</p>
+<p>Two ground rules: <code>.docx</code> files only (if someone sent you a legacy <code>.doc</code> from 2004, re-save it first), and keep the file under 25 MB.</p>
+
+<h2 id="qs-modified">Drop in the modified version</h2>
+<p>Put the newer draft into the <b>Modified</b> box.</p>
+<p>Double-check that you did not swap the two files, unless you enjoy reading a redline where every addition looks like a deletion and vice versa.</p>
+
+<h2 id="qs-run">Run the comparison</h2>
+<p>Click <b>Create redline</b>. Your browser handles the entire diff locally, and even a dense agreement usually wraps up in a few seconds.</p>
+
+<h2 id="qs-read">Read the damage</h2>
+<p>Use the arrows at the top to jump straight from edit to edit instead of scrolling through forty pages of boilerplate. You can also flip between a continuous scroll and paginated Word-style sheets, or switch between dark mode and light mode depending on what time of night you are reading this.</p>
+
+<h2 id="qs-download">Download your copy</h2>
+<p>Click <b>Download PDF</b> for a locked-down file ready to email, or open the dropdown arrow next to it to grab a Word version (either static formatted markup or native tracked changes).</p>
+<p>Every export is automatically audited against your source files before the download option appears. If an output fails verification, <code>redline</code> holds it back rather than handing you a broken file.</p>
+
+<h2 id="qs-tracked" data-toc="Files with tracked changes">What if a file already has tracked changes?</h2>
+<p>If either draft still has unaccepted redlines floating around inside it, <code>redline</code> treats those changes as accepted before running the comparison, and flags a notice right above your diff so nothing catches you off guard.</p>

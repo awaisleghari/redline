@@ -9,7 +9,7 @@ Each file starts with a short header, then the article itself:
 section: get started        (the menu section it sits in)
 label: quick start          (its name in the menu)
 title: Quick start          (the big heading)
-intro: One or two sentences under the heading.
+intro: One or two sentences under the heading (may hold <code> or <b>).
 order: 2                    (position in the menu; previous/next follow it)
 icon: bolt                  (menu icon: lines, bolt, eye, download, compass, shield, lock, page, keyboard)
 badge: soon                 (optional small tag in the menu)

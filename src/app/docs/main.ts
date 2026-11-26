@@ -70,7 +70,7 @@ const articles: Article[] = Object.entries(files)
       icon: fields.get('icon') ?? 'lines',
       badge: fields.get('badge'),
       body,
-      text: `${title} ${intro} ${plain(body)}`.replace(/\s+/g, ' ').toLowerCase(),
+      text: `${title} ${plain(intro)} ${plain(body)}`.replace(/\s+/g, ' ').toLowerCase(),
     };
   })
   .sort((a, b) => a.order - b.order || a.slug.localeCompare(b.slug));
@@ -147,8 +147,8 @@ function show(article: Article, toTop: boolean): void {
   element('crumb-title').textContent = article.label;
   element('eyebrow').textContent = article.section;
   element('article-title').textContent = article.title;
-  element('article-intro').textContent = article.intro;
-  // The articles are this site's own files, written by its owner: shown as written.
+  // The articles (intro included) are this site's own files, written by its owner: shown as written.
+  element('article-intro').innerHTML = article.intro;
   body.innerHTML = article.body;
   // The lists of checks come from the app's own list, so the docs cannot fall out of step with it.
   for (const list of Array.from(body.querySelectorAll<HTMLElement>('[data-checks]'))) {
@@ -298,7 +298,7 @@ function runSearch(): void {
     const text = document.createElement('span');
     text.className = 'rl-resulttext';
     // A line of the article around the first word found.
-    const whole = `${article.intro} ${plain(article.body)}`.replace(/\s+/g, ' ').trim();
+    const whole = `${plain(article.intro)} ${plain(article.body)}`.replace(/\s+/g, ' ').trim();
     const at = Math.max(0, whole.toLowerCase().indexOf(words[0]!));
     const from = Math.max(0, whole.lastIndexOf(' ', Math.max(0, at - 30)));
     text.textContent = `${from > 0 ? '…' : ''}${whole.slice(from, from + 90).trim()}${from + 90 < whole.length ? '…' : ''}`;
