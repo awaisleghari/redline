@@ -1623,8 +1623,8 @@ describe('text that did not change is not shown removed and typed again', () => 
   });
 
   it('a removed paragraph followed by an added one that differs in a word: one paragraph, one word marked', () => {
-    const refined = refineChanges(body(`<w:p>${run('Before')}</w:p><w:p>${markOf('del', 1)}${gone('The Supplier shall invoice the Customer monthly in arrear.', 2)}</w:p><w:p>${come('The Supplier shall invoice the Customer quarterly in arrear.', 3)}</w:p><w:p>${run('After')}</w:p>`))!;
-    expect(refined.match(/<w:p[ >]/g)).toHaveLength(3);
+    const refined = refineChanges(body(`<w:p>${run('Before')}</w:p><w:p>${markOf('del', 1)}${gone('The Supplier shall invoice the Customer monthly in arrear.', 2)}</w:p><w:p>${markOf('ins', 4)}${come('The Supplier shall invoice the Customer quarterly in arrear.', 3)}</w:p><w:p>${run('After')}</w:p>`))!;
+    expect(refined.match(/<w:p[ >\/]/g)).toHaveLength(3);
     expect((refined.match(/<w:delText[^>]*>[^<]*/g) ?? []).map(plainText)).toEqual(['monthly']);
     expect(plainText((refined.match(/<w:ins\b[^>\/]*>.*?<\/w:ins>/gs) ?? []).join(''))).toBe('quarterly');
   });
@@ -1642,6 +1642,30 @@ describe('text that did not change is not shown removed and typed again', () => 
     expect(refineChanges(withMove)).toBeUndefined();
     const differentSettings = body(`<w:p><w:pPr><w:jc w:val="center"/><w:rPr><w:del w:id="1" ${stamp}/></w:rPr></w:pPr>${gone('Same words here', 2)}</w:p><w:p>${come('Same words here', 3)}</w:p>`);
     expect(refineChanges(differentSettings)).toBeUndefined();
+  });
+
+  it('a link whose words change stays one link (review finding)', async () => {
+    const base = (await buildPair(pairById('one-word-change'))).original;
+    const link = (inner: string): string => `<w:hyperlink w:anchor="clause"><w:r><w:t xml:space="preserve">${inner}</w:t></w:r></w:hyperlink>`;
+    const para = (inner: string): string => `<w:p>${run('See ')}${inner}${run(' for details.')}</w:p>`;
+    const withPara = (inner: string): Promise<Uint8Array> => editPart(base, /^word\/document\.xml$/, (xml) => xml.replace(/<w:p>.*?<\/w:p>/s, (first) => first + inner));
+    const original = await withPara(para(link('clause 4 (Delivery)')));
+    const modified = await withPara(para(link('clause 5 (Delivery)')));
+    // As the engine writes a line it re-issues: the new paragraph added and the old one removed, marks and all.
+    const fresh = `<w:p>${markOf('ins', 1)}${come('See ', 5)}<w:hyperlink w:anchor="clause">${come('clause 5 (Delivery)', 6)}</w:hyperlink>${come(' for details.', 7)}</w:p>`;
+    const old = `<w:p>${markOf('del', 8)}${gone('See ', 2)}<w:hyperlink w:anchor="clause">${gone('clause 4 (Delivery)', 3)}</w:hyperlink>${gone(' for details.', 4)}</w:p>`;
+    const engineLike = await withPara(fresh + old);
+    expect(await failed(checkTrackedChanges({ original, modified, output: engineLike }))).toEqual([]);
+    const better = await editPart(engineLike, /^word\/document\.xml$/, (xml) => refineChanges(xml)!);
+    expect(await failed(checkTrackedChanges({ original, modified, output: better }))).toEqual([]);
+    const made = await makeStaticRedline(better, original, COVER);
+    expect((await checkStaticRedline({ original, modified, output: made.docx, ...COVER })).checks.filter((c) => !c.passed)).toEqual([]);
+    expect(decoder.decode((await unzip(better)).get('word/document.xml')!).match(/<w:hyperlink\b/g)).toHaveLength(1);
+  });
+
+  it('text written without "keep white space" is left to the engine (review finding)', () => {
+    const bare = body(`<w:p>${markOf('del', 1)}<w:del w:id="2" ${stamp}><w:r><w:delText>Email: </w:delText></w:r></w:del>${gone('one two three', 3)}</w:p><w:p>${markOf('ins', 4)}${come('Email: one two four', 5)}</w:p><w:p>${run('After')}</w:p>`);
+    expect(refineChanges(bare)).toBeUndefined();
   });
 
   it('a bookmark inside the stretch stays in the document', () => {
@@ -1714,35 +1738,57 @@ describe('a table that loses a row keeps its other rows unmarked', () => {
     expect(markedWords(xml)).toBeLessThanOrEqual(45);
   });
 
-  it('rows the engine paired by position are paired again by what they say (the engine\'s output built by hand)', async () => {
-    // (The engine pairs these simple tables correctly itself; the fault was met on real forms. So its faulty
-    // output is built here by hand: each old row paired with the new row in the same position, the last old row removed.)
-    const swaps: [string, string][] = [['fully understand', 'accept'], ['any relevant', 'a named'], ['nature and extent', 'scope'], ['improper', 'unlawful'], ['remains open', 'stays open'], ['actual potential or perceived', 'known']];
-    const changed = ROWS.slice(1).map((r, index) => [r[0]!, r[1]!.replace(swaps[index]![0], swaps[index]![1]), r[2]!]);
-    const stamp = 'w:author="Redline" w:date="2026-11-26T00:00:00Z"';
-    let id = 9800;
-    const gone = (text: string): string => `<w:del w:id="${id++}" ${stamp}><w:r><w:delText xml:space="preserve">${text}</w:delText></w:r></w:del>`;
-    const come = (text: string): string => `<w:ins w:id="${id++}" ${stamp}><w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:ins>`;
-    const tc = (inner: string): string => `<w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p>${inner}</w:p></w:tc>`;
-    const paired = changed.map((r, k) => `<w:tr>${r.map((text, c) => tc(text === ROWS[k]![c] ? `<w:r><w:t xml:space="preserve">${text}</w:t></w:r>` : gone(ROWS[k]![c]!) + come(text))).join('')}</w:tr>`).join('');
-    const last = `<w:tr><w:trPr><w:del w:id="${id++}" ${stamp}/></w:trPr>${ROWS[ROWS.length - 1]!.map((text) => tc(gone(text))).join('')}</w:tr>`;
-    const byPosition = `<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/><w:gridCol w:w="3000"/><w:gridCol w:w="3000"/></w:tblGrid>${paired}${last}</w:tbl>`;
-    const original = await withTable(ROWS);
-    const modified = await withTable(changed);
-    const base = (await buildPair(pairById('one-word-change'))).original;
-    const engineLike = await editPart(base, /^word\/document\.xml$/, (xml) => xml.replace(/<w:p>.*?<\/w:p>/s, (first) => first + byPosition));
-    expect(await failed(checkTrackedChanges({ original, modified, output: engineLike }))).toEqual([]);
-    const before = markedWords(decoder.decode((await unzip(engineLike)).get('word/document.xml')!));
-    expect(before).toBeGreaterThan(150);
-    const better = await editPart(engineLike, /^word\/document\.xml$/, (xml) => {
-      const realigned = realignRows(xml);
-      expect(realigned).toBeDefined();
-      return refineChanges(realigned!) ?? realigned!;
+  for (const direction of ['a row removed', 'a row added'] as const) {
+    it(`rows the engine paired by position are paired again by what they say: ${direction} (the engine's output built by hand)`, async () => {
+      // (The engine pairs these simple tables correctly itself; the fault was met on real forms. So its faulty
+      // output is built here by hand: each row paired with the row in the same position, the last one removed or added.)
+      const swaps: [string, string][] = [['fully understand', 'accept'], ['any relevant', 'a named'], ['nature and extent', 'scope'], ['improper', 'unlawful'], ['remains open', 'stays open'], ['actual potential or perceived', 'known']];
+      const shorter = ROWS.slice(1).map((r, index) => [r[0]!, r[1]!.replace(swaps[index]![0], swaps[index]![1]), r[2]!]);
+      const [olds, news] = direction === 'a row removed' ? [ROWS, shorter] : [shorter, ROWS];
+      const stamp = 'w:author="Redline" w:date="2026-11-26T00:00:00Z"';
+      let id = 9800;
+      const gone = (text: string): string => `<w:del w:id="${id++}" ${stamp}><w:r><w:delText xml:space="preserve">${text}</w:delText></w:r></w:del>`;
+      const come = (text: string): string => `<w:ins w:id="${id++}" ${stamp}><w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:ins>`;
+      const tc = (inner: string): string => `<w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p>${inner}</w:p></w:tc>`;
+      const shared = Math.min(olds.length, news.length);
+      const paired = Array.from({ length: shared }, (_, k) => `<w:tr>${news[k]!.map((text, c) => tc(text === olds[k]![c] ? `<w:r><w:t xml:space="preserve">${text}</w:t></w:r>` : gone(olds[k]![c]!) + come(text))).join('')}</w:tr>`).join('');
+      const extra = direction === 'a row removed' ? olds[olds.length - 1]! : news[news.length - 1]!;
+      const flag = direction === 'a row removed' ? 'del' : 'ins';
+      const last = `<w:tr><w:trPr><w:${flag} w:id="${id++}" ${stamp}/></w:trPr>${extra.map((text) => tc(flag === 'del' ? gone(text) : come(text))).join('')}</w:tr>`;
+      const byPosition = `<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/><w:gridCol w:w="3000"/><w:gridCol w:w="3000"/></w:tblGrid>${paired}${last}</w:tbl>`;
+      const original = await withTable(olds);
+      const modified = await withTable(news);
+      const base = (await buildPair(pairById('one-word-change'))).original;
+      const engineLike = await editPart(base, /^word\/document\.xml$/, (xml) => xml.replace(/<w:p>.*?<\/w:p>/s, (first) => first + byPosition));
+      expect(await failed(checkTrackedChanges({ original, modified, output: engineLike }))).toEqual([]);
+      expect(markedWords(decoder.decode((await unzip(engineLike)).get('word/document.xml')!))).toBeGreaterThan(150);
+      const better = await editPart(engineLike, /^word\/document\.xml$/, (xml) => {
+        const realigned = realignRows(xml);
+        expect(realigned).toBeDefined();
+        return refineChanges(realigned!) ?? realigned!;
+      });
+      expect(await failed(checkTrackedChanges({ original, modified, output: better }))).toEqual([]);
+      const made = await makeStaticRedline(better, original, COVER);
+      expect((await checkStaticRedline({ original, modified, output: made.docx, ...COVER })).checks.filter((c) => !c.passed)).toEqual([]);
+      expect(markedWords(decoder.decode((await unzip(better)).get('word/document.xml')!))).toBeLessThanOrEqual(45);
     });
-    expect(await failed(checkTrackedChanges({ original, modified, output: better }))).toEqual([]);
-    const made = await makeStaticRedline(better, original, COVER);
-    expect((await checkStaticRedline({ original, modified, output: made.docx, ...COVER })).checks.filter((c) => !c.passed)).toEqual([]);
-    expect(markedWords(decoder.decode((await unzip(better)).get('word/document.xml')!))).toBeLessThanOrEqual(45);
+  }
+
+  it('a change in the look of a paragraph mark is not lost when rows are paired again (review finding)', () => {
+    // Two rows; the engine-like output pairs them crosswise. The second old row's mark was bold; the new one's is not.
+    const stamp = 'w:author="Redline" w:date="2026-11-26T00:00:00Z"';
+    const WNS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+    const text = (t: string, mark = ''): string => `<w:tc><w:tcPr><w:tcW w:w="9000" w:type="dxa"/></w:tcPr><w:p>${mark}<w:r><w:t xml:space="preserve">${t}</w:t></w:r></w:p></w:tc>`;
+    const A = 'The supplier shall deliver the goods to the named place on the agreed date';
+    const B = 'The buyer shall pay the price within thirty days of a valid invoice being received';
+    const BOLD = '<w:pPr><w:rPr><w:b/></w:rPr></w:pPr>';
+    const crossed =
+      `<w:tr><w:tc><w:tcPr><w:tcW w:w="9000" w:type="dxa"/></w:tcPr><w:p><w:del w:id="1" ${stamp}><w:r><w:delText xml:space="preserve">${A}</w:delText></w:r></w:del><w:ins w:id="2" ${stamp}><w:r><w:t xml:space="preserve">${B}</w:t></w:r></w:ins></w:p></w:tc></w:tr>` +
+      `<w:tr><w:trPr><w:del w:id="3" ${stamp}/></w:trPr><w:tc><w:tcPr><w:tcW w:w="9000" w:type="dxa"/></w:tcPr><w:p>${BOLD}<w:del w:id="4" ${stamp}><w:r><w:delText xml:space="preserve">${B}</w:delText></w:r></w:del></w:p></w:tc></w:tr>`;
+    const realigned = realignRows(`<w:document ${WNS}><w:body><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid>${crossed}</w:tbl><w:sectPr/></w:body></w:document>`);
+    void text;
+    // Either the table is left as the engine wrote it, or the earlier look of the mark is on record.
+    if (realigned !== undefined) expect(realigned).toMatch(/<w:rPrChange\b[^>]*><w:rPr><w:b\/><\/w:rPr><\/w:rPrChange>/);
   });
 
   it('a table the engine paired well is left exactly as it is', async () => {

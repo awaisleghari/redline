@@ -54,8 +54,9 @@ interface Token {
   rPr?: El;
   /** For an item (tab, break...): the element. For a field: its runs, in order. */
   source?: El[];
-  /** The link element the token stands in, if any. */
+  /** The link element the token stands in, if any, and what identifies that link. */
   link?: El;
+  linkKey?: string;
   /** True for a word (letters or digits), false for spaces and punctuation. */
   word?: boolean;
 }
@@ -136,11 +137,15 @@ function tokensOf(paragraph: El): Token[] {
         continue;
       }
       if (name === 't' || name === 'delText') {
+        // Text written without "keep white space" loses the spaces at its ends when read; this step writes text
+        // with that setting, so such text (other programs write it) is left to the engine (review finding).
+        const value = c.textContent ?? '';
+        if (c.getAttribute('xml:space') !== 'preserve' && value !== value.trim()) throw new Unsupported();
         for (const piece of (c.textContent ?? '').match(WORDS) ?? []) {
-          out.push({ key: `t ${piece} ${look} ${linkKey}`, state, kind: 'text', text: piece, rPr, link, word: /[\p{L}\p{N}]/u.test(piece) });
+          out.push({ key: `t ${piece} ${look} ${linkKey}`, state, kind: 'text', text: piece, rPr, link, linkKey, word: /[\p{L}\p{N}]/u.test(piece) });
         }
       } else if (IN_RUN_ITEM.has(name)) {
-        out.push({ key: `i ${written(c)} ${look} ${linkKey}`, state, kind: 'item', rPr, source: [c], link });
+        out.push({ key: `i ${written(c)} ${look} ${linkKey}`, state, kind: 'item', rPr, source: [c], link, linkKey });
       } else throw new Unsupported();
     }
   };
@@ -351,17 +356,18 @@ function refineStretch(blocks: El[], endsContainer: boolean, nextId: () => strin
     const p = newParagraph(mark);
     // Tokens side by side with the same state, look and link go into one run.
     let holder: El = p;
-    let linkOf: El | undefined;
+    let linkOf: string | undefined;
     let wrapper: El | undefined;
     let wrapperState: State = 'both';
     let run: El | undefined;
     let runLook = '';
     let runText: El | undefined;
     for (const t of content) {
-      if (t.link !== linkOf) {
-        linkOf = t.link;
-        holder = linkOf ? (linkOf.cloneNode(false) as unknown as El) : p;
-        if (linkOf) p.appendChild(holder as unknown as Node);
+      // (One link stays one link: the removed and the added words of the same link share its element. Review finding.)
+      if ((t.linkKey ?? '') !== (linkOf ?? '')) {
+        linkOf = t.linkKey;
+        holder = t.link && t.linkKey ? (t.link.cloneNode(false) as unknown as El) : p;
+        if (holder !== p) p.appendChild(holder as unknown as Node);
         wrapper = undefined;
         run = undefined;
       }

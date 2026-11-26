@@ -121,16 +121,14 @@ function accepted(row: El, declarations: string): string {
 }
 /**
  * What a row is compared by: its XML without the attributes that only identify an editing session or a paragraph
- * (Word's own bookkeeping), and without the formatting of paragraph marks, which nothing on the page shows and
- * which a row cannot record a change of. (This is this step's own test of its work; the Checker judges the result.)
+ * (Word's own bookkeeping) and without elements that hold nothing.
  */
 const keyOf = (rowXml: string): string =>
   rowXml
     .replace(/ w:rsid\w*="[^"]*"| w14:(?:paraId|textId)="[^"]*"/g, '')
     .replace(/ xmlns:\w+="[^"]*"/g, '')
     .replace(/\s+\/>/g, '/>')
-    .replace(/<w:rPr\/>/g, '')
-    .replace(/<w:rPr>(?:(?!<\/w:rPr>).)*<\/w:rPr>(?=<\/w:pPr>)/g, '')
+    .replace(/<w:rPr\/>|<w:rPr><\/w:rPr>/g, '')
     .replace(/<w:pPr><\/w:pPr>|<w:pPr\/>|<w:trPr><\/w:trPr>|<w:trPr\/>/g, '');
 
 /** Pairs of places, in order, at which the two lists hold the same thing. */
@@ -277,6 +275,27 @@ function rePaired(oldXml: string, newXml: string, declarations: string, into: Do
       for (const c of settingsOf(lastOld)) earlier.appendChild(c.cloneNode(true));
       record.appendChild(earlier as unknown as Node);
       pPr.appendChild(record as unknown as Node);
+    }
+    // The look of the paragraph mark that stays (it sets the look of a clause number and the height of an empty
+    // line): where the old last paragraph's differed, that is recorded on it too (review finding).
+    const markLook = (p: El): El[] => kids(child(child(p, 'pPr'), 'rPr') ?? (into.createElementNS(W, 'w:rPr') as unknown as El));
+    if (written(markLook(lastOld)) !== written(markLook(lastNew))) {
+      let pPr = child(lastNew, 'pPr');
+      if (!pPr) {
+        pPr = into.createElementNS(W, 'w:pPr') as unknown as El;
+        lastNew.insertBefore(pPr as unknown as Node, lastNew.firstChild);
+      }
+      let mark = child(pPr, 'rPr');
+      if (!mark) {
+        mark = into.createElementNS(W, 'w:rPr') as unknown as El;
+        const after = kids(pPr).find((c) => isW(c, 'sectPr') || isW(c, 'pPrChange')) ?? null;
+        pPr.insertBefore(mark as unknown as Node, after as unknown as Node | null);
+      }
+      const record = make('rPrChange');
+      const earlier = into.createElementNS(W, 'w:rPr') as unknown as El;
+      for (const c of markLook(lastOld)) earlier.appendChild(c.cloneNode(true));
+      record.appendChild(earlier as unknown as Node);
+      mark.appendChild(record as unknown as Node);
     }
     (olds as El[]).forEach((p, index) => markParagraph(p, 'del', index < olds.length - 1, into, make));
     (news as El[]).forEach((p, index) => markParagraph(p, 'ins', index < news.length - 1, into, make));
