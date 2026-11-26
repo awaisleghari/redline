@@ -13,6 +13,8 @@ intro: One or two sentences under the heading (may hold <code> or <b>).
 order: 2                    (position in the menu; previous/next follow it)
 icon: bolt                  (menu icon: lines, bolt, eye, download, compass, shield, lock, page, keyboard)
 badge: soon                 (optional small tag in the menu)
+hidden: yes                 (optional: not published yet. No menu entry, no address, not in search;
+                             links to it from other articles show as plain words)
 -->
 ```
 
