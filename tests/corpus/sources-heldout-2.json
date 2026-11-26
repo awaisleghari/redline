@@ -1,0 +1,632 @@
+[
+ {
+  "file": "cwmf.gov.ie__AR1_Arbitration_Rules__v1.3_14-10-2024.docx",
+  "source": "https://cwmf.gov.ie/en/documents/1346/AR1_Arbitration_Rules__v1.3_14-10-2024.docx",
+  "sha256": "6e1555a0b4792bbf01205fc19ccfc79b092835dbdfbe20266551e304fe20aaeb",
+  "pages": 23,
+  "words": 7769
+ },
+ {
+  "file": "cwmf.gov.ie__COE1_Technical_v2f_18-03-2011.docx",
+  "source": "https://cwmf.gov.ie/en/documents/84/COE1_Technical_v2f_18-03-2011.docx",
+  "sha256": "ee0304241e649d196607c46029aafcd836c5798e7d182a94fe435e1f165d8a92",
+  "pages": 18,
+  "words": 3769
+ },
+ {
+  "file": "cwmf.gov.ie__COE1_Technical_v2g_30-06-2016.docx",
+  "source": "https://cwmf.gov.ie/en/documents/85/COE1_Technical_v2g_30-06-2016.docx",
+  "sha256": "bb6f24e6980066a7273ce4ff0cf9e6b5e4fd96d3fcb83efdc29cd90936f05475",
+  "pages": 18,
+  "words": 3867
+ },
+ {
+  "file": "cwmf.gov.ie__COE1_Technical_v2h_05-06-2019.docx",
+  "source": "https://cwmf.gov.ie/en/documents/86/COE1_Technical_v2h_05-06-2019.docx",
+  "sha256": "ec394a6a08cf7742f5694478128a6e7f24c7349cefd54c210d35e2b03e2ecc21",
+  "pages": 18,
+  "words": 4275
+ },
+ {
+  "file": "cwmf.gov.ie__COE2_Archaeology_v1.4_31-03-2023.docx",
+  "source": "https://cwmf.gov.ie/en/documents/92/COE2_Archaeology_v1.4_31-03-2023.docx",
+  "sha256": "bb9c5ea7df9bafff35bc55398a296a9093ceeab939bc654b29a6c983ae609a05",
+  "pages": 16,
+  "words": 5693
+ },
+ {
+  "file": "cwmf.gov.ie__FTS-1_v2.8_06-11-2025.docx",
+  "source": "https://cwmf.gov.ie/en/documents/1694/FTS-1_v2.8_06-11-2025.docx",
+  "sha256": "f620dc0efa2855479c2c09b76a1b077a58a24e69e09b3c374bef35326e8ccc1d",
+  "pages": 28,
+  "words": 6474
+ },
+ {
+  "file": "cwmf.gov.ie__FTS-2_v2.7_06-11-2025.docx",
+  "source": "https://cwmf.gov.ie/en/documents/1695/FTS-2_v2.7_06-11-2025.docx",
+  "sha256": "c9bd47f995c35843f1912d01486a70fb135c0e81c7269d11b6f63ac4aa1a3c32",
+  "pages": 28,
+  "words": 6079
+ },
+ {
+  "file": "cwmf.gov.ie__FTS-3_v2.8_06-11-2025.docx",
+  "source": "https://cwmf.gov.ie/en/documents/1690/FTS-3_v2.8_06-11-2025.docx",
+  "sha256": "05115836e77ac6aea68c930339eeaf386ea499cbc6a4ecacd63b01b2b8568b99",
+  "pages": 28,
+  "words": 6593
+ },
+ {
+  "file": "cwmf.gov.ie__FTS-4_v2.7_06-11-2025.docx",
+  "source": "https://cwmf.gov.ie/en/documents/1691/FTS-4_v2.7_06-11-2025.docx",
+  "sha256": "4fba229f5abd0291c62d6d1bb6bc82fe6d756ade9a9ead44eeb79d866919b927",
+  "pages": 29,
+  "words": 6102
+ },
+ {
+  "file": "cwmf.gov.ie__FTS-5_v2.8_06-11-2025.docx",
+  "source": "https://cwmf.gov.ie/en/documents/1692/FTS-5_v2.8_06-11-2025.docx",
+  "sha256": "15cd840c425e6240d17ee07996a4224ee0481f2db47b3d2023422bf6b1bb4e52",
+  "pages": 29,
+  "words": 5825
+ },
+ {
+  "file": "cwmf.gov.ie__FTS1_v2.9_25-11-2025.docx",
+  "source": "https://cwmf.gov.ie/en/documents/1708/FTS1_v2.9_25-11-2025.docx",
+  "sha256": "cfcf9db2097e3cabc41fd9652588bf5085564c4bf6887c664b9d08e30e5e0b40",
+  "pages": 28,
+  "words": 6486
+ },
+ {
+  "file": "cwmf.gov.ie__FTS2_v2.8-25-11-2025.docx",
+  "source": "https://cwmf.gov.ie/en/documents/1737/FTS2_v2.8-25-11-2025.docx",
+  "sha256": "017eac15a8380dc7ad1d088982e727ac0e3eded9afc5202854b4f0445cb7b625",
+  "pages": 28,
+  "words": 6084
+ },
+ {
+  "file": "cwmf.gov.ie__FTS3_v2.9-25-11-2025.docx",
+  "source": "https://cwmf.gov.ie/en/documents/1738/FTS3_v2.9-25-11-2025.docx",
+  "sha256": "8a0997a2802f9981ce89ac23d4c1ec5b7e7ea2e4a8ea4c58fdfc388f1880a732",
+  "pages": 27,
+  "words": 6602
+ },
+ {
+  "file": "cwmf.gov.ie__FTS4_v2.8-25-11-2025.docx",
+  "source": "https://cwmf.gov.ie/en/documents/1739/FTS4_v2.8-25-11-2025.docx",
+  "sha256": "9acf5d6c62e3dc24757b35a770e11a24e909cbd840741a9fdded9a56bb6d6751",
+  "pages": 28,
+  "words": 6111
+ },
+ {
+  "file": "cwmf.gov.ie__FTS5_v2.9-25-11-2025.docx",
+  "source": "https://cwmf.gov.ie/en/documents/1734/FTS5_v2.9-25-11-2025.docx",
+  "sha256": "d5396c4fcbc7c917bd6d8edeaa0eae8efaa9efa4c6984150d1b46fc81403b787",
+  "pages": 29,
+  "words": 5833
+ },
+ {
+  "file": "cwmf.gov.ie__IF_PW-CF1-CF5_Co-op_Framework_Letter_Agreement_05-07-2022.docx",
+  "source": "https://cwmf.gov.ie/en/documents/58/IF_PW-CF1-CF5_Co-op_Framework_Letter_Agreement_05-07-2022.docx",
+  "sha256": "a709f4cedc9a2830d8c63fb884a710541e9c4085951f4e619c710cf913abbfe9",
+  "pages": 24,
+  "words": 6254
+ },
+ {
+  "file": "cwmf.gov.ie__IF_PW-CF1-CF5_Inflation_Co-op_Framework_Letter_Agreement_v-1.1.docx",
+  "source": "https://cwmf.gov.ie/en/documents/60/IF_PW-CF1-CF5_Inflation_Co-op_Framework_Letter_Agreement_v-1.1.docx",
+  "sha256": "32c88e37b57b1d54e9fc4d0add0eca947684bb0fa51d6b3925c9e133235911af",
+  "pages": 24,
+  "words": 6253
+ },
+ {
+  "file": "cwmf.gov.ie__IF_PW-CF6_Inflation_Co-op_Framework_Letter_Agreement_v1.0.docx",
+  "source": "https://cwmf.gov.ie/en/documents/61/IF_PW-CF6_Inflation_Co-op_Framework_Letter_Agreement_v1.0.docx",
+  "sha256": "cc616d7207fe5eaddb5d1014db9b0a356cf0db744ba2edeebbdecc96a67eb327",
+  "pages": 23,
+  "words": 5864
+ },
+ {
+  "file": "cwmf.gov.ie__ITTS1a_Restricted_Procedure_v1.6_09-02-2022.docx",
+  "source": "https://cwmf.gov.ie/en/documents/121/ITTS1a_Restricted_Procedure_v1.6_09-02-2022.docx",
+  "sha256": "9e71048eada9a3e07d18b630afcfa2cb338a00ee167361a44e473f5cae303d02",
+  "pages": 38,
+  "words": 11260
+ },
+ {
+  "file": "cwmf.gov.ie__ITTS1b_Restricted_Tender_v1.6_09-02-2022.docx",
+  "source": "https://cwmf.gov.ie/en/documents/127/ITTS1b_Restricted_Tender_v1.6_09-02-2022.docx",
+  "sha256": "4b6df8172512684a6ff4719cd3fb0ec54170150d18d2f1073945b3b1f090b6c2",
+  "pages": 39,
+  "words": 11432
+ },
+ {
+  "file": "cwmf.gov.ie__ITTS2a_Open_Formula_v1.6_09-02-2022.docx",
+  "source": "https://cwmf.gov.ie/en/documents/136/ITTS2a_Open_Formula_v1.6_09-02-2022.docx",
+  "sha256": "1a8d8d32398ae30b4073257ee8922a133d2b321b75b831c4298cb8b777026ddd",
+  "pages": 42,
+  "words": 11522
+ },
+ {
+  "file": "cwmf.gov.ie__ITTS2b_Open_Tender_v1.6_09-02-2022.docx",
+  "source": "https://cwmf.gov.ie/en/documents/141/ITTS2b_Open_Tender_v1.6_09-02-2022.docx",
+  "sha256": "ddaf99b5fd2740917a889a18290b29af8b5720d78dd28ab8f9dedac2a10b4661",
+  "pages": 41,
+  "words": 11657
+ },
+ {
+  "file": "cwmf.gov.ie__ITTW1_Restricted_Procedure_v3.0_18-11-2024_2.docx",
+  "source": "https://cwmf.gov.ie/en/documents/549/ITTW1_Restricted_Procedure_v3.0_18-11-2024.docx",
+  "sha256": "82b232c2986e0f21f70afa4a157d11d97bb882a6ba9706b1f4bf92347dcd1631",
+  "pages": 41,
+  "words": 11366
+ },
+ {
+  "file": "cwmf.gov.ie__ITTW1a_Restricted_Procedure_v2.0_18-11-2024_2.docx",
+  "source": "https://cwmf.gov.ie/en/documents/555/ITTW1a_Restricted_Procedure_v2.0_18-11-2024.docx",
+  "sha256": "18de7f07bdc60b67b0ee4d87ffe282bfcb6f2741ed6452fd68957c88f9ceaae1",
+  "pages": 55,
+  "words": 14342
+ },
+ {
+  "file": "cwmf.gov.ie__ITTW2_Open_Procedure_v3.0_18-11-2024_2.docx",
+  "source": "https://cwmf.gov.ie/en/documents/574/ITTW2_Open_Procedure_v3.0_18-11-2024.docx",
+  "sha256": "bc4fb71a4f743fe13d898171fff0690a3f65618ac8ca2a98c6e8b82dbee21e64",
+  "pages": 38,
+  "words": 10131
+ },
+ {
+  "file": "cwmf.gov.ie__ITTW3_Investigation_Works_v1.3_01-08-2023.docx",
+  "source": "https://cwmf.gov.ie/en/documents/579/ITTW3_Investigation_Works_v1.3_01-08-2023.docx",
+  "sha256": "d1dbc7258cf7c7584baa028ee262ae1d999c6afc3600973238dc9182089aa16c",
+  "pages": 27,
+  "words": 7431
+ },
+ {
+  "file": "cwmf.gov.ie__ITTW4_Short_Form_Contract_v1.5_01-08-2023.docx",
+  "source": "https://cwmf.gov.ie/en/documents/586/ITTW4_Short_Form_Contract_v1.5_01-08-2023.docx",
+  "sha256": "eaebe6aa8177277ea2746e9e7228a1858db2ee849968a9600f7f9378d0187293",
+  "pages": 29,
+  "words": 7855
+ },
+ {
+  "file": "cwmf.gov.ie__ITTW5_Short_Form_Contract_v1.4-11-08-2023.docx",
+  "source": "https://cwmf.gov.ie/en/documents/590/ITTW5_Short_Form_Contract_v1.4-11-08-2023.docx",
+  "sha256": "3d9e0e6f1c73f9ae905ecbb839cf2840ff736c66abb2c596ed0ad4a623741a4e",
+  "pages": 30,
+  "words": 7353
+ },
+ {
+  "file": "cwmf.gov.ie__ITTW6_TMR_Works_v1.2_31-05-2016.docx",
+  "source": "https://cwmf.gov.ie/en/documents/593/ITTW6_TMR_Works_v1.2_31-05-2016.docx",
+  "sha256": "824e2396f5961f7e4bf0c4cbf086c94868951e652206505b9bb146792b02d794",
+  "pages": 20,
+  "words": 5153
+ },
+ {
+  "file": "cwmf.gov.ie__ITTW7_TMR_Works_v1.1_31-05-2016.docx",
+  "source": "https://cwmf.gov.ie/en/documents/595/ITTW7_TMR_Works_v1.1_31-05-2016.docx",
+  "sha256": "2e4ca3275ded4b575a9d601f09df4e7b3e5e7148115ae8b9ca00357c861694f1",
+  "pages": 21,
+  "words": 4956
+ },
+ {
+  "file": "cwmf.gov.ie__ITTW8_Reserved_Specialist_v1.3_19-07-2023.docx",
+  "source": "https://cwmf.gov.ie/en/documents/599/ITTW8_Reserved_Specialist_v1.3_19-07-2023.docx",
+  "sha256": "d4130471ea9e00d642f9162471e7ac6b594ecbe84ae4cade8dbad49fdaa68ca1",
+  "pages": 25,
+  "words": 7850
+ },
+ {
+  "file": "cwmf.gov.ie__QC1_Part_1_v3.1_04-11-2024.docx",
+  "source": "https://cwmf.gov.ie/en/documents/1521/QC1_Part_1_v3.1_04-11-2024.docx",
+  "sha256": "de9157b82d1d1f4b5e9049603983840cd36df2f60d2941ca708d7315e94b21e2",
+  "pages": 40,
+  "words": 15214
+ },
+ {
+  "file": "cwmf.gov.ie__QC1_SAQ_Restricted_Procedure_Part_1_v3.0_09-02-2022.docx",
+  "source": "https://cwmf.gov.ie/en/documents/168/QC1_SAQ_Restricted_Procedure_Part_1_v3.0_09-02-2022.docx",
+  "sha256": "41cb9b5176fff19a78cb8ae529914c6c5ca123c3729e9c754758b45af29320d0",
+  "pages": 35,
+  "words": 13870
+ },
+ {
+  "file": "cwmf.gov.ie__QC1_SAQ_Restricted_Procedure_v2.0_16-07-2013.docx",
+  "source": "https://cwmf.gov.ie/en/documents/171/QC1_SAQ_Restricted_Procedure_v2.0_16-07-2013.docx",
+  "sha256": "73cd022d2c7af96b6c9dd76ad3d02bfa8344a9b8360c0523ae6cf8e06613fcc2",
+  "pages": 29,
+  "words": 9668
+ },
+ {
+  "file": "cwmf.gov.ie__QC2_Part_1_v3.1_04-11-2024.docx",
+  "source": "https://cwmf.gov.ie/en/documents/1522/QC2_Part_1_v3.1_04-11-2024.docx",
+  "sha256": "5c5f9a20c17eeb775a9c6f60f356b9e0ad6273f37006245a715549cb479134be",
+  "pages": 32,
+  "words": 11254
+ },
+ {
+  "file": "cwmf.gov.ie__QC2_SAQ_Open_Procedure_Part_1_v3.0_09-02-2022.docx",
+  "source": "https://cwmf.gov.ie/en/documents/184/QC2_SAQ_Open_Procedure_Part_1_v3.0_09-02-2022.docx",
+  "sha256": "323203b55918afae0d1998fa6b0c62167c0d973694bae0db46b6a8eeecd1eba3",
+  "pages": 26,
+  "words": 9893
+ },
+ {
+  "file": "cwmf.gov.ie__QC2_SAQ_Open_Procedure_v2.0_16-07-2013.docx",
+  "source": "https://cwmf.gov.ie/en/documents/186/QC2_SAQ_Open_Procedure_v2.0_16-07-2013.docx",
+  "sha256": "521bd880ac61bb5875ab5381afbbb32c0f2556ab11ba2874c45fcf22b70c0478",
+  "pages": 26,
+  "words": 9228
+ },
+ {
+  "file": "cwmf.gov.ie__QW1_Part-1_v2.2_09-01-2025.docx",
+  "source": "https://cwmf.gov.ie/en/documents/1524/QW1_Part-1_v2.2_09-01-2025.docx",
+  "sha256": "932db6b715e6bdc5792c49bfc9d4857155e0e725ef35267f526b6e6ab6971ce8",
+  "pages": 48,
+  "words": 16653
+ },
+ {
+  "file": "cwmf.gov.ie__QW1_SAQ_Restricted_Procedure_v2.2_18-11-2024.docx",
+  "source": "https://cwmf.gov.ie/en/documents/313/QW1_SAQ_Restricted_Procedure_v2.2_18-11-2024.docx",
+  "sha256": "f5528d2051dec189cb55d960baae73ddb0bd79b14b1dec4fd2430cecc56c1839",
+  "pages": 48,
+  "words": 16614
+ },
+ {
+  "file": "cwmf.gov.ie__QW2_Part-1_v2.1_09-01-2025.docx",
+  "source": "https://cwmf.gov.ie/en/documents/1525/QW2_Part-1_v2.1_09-01-2025.docx",
+  "sha256": "79a3f86503e833fb15fff74e914ee6eb556c599c42e40ce6f462d6e4a2dcc92c",
+  "pages": 36,
+  "words": 11892
+ },
+ {
+  "file": "cwmf.gov.ie__QW2_SAQ_Open_Procedure_Part_1_v2.1_18-11-2024.docx",
+  "source": "https://cwmf.gov.ie/en/documents/369/QW2_SAQ_Open_Procedure_Part_1_v2.1_18-11-2024.docx",
+  "sha256": "8e248ce0fd606e8680401fb96a258e6b6162d4af02d3ed947aed643ea26bdc85",
+  "pages": 36,
+  "words": 11850
+ },
+ {
+  "file": "cwmf.gov.ie__QW2_SAQ_Open_Procedure_v1.4_27-01-2014.docx",
+  "source": "https://cwmf.gov.ie/en/documents/374/QW2_SAQ_Open_Procedure_v1.4_27-01-2014.docx",
+  "sha256": "050f5ae041bfa67905baa3bba9bd96f76d0fa4aa94902b4775f3a0b8eb2ab285",
+  "pages": 23,
+  "words": 7898
+ },
+ {
+  "file": "cwmf.gov.ie__QW3_SAQ_Specialist_v2.0_17-08-2023.docx",
+  "source": "https://cwmf.gov.ie/en/documents/430/QW3_SAQ_Specialist_v2.0_17-08-2023.docx",
+  "sha256": "3165c48bcb1d72e93b72b18fc63f93d98a21409793f5acc586b2b6eb0ea58d99",
+  "pages": 18,
+  "words": 4889
+ },
+ {
+  "file": "cwmf.gov.ie__QW3a_v2.1_18-11-2024.docx",
+  "source": "https://cwmf.gov.ie/en/documents/1526/QW3a_v2.1_18-11-2024.docx",
+  "sha256": "051f63d7221ddc5452e78dbe0f0ff9c9e9ed9c618840001197f90118e7401c13",
+  "pages": 20,
+  "words": 4882
+ },
+ {
+  "file": "cwmf.gov.ie__QW3b_v1.0_18-11-2024.docx",
+  "source": "https://cwmf.gov.ie/en/documents/1528/QW3b_v1.0_18-11-2024.docx",
+  "sha256": "dc4d641ab5e272e5ec4a0c89f3f9fe73281938d2e5dc9bf33be041d31aa146ad",
+  "pages": 34,
+  "words": 11990
+ },
+ {
+  "file": "cwmf.gov.ie__QW4_SAQ_Reserved_Specialist_v1.0_03-05-2016.docx",
+  "source": "https://cwmf.gov.ie/en/documents/440/QW4_SAQ_Reserved_Specialist_v1.0_03-05-2016.docx",
+  "sha256": "44d918c78e39c55cc824cd0423ac2358775cf54ebfe7a162884a388e70484fae",
+  "pages": 25,
+  "words": 8382
+ },
+ {
+  "file": "www.gov.scot__2b_SG_Model_Services_Contract_October_2026_without_guidance_notes.docx",
+  "source": "https://www.gov.scot/binaries/content/documents/govscot/publications/factsheet/2019/03/terms-and-conditions-for-scottish-government-contracts/documents/2b-sg-model-services-contract-october-2026-without-guidance-notes/2b-sg-model-services-contract-october-2026-without-guidance-notes/govscot%3Adocument/2b%2BSG%2BModel%2BServices%2BContract%2BOctober%2B2026%2Bwithout%2Bguidance%2Bnotes.docx",
+  "sha256": "853d03b7785cea7e5a44db71fc3f472dda24412ed9ffe3332aaa9c875f2edb6c",
+  "pages": 88,
+  "words": 24789
+ },
+ {
+  "file": "www.gov.scot__2c_SG_ICT_services_model_contract-October_2026_-_without_guidance_Notes.docx",
+  "source": "https://www.gov.scot/binaries/content/documents/govscot/publications/factsheet/2019/03/terms-and-conditions-for-scottish-government-contracts/documents/2c-sg-ict-services-model-contract-october-2026-without-guidance-notes-updated/2c-sg-ict-services-model-contract-october-2026-without-guidance-notes-updated/govscot%3Adocument/2c%2BSG%2BICT%2Bservices%2Bmodel%2Bcontract-October%2B2026%2B-%2Bwithout%2Bguidance%2BNotes.docx",
+  "sha256": "4d772782fad38abaf51746a2c2e9206e645b73dcd66fab3bf70872080db1a95d",
+  "pages": 147,
+  "words": 58393
+ },
+ {
+  "file": "www.gov.scot__2e_-_SG_Model_ICT_services_contract_-_concession_contracts_-_October_2026_-_without_guidan.docx",
+  "source": "https://www.gov.scot/binaries/content/documents/govscot/publications/factsheet/2019/03/terms-and-conditions-for-scottish-government-contracts/documents/2e-sg-model-ict-services-contract-concession-contract--october-2026-without-guidance-notes-updated/2e-sg-model-ict-services-contract-concession-contract--october-2026-without-guidance-notes-updated/govscot%3Adocument/2e%2B-%2BSG%2BModel%2BICT%2Bservices%2Bcontract%2B-%2Bconcession%2Bcontracts%2B-%2BOctober%2B2026%2B-%2Bwithout%2Bguidance%2Bnotes.docx",
+  "sha256": "9ecafb4dd65771f1317b8d24eae402b0ec27db3ea4543707c693cad9f943b238",
+  "pages": 134,
+  "words": 53351
+ },
+ {
+  "file": "www.isdb.org__04-IsDB_Standard_RFP_for_Selection_of_Consultants.docx",
+  "source": "https://www.isdb.org/project-procurement/sites/pproc/files/documents/04-IsDB%20Standard%20RFP%20for%20Selection%20of%20Consultants.docx",
+  "sha256": "9340704e0f755aa9be3ecb81d6160a72f418ebb7bc584807f29bc945543c7d45",
+  "pages": 143,
+  "words": 39406
+ },
+ {
+  "file": "www.isdb.org__6-IsDB_Standard_PQ_Documents.docx",
+  "source": "https://www.isdb.org/project-procurement/sites/pproc/files/documents/6-IsDB%20Standard%20PQ%20Documents.docx",
+  "sha256": "329af83a7cd90b38e6fcd33c6ff473709c2b532426c7d0cb9a7c9a7599278efb",
+  "pages": 59,
+  "words": 11607
+ },
+ {
+  "file": "www.isdb.org__English_-_WFP_IsDB_OutputsAgreement_draft_10_July_LGL_comments_js_1__0.docx",
+  "source": "https://www.isdb.org/project-procurement/sites/pproc/files/media/documents/English%20-%20WFP_IsDB_OutputsAgreement_draft_10%20July_LGL%20comments_js%20%281%29_0.docx",
+  "sha256": "a26d9fbf5271ae15d2efe96b8cf89b328b0835f1129c6092b908deafa510271f",
+  "pages": 30,
+  "words": 9320
+ },
+ {
+  "file": "www.isdb.org__IsDB_-_Sample_RFP_-_Selection_of_Consultants_for_Financial_Auditing_Services_-_Updated_Feb.docx",
+  "source": "https://www.isdb.org/project-procurement/sites/pproc/files/media/documents/IsDB%20-%20Sample%20RFP%20-%20Selection%20of%20Consultants%20for%20Financial%20Auditing%20Services%20-%20Updated%20February%202023_0.docx",
+  "sha256": "c599ca8c2f5087fac5f58496d34f1a380430a011d9a023582e1d77d5ef1a6c64",
+  "pages": 65,
+  "words": 13119
+ },
+ {
+  "file": "www.isdb.org__IsDB_-_Standard_RFP_Selection_of_Consultants_updated_February_2023.docx",
+  "source": "https://www.isdb.org/project-procurement/sites/pproc/files/media/documents/IsDB%20-%20Standard%20RFP%20%20Selection%20of%20Consultants%20updated%20February%202023.docx",
+  "sha256": "43a8b6e938939c0995f80dae7bcfa5188198502e5f4300abf1b38f21f0939608",
+  "pages": 178,
+  "words": 48484
+ },
+ {
+  "file": "www.isdb.org__IsDB_-_User_039_s_Guide_For_PQD_for_Proc_of_Works_-_January_2019.docx",
+  "source": "https://www.isdb.org/project-procurement/sites/pproc/files/documents/IsDB%20-%20User%26%23039%3Bs%20Guide%20For%20PQD%20for%20Proc%20of%20Works%20-%20January%202019.docx",
+  "sha256": "71e45444d6a6f384eb2e495929b72666a9242165e2bbd9d4370e7ff987fc6097",
+  "pages": 45,
+  "words": 12110
+ },
+ {
+  "file": "www.isdb.org__IsDB_-_User_Guide_for_SBD_Major_Works_updated_october_2020_rev.docx",
+  "source": "https://www.isdb.org/project-procurement/sites/pproc/files/media/documents/IsDB%20-%20User%20Guide%20for%20SBD%20%20Major%20Works%20updated%20october%202020%20rev.docx",
+  "sha256": "531a47b0259875b6faea865e8eaac895357ecaadc0dcc20eb9996ba8059e6ccc",
+  "pages": 221,
+  "words": 52004
+ },
+ {
+  "file": "www.isdb.org__IsDB_Draft_SBD_for_Goods_-_2015.docx",
+  "source": "https://www.isdb.org/project-procurement/sites/pproc/files/documents/IsDB%20Draft%20SBD%20for%20Goods%20-%202015.docx",
+  "sha256": "71a2e9a957e269f6a404f8112b29cb6bcfc1eea23a6fd8cd52f3ea862216ec3c",
+  "pages": 120,
+  "words": 31787
+ },
+ {
+  "file": "www.isdb.org__IsDB_Standard_Bidding_Document_-_Procurement_of_Plant_Design_Supply_and_Installation_Two-S.docx",
+  "source": "https://www.isdb.org/project-procurement/sites/pproc/files/media/documents/IsDB%20Standard%20Bidding%20Document%20-%20Procurement%20of%20Plant%20Design%2C%20Supply%2C%20and%20Installation%20%28Two-Stage%20Bidding%29%20-%20Updated%20Feb%202023.docx",
+  "sha256": "8de09db6ee4fd8c8d49bf0cd6a3de44e6da7c31f458fe595bc9953e9c201893f",
+  "pages": 295,
+  "words": 73423
+ },
+ {
+  "file": "www.isdb.org__IsDB_Standard_Bidding_Document_for_Non_Consulting_Services_-_Updated_February_2023.docx",
+  "source": "https://www.isdb.org/project-procurement/sites/pproc/files/media/documents/IsDB%20Standard%20Bidding%20Document%20for%20Non%20Consulting%20Services%20-%20Updated%20February%202023.docx",
+  "sha256": "a37f60f8e6c13ad0aaee71216ccb1e70f6630ff5187979cd3cfd18e2fd414b73",
+  "pages": 147,
+  "words": 36393
+ },
+ {
+  "file": "www.isdb.org__IsDB_Standard_Bidding_Document_for_Procurement_of_Goods_and_Related_Services_-_updated_Feb.docx",
+  "source": "https://www.isdb.org/project-procurement/sites/pproc/files/media/documents/IsDB%20Standard%20Bidding%20Document%20for%20Procurement%20of%20Goods%20and%20Related%20Services%20-%20updated%20February%202023_0.docx",
+  "sha256": "7619cf194d8eecf345edfeb0905e88a99e4c338a9c38a23cc4c1de6c4070898b",
+  "pages": 140,
+  "words": 36340
+ },
+ {
+  "file": "www.isdb.org__IsDB_Standard_Bidding_Document_for_Procurement_of_Major_Works_-_updated_February_2023.docx",
+  "source": "https://www.isdb.org/project-procurement/sites/pproc/files/media/documents/IsDB%20Standard%20Bidding%20Document%20for%20Procurement%20of%20Major%20Works%20-%20updated%20February%202023.docx",
+  "sha256": "f649d7ff6de144092022c2a276376ab8de4972f1d2aae3bf06437a0c184ada5a",
+  "pages": 227,
+  "words": 50877
+ },
+ {
+  "file": "www.isdb.org__IsDB_Standard_Bidding_Document_for_Procurement_of_Plant_Design_Supply_and_Installation_One.docx",
+  "source": "https://www.isdb.org/project-procurement/sites/pproc/files/media/documents/IsDB%20%20Standard%20Bidding%20Document%20for%20Procurement%20of%20Plant%20Design%2C%20Supply%2C%20and%20Installation%20%20%28One%20Stage%20Bidding%29%20-%20Updated%20February%202023.docx",
+  "sha256": "20ea62fe4f4b2951b8b8e6de14d95d5cb16382d6a956c925d196a148e67ba47d",
+  "pages": 288,
+  "words": 70653
+ },
+ {
+  "file": "www.isdb.org__IsDB_Standard_Bidding_Document_for_Procurement_of_Small_Works_-_updated_February_2023.docx",
+  "source": "https://www.isdb.org/project-procurement/sites/pproc/files/media/documents/IsDB%20Standard%20Bidding%20Document%20for%20Procurement%20of%20Small%20Works%20-%20updated%20February%202023.docx",
+  "sha256": "e69c64afdb22f9528b38f941048e17dec7f74359fe44f0ed41261fbdea7b414b",
+  "pages": 189,
+  "words": 43264
+ },
+ {
+  "file": "www.isdb.org__IsDB_UNICEF_AGREEMENT_updatedMOU_between_UNICEF_and_MC_to_procure_medical_items_for_Covid_.docx",
+  "source": "https://www.isdb.org/project-procurement/sites/pproc/files/media/documents/IsDB%20UNICEF%20AGREEMENT%20updatedMOU%20between%20UNICEF%20and%20MC%20to%20procure%20medical%20items%20for%20Covid%2019%20-English.docx",
+  "sha256": "6f19355d7a5d0e1775b64b6d7e1e8878f30f8f9ce490051b97ac2f35542fba2a",
+  "pages": 27,
+  "words": 8302
+ },
+ {
+  "file": "www.isdb.org__LETTER_OF_INVITATION_-_SELECTION_OF_INDIVIDUAL_CONSULTANT_0.docx",
+  "source": "https://www.isdb.org/project-procurement/sites/pproc/files/media/documents/LETTER%20OF%20INVITATION%20-%20SELECTION%20OF%20INDIVIDUAL%20CONSULTANT_0.docx",
+  "sha256": "526f000e50a2657234aed149d9a9bd366720590f2ab3bc4d403c617cc3016735",
+  "pages": 31,
+  "words": 7321
+ },
+ {
+  "file": "www.isdb.org__LOI_for_Direct_Contracting_in_procurement_of_Goods-V2-19052021.docx",
+  "source": "https://www.isdb.org/project-procurement/sites/pproc/files/media/documents/LOI%20for%20Direct%20Contracting%20in%20procurement%20of%20Goods-V2-19052021.docx",
+  "sha256": "913b0ca69ed8f05e9cd69ee807c1faeece1f62afa759307c6338846dbe77497f",
+  "pages": 58,
+  "words": 14961
+ },
+ {
+  "file": "www.isdb.org__RFP-Works_-_Design_and_Build_-_Single-Stage_Request_for_Proposals_after_Prequalification_-.docx",
+  "source": "https://www.isdb.org/project-procurement/sites/pproc/files/media/documents/RFP-Works%20-%20Design%20and%20Build%20-%20Single-Stage%20Request%20for%20Proposals%2C%20after%20Prequalification%20-%20updated%20February%202023.docx",
+  "sha256": "1b92d808b19e768f8ed7e752990a36894357ef82d17d49f6a918556ff842e940",
+  "pages": 230,
+  "words": 56161
+ },
+ {
+  "file": "www.isdb.org__RFP_Consulting_Services_Financial_Proposals_invited_at_Secondary_Procurement_updated_June_.docx",
+  "source": "https://www.isdb.org/project-procurement/sites/pproc/files/media/documents/RFP%20Consulting%20Services%20Financial%20Proposals%20invited%20at%20Secondary%20Procurement%20updated%20June%202023.docx",
+  "sha256": "ed7e7b684b576fdb8b639554d1f7f3740c6dc7b3ebd5489830ec0b07ba213ec9",
+  "pages": 143,
+  "words": 34729
+ },
+ {
+  "file": "www.isdb.org__RFP_FA_Consult_Services_Financial_Proposals_invited_at_Primary_Procurement_updated_June_20.docx",
+  "source": "https://www.isdb.org/project-procurement/sites/pproc/files/media/documents/RFP%20FA%20Consult%20Services%20Financial%20Proposals%20invited%20at%20Primary%20Procurement%20updated%20June%202023.docx",
+  "sha256": "6a229f3687d4d56a763aaf2c0732f2dba3a5b9776f8e68937743c1e65c1d7b1c",
+  "pages": 159,
+  "words": 39434
+ },
+ {
+  "file": "www.isdb.org__Request_for_Proposal_for_Selection_of_Consultants_-_Standard_RfP_for_IFATA_Projects.docx",
+  "source": "https://www.isdb.org/project-procurement/sites/pproc/files/media/documents/Request%20for%20Proposal%20for%20Selection%20of%20Consultants%20-%20Standard%20RfP%20for%20IFATA%20Projects.docx",
+  "sha256": "0f327c260c59743f93ca24a6445e3e5da7a04d043e2d239e18c66e98b4f20de0",
+  "pages": 52,
+  "words": 9414
+ },
+ {
+  "file": "www.isdb.org__RfP_-_Works_-_Engineering_Procurement_and_Construction_EPC_-Turnkey_-_Two-stage_Request_fo.docx",
+  "source": "https://www.isdb.org/project-procurement/sites/pproc/files/media/documents/RfP%20-%20Works%20-%20Engineering%20Procurement%20and%20Construction%20%28EPC%29%20-Turnkey%20-%20Two-stage%20Request%20for%20Proposals%2C%20after%20Initial%20Selection%20updated%20June%202023.docx",
+  "sha256": "86db8453c86780454f37c61aca80e196851beb70c4cf7f990706dfd6c1dd2934",
+  "pages": 248,
+  "words": 59708
+ },
+ {
+  "file": "www.isdb.org__SBD_-_Information_Systems_Design_Supply_and_Installation_-_One-Envelope_Bidding_Process_Wi.docx",
+  "source": "https://www.isdb.org/project-procurement/sites/pproc/files/media/documents/SBD%20-%20Information%20Systems%20Design%2C%20Supply%20and%20Installation%20-%20%28One-Envelope%20Bidding%20Process%29%20%28With%20or%20Without%20Prequalification%20-%20updated%20February%202023.docx",
+  "sha256": "d01d23030ec1112762b8f7170e8b8a48e2299de3b4b6c4756e924311d152c6f5",
+  "pages": 313,
+  "words": 76772
+ },
+ {
+  "file": "www.isdb.org__SBD_-_RfP_-_Standard_Request_for_Proposals_Procurement_of_Medical_Equipment_Two-Envelope_P.docx",
+  "source": "https://www.isdb.org/project-procurement/sites/pproc/files/media/documents/SBD%20-%20RfP%20-%20Standard%20Request%20for%20Proposals%20Procurement%20of%20Medical%20Equipment%20%28Two-Envelope%20Process%29.docx",
+  "sha256": "7d59cc4735370749937233ad720888db2a66b806efbda1a58d499f5752472d0e",
+  "pages": 179,
+  "words": 45858
+ },
+ {
+  "file": "www.isdb.org__SBD_for_Procurement_of_Textbooks_and_Reading_Materials_-_updated_February_2023.docx",
+  "source": "https://www.isdb.org/project-procurement/sites/pproc/files/media/documents/SBD%20for%20Procurement%20of%20Textbooks%20and%20Reading%20Materials%20-%20updated%20February%202023.docx",
+  "sha256": "b7027c73fbddb72a0a51c1d879c49342a389ae9da36e92a7e3b819c6fd3b2ef7",
+  "pages": 141,
+  "words": 36308
+ },
+ {
+  "file": "www.isdb.org__SPD-RFP-Works_and_Operation_Service_-_Design_build_and_operation_of_water_treatment_plant_.docx",
+  "source": "https://www.isdb.org/project-procurement/sites/pproc/files/media/documents/SPD-RFP-Works%20and%20Operation%20Service%20-%20Design%2C%20build%20and%20operation%20of%20%5Bwater%20treatment%20plant%20%28WTP%29%20wastewater%20treatment%20plant%20%28WWTP%29%5D%20%28Single-Stage%29.docx",
+  "sha256": "cb34beb3e1e21d736dc7ba97c235b0982c73005909f228504166d209c370c54d",
+  "pages": 248,
+  "words": 59733
+ },
+ {
+  "file": "www.isdb.org__SPD-RFP-Works_and_Operation_Service_-_Design_build_and_operation_of_water_treatment_plant__2.docx",
+  "source": "https://www.isdb.org/project-procurement/sites/pproc/files/media/documents/SPD-RFP-Works%20and%20Operation%20Service%20-%20Design%2C%20build%20and%20operation%20of%20%5Bwater%20treatment%20plant%20%28WTP%29%20wastewater%20treatment%20plant%20%28WWTP%29%5D%20%28Two-Stage%29.docx",
+  "sha256": "fe5f674a474f11463807a2e9130bce43ab275948a702f2fa90643c15b8b0b3cb",
+  "pages": 259,
+  "words": 63633
+ },
+ {
+  "file": "www.isdb.org__SPD_-_RFP_For_Procurement_of_Plant_Design_Supply_and_Installation_Two-Stage_Request_for_Pr.docx",
+  "source": "https://www.isdb.org/project-procurement/sites/pproc/files/media/documents/SPD%20-%20RFP%20For%20Procurement%20of%20Plant%20Design%2C%20Supply%20and%20Installation%20%28Two-Stage%20Request%20for%20Proposals%2C%20after%20Prequalification%29%20-%20updated%20February%202023.docx",
+  "sha256": "219c6c2287a38e5b746c6a3350cac5a55200da5bc5dabac7a9ed0b8ed1085f69",
+  "pages": 282,
+  "words": 77486
+ },
+ {
+  "file": "www.isdb.org__Standard_Agreement_UNOPS_.docx",
+  "source": "https://www.isdb.org/project-procurement/sites/pproc/files/media/documents/Standard%20Agreement%20%28UNOPS%29.docx",
+  "sha256": "7fc4babc9753e21a420d7f5b928d1c924fbaab5b202220d1a9ad2448556a5f27",
+  "pages": 15,
+  "words": 3927
+ },
+ {
+  "file": "www.isdb.org__Standard_Agreement_WHO_.docx",
+  "source": "https://www.isdb.org/project-procurement/sites/pproc/files/media/documents/Standard%20Agreement%20%28WHO%29.docx",
+  "sha256": "dd40b6cdeeb410be8ab5427840d9ea9ae55a86e3bd2d0550e309091014f112c6",
+  "pages": 25,
+  "words": 6434
+ },
+ {
+  "file": "www.isdb.org__Standard_Bidding_Document_-_Goods_-_Framework_Agreement_-_Two-Envelope_Bidding_Process_-_u.docx",
+  "source": "https://www.isdb.org/project-procurement/sites/pproc/files/media/documents/Standard%20Bidding%20Document%20-%20Goods%20-%20Framework%20Agreement%20-%20Two-Envelope%20Bidding%20Process%20-%20updated%20June%202023.docx",
+  "sha256": "4d46db4ebae8d328d49b710985942fd370e53fb8c62391264b813f1261ae1c0c",
+  "pages": 172,
+  "words": 42925
+ },
+ {
+  "file": "www.isdb.org__Standard_Bidding_Document_-_Works_Physical_Services_-_Framework_Agreement_-_Two-Envelope_B.docx",
+  "source": "https://www.isdb.org/project-procurement/sites/pproc/files/media/documents/Standard%20Bidding%20Document%20-%20Works%20%26%20Physical%20Services%20-%20Framework%20Agreement%20-%20Two-Envelope%20Bidding%20Process-%20updated%20June%202023.docx",
+  "sha256": "72e04b5b586858369d1caa7b1eb8b43b47c4956ff02d22d33715560cccc958c0",
+  "pages": 170,
+  "words": 41095
+ },
+ {
+  "file": "www.isdb.org__Standard_Initial_Selection_Document_-_Standard_Initial_Selection_Document_-_For_use_with_a.docx",
+  "source": "https://www.isdb.org/project-procurement/sites/pproc/files/media/documents/Standard%20Initial%20Selection%20Document%20-%20Standard%20Initial%20Selection%20Document%20-%20For%20use%20with%20a%20Request%20for%20Proposals%20selection%20method%20-%20June%20%202023.docx",
+  "sha256": "b1762efe7784f262d9265d8187352530cb2d6b80db71154b82fe30b7d9a01505",
+  "pages": 84,
+  "words": 16889
+ },
+ {
+  "file": "www.isdb.org__Standard_Pre-qualification_Document_for_Procurement_of_Works_-_updated_february_2023.docx",
+  "source": "https://www.isdb.org/project-procurement/sites/pproc/files/media/documents/Standard%20Pre-qualification%20Document%20for%20Procurement%20of%20Works%20-%20updated%20february%202023.docx",
+  "sha256": "3ea15a20a576e1cb92c844fe064c1c09ec01d05dfb267abb11dbc1202d2efe8b",
+  "pages": 70,
+  "words": 14814
+ },
+ {
+  "file": "www.isdb.org__Standard_Request_for_Proposals_RfP_Works_-_Design_and_Build_Two-Stage_Request_for_Proposal.docx",
+  "source": "https://www.isdb.org/project-procurement/sites/pproc/files/media/documents/Standard%20Request%20for%20Proposals%20%28RfP%29%20Works%20-%20Design%20and%20Build%20%28Two-Stage%20Request%20for%20Proposals%2C%20after%20Prequalification%29.docx",
+  "sha256": "33709c06e6869e5d008479a1fa90963c2797079c3810e91f0478d44b750291ae",
+  "pages": 243,
+  "words": 60261
+ },
+ {
+  "file": "www.isdb.org__UNICEF_IsDB_standardagreementsupplies_-_English.docx",
+  "source": "https://www.isdb.org/project-procurement/sites/pproc/files/media/documents/UNICEF_IsDB_standardagreementsupplies%20-%20English.docx",
+  "sha256": "7353358b4916bdc6cc3ad8a0aa5b70e3d164f2127021b0e4f70f5881b272d88d",
+  "pages": 24,
+  "words": 6355
+ },
+ {
+  "file": "www.isdb.org___Final_UNDP_ISDB_Agreement_Outputs.docx",
+  "source": "https://www.isdb.org/project-procurement/sites/pproc/files/media/documents/%28Final%29%20UNDP%20ISDB%20Agreement%20Outputs.docx",
+  "sha256": "0c1e32d05a3f64541dd6e9e1d107939cdf327c40ebe016dd0e05adcaf5226069",
+  "pages": 26,
+  "words": 6765
+ },
+ {
+  "file": "www.procurement.govt.nz__template-procurement-plan.docx",
+  "source": "https://www.procurement.govt.nz/assets/procurement-property/documents/templates/template-procurement-plan.docx?m=fc0d7623ad2d1ce6a4398caa28d1e1f20ac58149",
+  "sha256": "13a7f0f729fa82eb588d438be91eca921955a7e56f9165978c4169f164770b7b",
+  "pages": 17,
+  "words": 4714
+ },
+ {
+  "file": "www.procurement.govt.nz__template-rfp-response-form-government-model.docx",
+  "source": "https://www.procurement.govt.nz/assets/procurement-property/documents/templates/template-rfp-response-form-government-model.docx?m=abbf004b1d511b03ad9087e714e2925800bca35c",
+  "sha256": "21b170db8003d63c737dd2e50d96ef29e10b1949f54e283a1853d0b3b73da946",
+  "pages": 21,
+  "words": 4575
+ },
+ {
+  "file": "www.procurement.govt.nz__template-rfq-government-model.docx",
+  "source": "https://www.procurement.govt.nz/assets/procurement-property/documents/templates/template-rfq-government-model.docx?m=eb562067d55d59aa66ff45bb3d3ebcc2e0e82e27",
+  "sha256": "c6d86ded6108ec9d0b2ca757d8c0cee537a216773d8b5bedcae2717f3867806b",
+  "pages": 16,
+  "words": 3725
+ },
+ {
+  "file": "www.procurement.govt.nz__template-rfq-response-form-government-model.docx",
+  "source": "https://www.procurement.govt.nz/assets/procurement-property/documents/templates/template-rfq-response-form-government-model.docx?m=46c3a8493fca2d095805c623a39a7b539d2fd177",
+  "sha256": "087df7992d38b67a4c231b3eccb65ac7d2d24394905089811c33e5836c79b0b7",
+  "pages": 18,
+  "words": 6961
+ }
+]

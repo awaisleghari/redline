@@ -1,0 +1,44 @@
+
+== ordinary: 90 documents
+  both Word files released:                       88 of 90 (97.8%)
+  released and marking within 1.5 times the real change: 86 of 90 (95.6%)
+  tracked-changes file alone released:            88 of 90 (97.8%)
+  engine failed outright:                         0 of 90 (0.0%)
+  marking, released documents: median 1.04, worst 1.8
+  by source (released / run):
+    cwmf.gov.ie                        46 / 46
+    www.gov.scot                       3 / 3
+    www.isdb.org                       35 / 37
+    www.procurement.govt.nz            4 / 4
+  why withheld (first failing check), most common first:
+      2  completeness: In the original document: A drawing or text box is stored in alternative forms w
+
+== tracked-original: 90 documents
+  both Word files released:                       87 of 90 (96.7%)
+  released and marking within 1.5 times the real change: 86 of 90 (95.6%)
+  tracked-changes file alone released:            88 of 90 (97.8%)
+  engine failed outright:                         0 of 90 (0.0%)
+  marking, released documents: median 1.04, worst 3.2
+  by source (released / run):
+    cwmf.gov.ie                        45 / 46
+    www.gov.scot                       3 / 3
+    www.isdb.org                       35 / 37
+    www.procurement.govt.nz            4 / 4
+  why withheld (first failing check), most common first:
+      2  completeness: In the original document: A drawing or text box is stored in alternative forms w
+      1  static-old: A table is laid out differently from the original document (its rows, cells or p
+
+== tracked-modified: 90 documents
+  both Word files released:                       84 of 90 (93.3%)
+  released and marking within 1.5 times the real change: 83 of 90 (92.2%)
+  tracked-changes file alone released:            88 of 90 (97.8%)
+  engine failed outright:                         0 of 90 (0.0%)
+  marking, released documents: median 1.05, worst 2.4
+  by source (released / run):
+    cwmf.gov.ie                        44 / 46
+    www.gov.scot                       3 / 3
+    www.isdb.org                       33 / 37
+    www.procurement.govt.nz            4 / 4
+  why withheld (first failing check), most common first:
+      4  static-old: A table is laid out differently from the original document (its rows, cells or p
+      2  completeness: In the original document: A drawing or text box is stored in alternative forms w

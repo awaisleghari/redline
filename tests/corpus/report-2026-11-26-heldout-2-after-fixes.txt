@@ -1,0 +1,39 @@
+
+== ordinary: 90 documents
+  both Word files released:                       90 of 90 (100.0%)
+  released and marking within 1.5 times the real change: 88 of 90 (97.8%)
+  tracked-changes file alone released:            90 of 90 (100.0%)
+  engine failed outright:                         0 of 90 (0.0%)
+  marking, released documents: median 1.04, worst 1.8
+  by source (released / run):
+    cwmf.gov.ie                        46 / 46
+    www.gov.scot                       3 / 3
+    www.isdb.org                       37 / 37
+    www.procurement.govt.nz            4 / 4
+  why withheld (first failing check), most common first:
+
+== tracked-original: 90 documents
+  both Word files released:                       90 of 90 (100.0%)
+  released and marking within 1.5 times the real change: 88 of 90 (97.8%)
+  tracked-changes file alone released:            90 of 90 (100.0%)
+  engine failed outright:                         0 of 90 (0.0%)
+  marking, released documents: median 1.04, worst 3.2
+  by source (released / run):
+    cwmf.gov.ie                        46 / 46
+    www.gov.scot                       3 / 3
+    www.isdb.org                       37 / 37
+    www.procurement.govt.nz            4 / 4
+  why withheld (first failing check), most common first:
+
+== tracked-modified: 90 documents
+  both Word files released:                       90 of 90 (100.0%)
+  released and marking within 1.5 times the real change: 89 of 90 (98.9%)
+  tracked-changes file alone released:            90 of 90 (100.0%)
+  engine failed outright:                         0 of 90 (0.0%)
+  marking, released documents: median 1.05, worst 2.4
+  by source (released / run):
+    cwmf.gov.ie                        46 / 46
+    www.gov.scot                       3 / 3
+    www.isdb.org                       37 / 37
+    www.procurement.govt.nz            4 / 4
+  why withheld (first failing check), most common first:

@@ -711,7 +711,22 @@ class PartConverter {
         const adds = (k: string | undefined): boolean => k === 'inserted' || k === 'movedTo';
         const tokenOf = (block: Element | undefined): Token | undefined => (block && isWord(block, 'p') && this.markToken.has(block) ? this.tokens[this.markToken.get(block)!] : undefined);
         const wrappers = removes(markKind) ? ['del', 'moveFrom'] : ['ins', 'moveTo'];
-        const lastWhole = content.length > 0 && content.every((c) => wrappers.some((name) => isW(c, name)));
+        // (An empty last paragraph came or went whole too: found on real contracts, a form field's line replaced by an empty one.)
+        // (A wrapper such as a smart tag or a link counts when everything inside it came or went: found on a real
+        // contract, a moved-in line with a smart tag in the middle of it.)
+        // (Markers that hold no text, such as bookmarks and spelling marks, are passed over, inside a wrapper as
+        // beside it; a wrapper holding nothing at all has nothing that stays. Review finding.)
+        const wholeIn = (names: string[]) => {
+          const whole = (c: Element): boolean => {
+            if (names.some((name) => isW(c, name))) return true;
+            if (isW(c, 'r')) return false;
+            return elementChildren(c)
+              .filter((x) => !(isW(x) && /Pr$|^(bookmarkStart|bookmarkEnd|proofErr|permStart|permEnd)$/.test(x.localName!)))
+              .every(whole);
+          };
+          return whole;
+        };
+        const lastWhole = content.every(wholeIn(wrappers));
         const neighbour = before[before.length - 2];
         if (lastWhole && ((removes(tokenOf(neighbour)) && adds(markKind)) || (adds(tokenOf(neighbour)) && removes(markKind)))) {
           joinWith = neighbour;
@@ -733,10 +748,13 @@ class PartConverter {
         // contract: twelve added after the one that was there). The marks before the last already show the
         // change, so the whole run moves up by one: the mark to show as changed is the one before the run.
         let at = before.length - 2;
-        while (at >= 0 && isWord(before[at]!, 'p') && this.markToken.has(before[at]!) && this.tokens[this.markToken.get(before[at]!)!] === markKind) at--;
+        // (Added paragraphs may be a mix of typed and moved-in ones: found on real contracts, a line typed and a
+        // line moved in after the one that was there. They are one run of additions all the same.)
+        const inRun = (token: Token | undefined): boolean => token === markKind || (adds(markKind) && adds(token));
+        while (at >= 0 && isWord(before[at]!, 'p') && this.markToken.has(before[at]!) && inRun(this.tokens[this.markToken.get(before[at]!)!])) at--;
         const single = at === before.length - 2;
         const removal = markKind === 'deleted' || markKind === 'movedFrom';
-        const whollyRemoved = removal && content.length > 0 && content.every((c) => isW(c, markKind === 'deleted' ? 'del' : 'moveFrom'));
+        const whollyRemoved = removal && content.length > 0 && content.every(wholeIn([markKind === 'deleted' ? 'del' : 'moveFrom']));
         const previous = before[at];
         // The block before may instead be a table that came or went whole, with this paragraph the empty one
         // that must follow a table in a cell (found on real contracts: a table within a table, replaced). There
@@ -745,14 +763,17 @@ class PartConverter {
         const tableBefore = before[before.length - 2];
         const rowsBefore = tableBefore && isWord(tableBefore, 'tbl') ? kids(tableBefore).filter((c) => isWord(c, 'tr')) : [];
         // (The paragraph may also have had text that went, or came, with the table: review finding.)
-        const whollyAdded = !removal && content.length > 0 && content.every((c) => isW(c, markKind === 'inserted' ? 'ins' : 'moveTo'));
+        const whollyAdded = !removal && content.length > 0 && content.every(wholeIn([markKind === 'inserted' ? 'ins' : 'moveTo']));
         const followsChangedTable = (content.length === 0 || whollyRemoved || whollyAdded) && rowsBefore.length > 0 && rowsBefore.every((r) => this.cellChange.get(r) === (removal ? 'deleted' : 'inserted'));
         const index = previous && isWord(previous, 'p') ? this.markToken.get(previous) : undefined;
         // (A run of removed paragraphs ending in one of which part remains is left as it is: which clause number
         // the remaining part should carry cannot be told here, and the Checker judges the result.)
         if (!joinWith && previous && index !== undefined && this.tokens[index] === 'unchanged' && (single || !removal || whollyRemoved || content.length === 0)) {
-          applyChangeStyle(markProperties(previous), markKind, this.options);
-          this.tokens[index] = markKind;
+          // The mark before the run shows the first of the run's own kind of change (its paragraph is the one that begins there).
+          const firstOfRun = single ? undefined : tokenOf(before[at + 1]);
+          const shown: ChangeKind = firstOfRun && firstOfRun !== 'unchanged' && firstOfRun !== 'boundary' ? firstOfRun : markKind;
+          applyChangeStyle(markProperties(previous), shown, this.options);
+          this.tokens[index] = shown;
           // Numbering must follow (found on real contracts: otherwise two paragraphs keep a number where the
           // modified document has one clause, and every later clause is numbered one too high).
           if (removal) {

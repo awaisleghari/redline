@@ -425,6 +425,11 @@ function absorb(outer: Context, inner: Context): void {
   }
 }
 
+/** A field with nothing nested in it: its instruction, the words it shows (captured), and its end. */
+/** Marks an entry of `otherForms` that is a form's full reading (the others record which paragraphs are numbered). */
+export const FORM_READING = 'reading:';
+const SIMPLE_FIELD = new RegExp(`${MARK.fieldBegin}[^⟦]*${MARK.fieldResult}([^⟦]*)${MARK.fieldEnd}`, 'g');
+
 /**
  * mc:AlternateContent offers the same content in two forms (modern and
  * legacy), and which one is shown depends on the program opening the file.
@@ -434,6 +439,9 @@ function absorb(outer: Context, inner: Context): void {
 function alternateContentBranch(element: XmlElement, context: Context, read: (branch: XmlElement, into: Context) => string): XmlElement | undefined {
   const branches = element.children.filter((c) => c.ns === NS.mc && (c.name === 'Choice' || c.name === 'Fallback'));
   const formNumbers: string[] = [];
+  const formReadings: string[] = [];
+  /** True when the forms show the same words and differ only in field instructions. */
+  let instructionsDiffer = false;
   if (branches.length > 1) {
     // Every branch (there may be several Choices) must read the same: text, text boxes and note references.
     const readings = branches.map((branch) => {
@@ -466,8 +474,16 @@ function alternateContentBranch(element: XmlElement, context: Context, read: (br
       // a box shown removed, or a drawing with no list in it, leaves no trace.)
       const numbered = [...numbers(probe.paragraphs), ...boxNumbers].filter((_entry, _index, all) => all.some((e) => e !== ''));
       formNumbers.push(numbered.length > 0 ? JSON.stringify(numbered) : '');
-      return JSON.stringify([inline, texts(probe.paragraphs), probe.pending, shown(probe.textBoxes), probe.notes]).replace(/⟦file [^⟧]*⟧/g, '');
+      const reading = JSON.stringify([inline, texts(probe.paragraphs), probe.pending, shown(probe.textBoxes), probe.notes]).replace(/⟦file [^⟧]*⟧/g, '');
+      formReadings.push(reading);
+      // What a reader sees is compared: the words a field shows, not the instruction behind it. (Found on a real
+      // contract: a web address typed as plain text in one form and as a link showing the same words in the
+      // other.) The instructions are not dropped: where the forms differ in them, the forms that are not read
+      // are recorded in full, and must be the same in the output as in the modified document.
+      // (Only a whole, simple field is reduced to the words it shows; anything else stays as it is and is compared in full.)
+      return reading.replace(SIMPLE_FIELD, '$1');
     });
+    instructionsDiffer = new Set(readings).size === 1 && new Set(formReadings).size > 1;
     if (new Set(readings).size > 1) {
       context.problems.push('A drawing or text box is stored in alternative forms whose text differs, so what a reader would see cannot be verified.');
     }
@@ -482,10 +498,12 @@ function alternateContentBranch(element: XmlElement, context: Context, read: (br
     if (strokes.length > 0) {
       context.source.inks.push(...strokes);
       context.source.otherForms.push(...formNumbers.filter((form, i) => form !== '' && branches[i] !== fallback));
+      if (instructionsDiffer) context.source.otherForms.push(...formReadings.filter((_, i) => branches[i] !== fallback).map((r) => FORM_READING + r));
       return fallback;
     }
   }
   context.source.otherForms.push(...formNumbers.slice(1).filter((form) => form !== ''));
+  if (instructionsDiffer) context.source.otherForms.push(...formReadings.slice(1).map((r) => FORM_READING + r));
   return branches[0];
 }
 

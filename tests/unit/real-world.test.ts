@@ -994,6 +994,65 @@ describe('the one line of a cell replaced, written as a removed paragraph and an
 });
 
 /**
+ * Found on real contracts (held-out run 2, Irish and Islamic Development Bank forms, on drafts carrying tracked
+ * changes): a cell's one paragraph split, with a new line typed in between, so the cell ends in an added paragraph
+ * and a moved-in one. The run of additions was not seen as one run, the mark above it was left unmarked, and the
+ * original read with a paragraph too many.
+ */
+describe('a cell that gains a typed paragraph and a moved-in paragraph at its end', () => {
+  it('the static redline passes', async () => {
+    const HEAD = 'Application of the foreign subsidies rule';
+    const TAIL = ' of the tenth of July on distortive subsidies';
+    const NEW = 'The parties shall review this annually';
+    const run = (text: string): string => `<w:r><w:t xml:space="preserve">${text}</w:t></w:r>`;
+    const change = (tag: string, id: number, extra = ''): string => `<w:${tag} w:id="${9600 + id}" w:author="Redline" w:date="2026-11-26T00:00:00Z"${extra}`;
+    const cellOf = (paragraphs: string): string => `<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="9000" w:type="dxa"/></w:tcPr>${paragraphs}</w:tc></w:tr></w:tbl>`;
+    const base = (await buildPair(pairById('one-word-change'))).original;
+    const withCell = (paragraphs: string): Promise<Uint8Array> => editPart(base, /^word\/document\.xml$/, (xml) => xml.replace(/<w:p>.*?<\/w:p>/s, (first) => first + cellOf(paragraphs)));
+    const original = await withCell(`<w:p>${run(HEAD)}${run(TAIL)}</w:p>`);
+    const modified = await withCell(`<w:p>${run(HEAD)}</w:p><w:p>${run(NEW)}</w:p><w:p>${run(TAIL)}</w:p>`);
+    const tracked = await withCell(
+      `<w:p>${run(HEAD)}${change('moveFromRangeStart', 1, ' w:name="move1"')}/>${change('moveFrom', 2)}><w:r><w:t xml:space="preserve">${TAIL}</w:t></w:r></w:moveFrom><w:moveFromRangeEnd w:id="9601"/></w:p>` +
+        `<w:p><w:pPr><w:rPr>${change('ins', 3)}/></w:rPr></w:pPr>${change('ins', 4)}>${run(NEW)}</w:ins></w:p>` +
+        `<w:p><w:pPr><w:rPr>${change('ins', 5)}/></w:rPr></w:pPr>${change('moveToRangeStart', 6, ' w:name="move1"')}/>${change('moveTo', 7)}>${run(TAIL)}</w:moveTo><w:moveToRangeEnd w:id="9606"/></w:p>`,
+    );
+    expect(await failed(checkTrackedChanges({ original, modified, output: tracked }))).toEqual([]);
+    const made = await makeStaticRedline(tracked, original, COVER);
+    expect((await checkStaticRedline({ original, modified, output: made.docx, ...COVER })).checks.filter((c) => !c.passed)).toEqual([]);
+  });
+});
+
+/**
+ * Found on real contracts (held-out run 2, Irish and Islamic Development Bank forms): the one line of a cell (a
+ * form field) removed and an empty line left in its place, written as the old line removed with its mark and an
+ * empty paragraph added with the cell's last mark. A rule added in the third batch wrongly left this case out.
+ */
+describe('the one line of a cell replaced by an empty line', () => {
+  for (const mirrored of [false, true]) it(`the static redline passes and the cell holds one paragraph${mirrored ? ' (an empty line replaced by a line of text)' : ''}`, async () => {
+    const OLD = 'Applicant entry goes on this line';
+    const change = (tag: string, id: number): string => `<w:${tag} w:id="${9500 + id}" w:author="Redline" w:date="2026-11-26T00:00:00Z"`;
+    const cellOf = (paragraphs: string): string => `<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="9000" w:type="dxa"/></w:tcPr>${paragraphs}</w:tc></w:tr></w:tbl>`;
+    const base = (await buildPair(pairById('one-word-change'))).original;
+    const withCell = (paragraphs: string): Promise<Uint8Array> => editPart(base, /^word\/document\.xml$/, (xml) => xml.replace(/<w:p>.*?<\/w:p>/s, (first) => first + cellOf(paragraphs)));
+    const full = await withCell(`<w:p><w:r><w:t xml:space="preserve">${OLD}</w:t></w:r></w:p>`);
+    const empty = await withCell('<w:p/>');
+    const [original, modified] = mirrored ? [empty, full] : [full, empty];
+    const tracked = await withCell(
+      mirrored
+        ? `<w:p><w:pPr><w:rPr>${change('ins', 1)}/></w:rPr></w:pPr>${change('ins', 2)}><w:r><w:t xml:space="preserve">${OLD}</w:t></w:r></w:ins></w:p>` +
+            `<w:p><w:pPr><w:rPr>${change('del', 3)}/></w:rPr></w:pPr></w:p>`
+        : `<w:p><w:pPr><w:rPr>${change('del', 1)}/></w:rPr></w:pPr>${change('del', 2)}><w:r><w:delText xml:space="preserve">${OLD}</w:delText></w:r></w:del></w:p>` +
+            `<w:p><w:pPr><w:rPr>${change('ins', 3)}/></w:rPr></w:pPr></w:p>`,
+    );
+    expect(await failed(checkTrackedChanges({ original, modified, output: tracked }))).toEqual([]);
+    const made = await makeStaticRedline(tracked, original, COVER);
+    expect((await checkStaticRedline({ original, modified, output: made.docx, ...COVER })).checks.filter((c) => !c.passed)).toEqual([]);
+    const cell = /<w:tc>.*?<\/w:tc>/s.exec(decoder.decode((await unzip(made.docx)).get('word/document.xml')!))![0];
+    expect(cell.match(/<w:p[ >]/g)).toHaveLength(1);
+  });
+});
+
+/**
  * Found on a real contract (held-out run 1, an ADB document carrying tracked changes): a cell's one line replaced
  * by twenty paragraphs. The engine writes the old line removed with its mark, then every new paragraph added with
  * its mark, the cell's last included. Left as written, the original read as two paragraphs (the old line, and an
@@ -1029,6 +1088,30 @@ describe('the one line of a cell replaced by several paragraphs', () => {
       expect(joined.indexOf(OLD)).toBeLessThan(joined.indexOf(NEW[0]!));
     });
   }
+});
+
+/** Found on a real contract (held-out run 2): as above, with a smart tag in the middle of the last new paragraph. */
+describe('the one line of a cell replaced by paragraphs, the last holding a smart tag', () => {
+  it('the static redline passes', async () => {
+    const OLD = 'Insert total price per line item';
+    const run = (text: string): string => `<w:r><w:t xml:space="preserve">${text}</w:t></w:r>`;
+    const change = (tag: string, id: number): string => `<w:${tag} w:id="${9700 + id}" w:author="Redline" w:date="2026-11-26T00:00:00Z"`;
+    const tag = (inner: string): string => `<w:smartTag w:uri="urn:schemas-microsoft-com:office:smarttags" w:element="place">${inner}</w:smartTag>`;
+    const cellOf = (paragraphs: string): string => `<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="9000" w:type="dxa"/></w:tcPr>${paragraphs}</w:tc></w:tr></w:tbl>`;
+    const base = (await buildPair(pairById('one-word-change'))).original;
+    const withCell = (paragraphs: string): Promise<Uint8Array> => editPart(base, /^word\/document\.xml$/, (xml) => xml.replace(/<w:p>.*?<\/w:p>/s, (first) => first + cellOf(paragraphs)));
+    const original = await withCell(`<w:p>${run(OLD)}</w:p>`);
+    const modified = await withCell(`<w:p>${run('Total price per line item')}</w:p><w:p>${run('(')}${tag(run('Col.'))}${run(' 4 x 5)')}</w:p>`);
+    const added = (id: number, text: string): string => `${change('ins', id)}>${run(text)}</w:ins>`;
+    const tracked = await withCell(
+      `<w:p><w:pPr><w:rPr>${change('del', 1)}/></w:rPr></w:pPr>${change('del', 2)}><w:r><w:delText xml:space="preserve">${OLD}</w:delText></w:r></w:del></w:p>` +
+        `<w:p><w:pPr><w:rPr>${change('ins', 3)}/></w:rPr></w:pPr>${added(4, 'Total price per line item')}</w:p>` +
+        `<w:p><w:pPr><w:rPr>${change('ins', 5)}/></w:rPr></w:pPr>${added(6, '(')}${tag(`<w:proofErr w:type="spellStart"/>${added(7, 'Col.')}<w:proofErr w:type="spellEnd"/>`)}${added(8, ' 4 x 5)')}</w:p>`,
+    );
+    expect(await failed(checkTrackedChanges({ original, modified, output: tracked }))).toEqual([]);
+    const made = await makeStaticRedline(tracked, original, COVER);
+    expect((await checkStaticRedline({ original, modified, output: made.docx, ...COVER })).checks.filter((c) => !c.passed)).toEqual([]);
+  });
 });
 
 /** Review finding on the third batch: the replaced line and the new paragraphs numbered. The joined paragraph stays, so it shows no old number. */
@@ -1426,5 +1509,75 @@ describe('an upload whose emptied footnote has its only paragraph mark flagged a
       return out;
     });
     expect(await failed(checkTrackedChanges({ original, modified, output: damaged }))).not.toEqual([]);
+  });
+});
+
+/**
+ * Found on real contracts (held-out run 2, Islamic Development Bank documents): a text box whose modern form
+ * holds a web address as plain text and whose legacy form holds the same words as a link. A reader sees the same
+ * words either way; the Checker refused the upload itself because the two forms did not read identically.
+ */
+describe('a text box whose two stored forms show the same words, one of them through a link field', () => {
+  const NS_BOX = 'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" xmlns:v="urn:schemas-microsoft-com:vml"';
+  const plain = '<w:r><w:t>www.example.org</w:t></w:r>';
+  const linked = (address: string): string =>
+    `<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> HYPERLINK "${address}" </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>${plain}<w:r><w:fldChar w:fldCharType="end"/></w:r>`;
+  const box = (inner: string): string => `<w:txbxContent><w:p>${inner}</w:p></w:txbxContent>`;
+  const withBox = (docx: Uint8Array): Promise<Uint8Array> =>
+    editPart(docx, /^word\/document\.xml$/, (xml) =>
+      xml.replace(/<w:p>.*?<\/w:p>/s, (first) => `${first}<w:p><w:r><mc:AlternateContent ${NS_BOX}><mc:Choice Requires="wps"><w:drawing><wps:txbx>${box(plain)}</wps:txbx></w:drawing></mc:Choice><mc:Fallback><w:pict><v:textbox>${box(linked('http://www.example.org'))}</v:textbox></w:pict></mc:Fallback></mc:AlternateContent></w:r></w:p>`),
+    );
+
+  it('both Word files pass; an output whose hidden form points the link elsewhere is caught', async () => {
+    const pair = await buildPair(pairById('one-word-change'));
+    const original = await withBox(pair.original);
+    const modified = await withBox(pair.modified);
+    const { tracked, staticRedline } = await bothPass(original, modified);
+    const damage = (docx: Uint8Array): Promise<Uint8Array> =>
+      editPart(docx, /^word\/document\.xml$/, (xml) => {
+        const out = xml.replace('http://www.example.org', 'http://www.example.net');
+        if (out === xml) throw new Error('nothing was damaged');
+        return out;
+      });
+    expect(await failed(checkTrackedChanges({ original, modified, output: await damage(tracked) }))).not.toEqual([]);
+    const report = await checkStaticRedline({ original, modified, output: await damage(staticRedline), ...COVER });
+    expect(report.checks.filter((c) => !c.passed)).not.toEqual([]);
+  });
+
+  it('where the hidden link changes between the versions, the removed copy is held to the original (review finding)', async () => {
+    const pair = await buildPair(pairById('one-word-change'));
+    const original = await withBox(pair.original);
+    const modified = await editPart(await withBox(pair.modified), /^word\/document\.xml$/, (xml) => xml.replace('http://www.example.org', 'http://www.example.net'));
+    const { tracked, staticRedline } = await bothPass(original, modified);
+    const damage = (docx: Uint8Array): Promise<Uint8Array> =>
+      editPart(docx, /^word\/document\.xml$/, (xml) => {
+        const out = xml.replace('http://www.example.org', 'http://elsewhere.example');
+        if (out === xml) throw new Error('nothing was damaged');
+        return out;
+      });
+    expect(await failed(checkTrackedChanges({ original, modified, output: await damage(tracked) }))).not.toEqual([]);
+    const report = await checkStaticRedline({ original, modified, output: await damage(staticRedline), ...COVER });
+    expect(report.checks.filter((c) => !c.passed)).not.toEqual([]);
+  });
+
+  it('a field that is not a whole, simple one is compared in full (review finding)', async () => {
+    const pair = await buildPair(pairById('one-word-change'));
+    const odd = `<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> XE "x" </w:instrText></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t>EXTRA VISIBLE WORDS</w:t></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>${plain}`;
+    const withOddBox = (docx: Uint8Array): Promise<Uint8Array> =>
+      editPart(docx, /^word\/document\.xml$/, (xml) =>
+        xml.replace(/<w:p>.*?<\/w:p>/s, (first) => `${first}<w:p><w:r><mc:AlternateContent ${NS_BOX}><mc:Choice Requires="wps"><w:drawing><wps:txbx>${box(plain)}</wps:txbx></w:drawing></mc:Choice><mc:Fallback><w:pict><v:textbox>${box(odd)}</v:textbox></w:pict></mc:Fallback></mc:AlternateContent></w:r></w:p>`),
+      );
+    const original = await withOddBox(pair.original);
+    const modified = await withOddBox(pair.modified);
+    const tracked = await produceTrackedChanges(original, modified);
+    expect(await failed(checkTrackedChanges({ original, modified, output: tracked }))).toContain('completeness');
+  });
+
+  it('forms that show different words are still refused', async () => {
+    const pair = await buildPair(pairById('one-word-change'));
+    const original = await withBox(pair.original);
+    const differing = await editPart(await withBox(pair.modified), /^word\/document\.xml$/, (xml) => xml.replace(/(<mc:Fallback>.*?)www\.example\.org<\/w:t>/s, '$1www.example.net</w:t>'));
+    const tracked = await produceTrackedChanges(original, differing);
+    expect(await failed(checkTrackedChanges({ original, modified: differing, output: tracked }))).toContain('completeness');
   });
 });
