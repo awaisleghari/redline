@@ -994,6 +994,35 @@ describe('the one line of a cell replaced, written as a removed paragraph and an
 });
 
 /**
+ * Found on real contracts (held-out run 2, Irish and Islamic Development Bank forms, on drafts carrying tracked
+ * changes): a cell's one paragraph split, with a new line typed in between, so the cell ends in an added paragraph
+ * and a moved-in one. The run of additions was not seen as one run, the mark above it was left unmarked, and the
+ * original read with a paragraph too many.
+ */
+describe('a cell that gains a typed paragraph and a moved-in paragraph at its end', () => {
+  it('the static redline passes', async () => {
+    const HEAD = 'Application of the foreign subsidies rule';
+    const TAIL = ' of the tenth of July on distortive subsidies';
+    const NEW = 'The parties shall review this annually';
+    const run = (text: string): string => `<w:r><w:t xml:space="preserve">${text}</w:t></w:r>`;
+    const change = (tag: string, id: number, extra = ''): string => `<w:${tag} w:id="${9600 + id}" w:author="Redline" w:date="2026-11-26T00:00:00Z"${extra}`;
+    const cellOf = (paragraphs: string): string => `<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="9000" w:type="dxa"/></w:tcPr>${paragraphs}</w:tc></w:tr></w:tbl>`;
+    const base = (await buildPair(pairById('one-word-change'))).original;
+    const withCell = (paragraphs: string): Promise<Uint8Array> => editPart(base, /^word\/document\.xml$/, (xml) => xml.replace(/<w:p>.*?<\/w:p>/s, (first) => first + cellOf(paragraphs)));
+    const original = await withCell(`<w:p>${run(HEAD)}${run(TAIL)}</w:p>`);
+    const modified = await withCell(`<w:p>${run(HEAD)}</w:p><w:p>${run(NEW)}</w:p><w:p>${run(TAIL)}</w:p>`);
+    const tracked = await withCell(
+      `<w:p>${run(HEAD)}${change('moveFromRangeStart', 1, ' w:name="move1"')}/>${change('moveFrom', 2)}><w:r><w:t xml:space="preserve">${TAIL}</w:t></w:r></w:moveFrom><w:moveFromRangeEnd w:id="9601"/></w:p>` +
+        `<w:p><w:pPr><w:rPr>${change('ins', 3)}/></w:rPr></w:pPr>${change('ins', 4)}>${run(NEW)}</w:ins></w:p>` +
+        `<w:p><w:pPr><w:rPr>${change('ins', 5)}/></w:rPr></w:pPr>${change('moveToRangeStart', 6, ' w:name="move1"')}/>${change('moveTo', 7)}>${run(TAIL)}</w:moveTo><w:moveToRangeEnd w:id="9606"/></w:p>`,
+    );
+    expect(await failed(checkTrackedChanges({ original, modified, output: tracked }))).toEqual([]);
+    const made = await makeStaticRedline(tracked, original, COVER);
+    expect((await checkStaticRedline({ original, modified, output: made.docx, ...COVER })).checks.filter((c) => !c.passed)).toEqual([]);
+  });
+});
+
+/**
  * Found on real contracts (held-out run 2, Irish and Islamic Development Bank forms): the one line of a cell (a
  * form field) removed and an empty line left in its place, written as the old line removed with its mark and an
  * empty paragraph added with the cell's last mark. A rule added in the third batch wrongly left this case out.

@@ -734,7 +734,10 @@ class PartConverter {
         // contract: twelve added after the one that was there). The marks before the last already show the
         // change, so the whole run moves up by one: the mark to show as changed is the one before the run.
         let at = before.length - 2;
-        while (at >= 0 && isWord(before[at]!, 'p') && this.markToken.has(before[at]!) && this.tokens[this.markToken.get(before[at]!)!] === markKind) at--;
+        // (Added paragraphs may be a mix of typed and moved-in ones: found on real contracts, a line typed and a
+        // line moved in after the one that was there. They are one run of additions all the same.)
+        const inRun = (token: Token | undefined): boolean => token === markKind || (adds(markKind) && adds(token));
+        while (at >= 0 && isWord(before[at]!, 'p') && this.markToken.has(before[at]!) && inRun(this.tokens[this.markToken.get(before[at]!)!])) at--;
         const single = at === before.length - 2;
         const removal = markKind === 'deleted' || markKind === 'movedFrom';
         const whollyRemoved = removal && content.length > 0 && content.every((c) => isW(c, markKind === 'deleted' ? 'del' : 'moveFrom'));
@@ -752,8 +755,11 @@ class PartConverter {
         // (A run of removed paragraphs ending in one of which part remains is left as it is: which clause number
         // the remaining part should carry cannot be told here, and the Checker judges the result.)
         if (!joinWith && previous && index !== undefined && this.tokens[index] === 'unchanged' && (single || !removal || whollyRemoved || content.length === 0)) {
-          applyChangeStyle(markProperties(previous), markKind, this.options);
-          this.tokens[index] = markKind;
+          // The mark before the run shows the first of the run's own kind of change (its paragraph is the one that begins there).
+          const firstOfRun = single ? undefined : tokenOf(before[at + 1]);
+          const shown: ChangeKind = firstOfRun && firstOfRun !== 'unchanged' && firstOfRun !== 'boundary' ? firstOfRun : markKind;
+          applyChangeStyle(markProperties(previous), shown, this.options);
+          this.tokens[index] = shown;
           // Numbering must follow (found on real contracts: otherwise two paragraphs keep a number where the
           // modified document has one clause, and every later clause is numbered one too high).
           if (removal) {
