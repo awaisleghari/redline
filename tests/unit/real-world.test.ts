@@ -14,6 +14,7 @@ import { produceTrackedChanges } from '../../src/producer/produce';
 import { buildDocx, buildPair, pairById } from '../fixtures/pairs';
 import type { DocSpec } from '../fixtures/pairs';
 import { freshRelationshipIds, renameInPart } from '../../src/producer/fresh-relationship-ids';
+import { refineChanges } from '../../src/producer/refine-changes';
 import { repairSectionReferences } from '../../src/producer/repair-section-references';
 import { compareDocuments } from 'docxodus/core';
 import { repairNotes } from '../../src/producer/repair-notes';
@@ -1423,9 +1424,12 @@ describe('wording typed into the footnote separator', () => {
     const modified = await withSeparatorText(pair.modified, 'Contract No: 1 Revision date: 9 June');
     const { tracked, staticRedline } = await bothPass(original, modified);
     const notes = decoder.decode((await unzip(tracked)).get('word/footnotes.xml')!);
-    expect(notes).toMatch(/<w:del\b[^>]*>(?:(?!<\/w:del>).)*Revision date: 1 May/s);
-    expect(notes).toMatch(/<w:ins\b[^>]*>(?:(?!<\/w:ins>).)*Revision date: 9 June/s);
-    expect(decoder.decode((await unzip(staticRedline)).get('word/footnotes.xml')!)).toContain('Revision date: 1 May');
+    // (Only the words that differ are marked: the separator repair replaces the line, and the refining step then
+    // leaves the words both versions share unmarked.)
+    expect(notes).toMatch(/<w:del\b[^>]*>(?:(?!<\/w:del>).)*1 May/s);
+    expect(notes).toMatch(/<w:ins\b[^>]*>(?:(?!<\/w:ins>).)*9 June/s);
+    expect(notes).not.toMatch(/<w:(?:del|ins)\b[^>]*>(?:(?!<\/w:(?:del|ins)>).)*Contract No/s);
+    expect(decoder.decode((await unzip(staticRedline)).get('word/footnotes.xml')!)).toContain('1 May');
   });
 
   it('the same wording in both is left exactly as the engine wrote it', async () => {
@@ -1582,5 +1586,66 @@ describe('a text box whose two stored forms show the same words, one of them thr
     const differing = await editPart(await withBox(pair.modified), /^word\/document\.xml$/, (xml) => xml.replace(/(<mc:Fallback>.*?)www\.example\.org<\/w:t>/s, '$1www.example.net</w:t>'));
     const tracked = await produceTrackedChanges(original, differing);
     expect(await failed(checkTrackedChanges({ original, modified: differing, output: tracked }))).toContain('completeness');
+  });
+});
+
+/**
+ * Reported by the owner on a real comparison: text nobody changed shown removed and typed again. Reproduced: a
+ * table cell's line holding an e-mail address as a link field gains a semicolon and a second line, and the engine
+ * re-issues the whole line. The refining step compares the two readings word by word.
+ */
+describe('text that did not change is not shown removed and typed again', () => {
+  const WNS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+  const stamp = 'w:author="x" w:date="2026-11-26T00:00:00Z"';
+  const run = (text: string): string => `<w:r><w:t xml:space="preserve">${text}</w:t></w:r>`;
+  const gone = (text: string, id: number): string => `<w:del w:id="${id}" ${stamp}><w:r><w:delText xml:space="preserve">${text}</w:delText></w:r></w:del>`;
+  const come = (text: string, id: number): string => `<w:ins w:id="${id}" ${stamp}>${run(text)}</w:ins>`;
+  const markOf = (tag: string, id: number): string => `<w:pPr><w:rPr><w:${tag} w:id="${id}" ${stamp}/></w:rPr></w:pPr>`;
+  const body = (inner: string): string => `<w:document ${WNS}><w:body>${inner}<w:sectPr/></w:body></w:document>`;
+  const plainText = (xml: string): string => xml.replace(/<[^>]+>/g, '');
+
+  it('a line with a link field that gains a semicolon and a second line: only those are marked', async () => {
+    const base = (await buildPair(pairById('one-word-change'))).original;
+    const field = (address: string): string =>
+      `<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> HYPERLINK "mailto:${address}" </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>${run(address)}<w:r><w:fldChar w:fldCharType="end"/></w:r>`;
+    const cell = (paragraphs: string): string => `<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="9000" w:type="dxa"/></w:tcPr>${paragraphs}</w:tc></w:tr></w:tbl>`;
+    const withCell = (paragraphs: string): Promise<Uint8Array> => editPart(base, /^word\/document\.xml$/, (xml) => xml.replace(/<w:p>.*?<\/w:p>/s, (first) => first + cell(paragraphs)));
+    const original = await withCell(`<w:p>${run('Email: ')}${field('info@example.org')}</w:p>`);
+    const modified = await withCell(`<w:p>${run('Email: ')}${field('info@example.org')}${run(';')}</w:p><w:p>${field('second@example.org')}</w:p>`);
+    const { tracked } = await bothPass(original, modified);
+    const xml = decoder.decode((await unzip(tracked)).get('word/document.xml')!);
+    const removed = (xml.match(/<w:del\b[^>\/]*>.*?<\/w:del>/gs) ?? []).map(plainText).join('');
+    const added = (xml.match(/<w:ins\b[^>\/]*>.*?<\/w:ins>/gs) ?? []).map(plainText).join('');
+    expect(removed).toBe('');
+    expect(added).not.toContain('info@example.org');
+    expect(added).toContain('second@example.org');
+  });
+
+  it('a removed paragraph followed by an added one that differs in a word: one paragraph, one word marked', () => {
+    const refined = refineChanges(body(`<w:p>${run('Before')}</w:p><w:p>${markOf('del', 1)}${gone('The Supplier shall invoice the Customer monthly in arrear.', 2)}</w:p><w:p>${come('The Supplier shall invoice the Customer quarterly in arrear.', 3)}</w:p><w:p>${run('After')}</w:p>`))!;
+    expect(refined.match(/<w:p[ >]/g)).toHaveLength(3);
+    expect((refined.match(/<w:delText[^>]*>[^<]*/g) ?? []).map(plainText)).toEqual(['monthly']);
+    expect(plainText((refined.match(/<w:ins\b[^>\/]*>.*?<\/w:ins>/gs) ?? []).join(''))).toBe('quarterly');
+  });
+
+  it('small words left stranded between changes are not kept as islands', () => {
+    const refined = refineChanges(body(`<w:p>${gone('Payment is due on the first day', 1)}${come('Rent falls payable on a quarter date', 2)}</w:p>`));
+    // "on" is in both, but alone between changed words it would only make the line harder to read: nothing marks less, so nothing is rewritten.
+    expect(refined).toBeUndefined();
+  });
+
+  it('a stretch holding something this step does not handle is left exactly as the engine wrote it', () => {
+    const withDrawing = body(`<w:p>${markOf('del', 1)}${gone('Same words here', 2)}<w:r><w:drawing/></w:r></w:p><w:p>${come('Same words here', 3)}</w:p>`);
+    expect(refineChanges(withDrawing)).toBeUndefined();
+    const withMove = body(`<w:p>${markOf('del', 1)}<w:moveFrom w:id="2" ${stamp}>${run('Same words here')}</w:moveFrom></w:p><w:p>${come('Same words here', 3)}</w:p>`);
+    expect(refineChanges(withMove)).toBeUndefined();
+    const differentSettings = body(`<w:p><w:pPr><w:jc w:val="center"/><w:rPr><w:del w:id="1" ${stamp}/></w:rPr></w:pPr>${gone('Same words here', 2)}</w:p><w:p>${come('Same words here', 3)}</w:p>`);
+    expect(refineChanges(differentSettings)).toBeUndefined();
+  });
+
+  it('a bookmark inside the stretch stays in the document', () => {
+    const refined = refineChanges(body(`<w:p>${markOf('del', 1)}${gone('The Supplier shall invoice monthly.', 2)}</w:p><w:bookmarkEnd w:id="9"/><w:p><w:bookmarkStart w:id="10" w:name="x"/>${come('The Supplier shall invoice quarterly.', 3)}<w:bookmarkEnd w:id="10"/></w:p>`))!;
+    expect(refined).toContain('<w:bookmarkEnd w:id="9"/>');
+    expect(refined).toContain('w:name="x"');
   });
 });

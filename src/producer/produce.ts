@@ -14,6 +14,7 @@ import { repairNotes } from './repair-notes';
 import { restorePictures } from './restore-pictures';
 import { unwrapRowControls } from './unwrap-row-controls';
 import { repairParagraphProperties } from './repair-paragraphs';
+import { refineChanges } from './refine-changes';
 import { repairSeparators } from './repair-separators';
 import { repairSectionReferences } from './repair-section-references';
 import { REVISION_AUTHOR } from './protocol';
@@ -60,6 +61,12 @@ export async function produceTrackedChanges(original: Uint8Array, modified: Uint
   if (mainNow && modifiedMain && originalMain) {
     const repaired = repairSectionReferences(mainNow, relsOf(files), { main: decoder.decode(originalMain), rels: relsOf(originalFiles) }, { main: decoder.decode(modifiedMain), rels: relsOf(modifiedFiles) });
     if (repaired) parts.set('word/document.xml', repaired);
+  }
+  // Text nobody changed is not shown removed and typed again: over-marked stretches are compared word by word (refine-changes.ts).
+  for (const [name, xml] of parts) {
+    if (!/^word\/(document|header\d*|footer\d*|footnotes|endnotes)\.xml$/.test(name)) continue;
+    const refined = refineChanges(xml);
+    if (refined) parts.set(name, refined);
   }
   for (const [name, xml] of parts) files.set(name, encoder.encode(labelAuthors(xml)));
   dropUnusedHeadersAndFooters(files);
