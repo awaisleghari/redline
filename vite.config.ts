@@ -57,10 +57,16 @@ function productionPolicy(): Plugin {
  * in src/app/docs/articles/). The local servers are taught the same addresses.
  */
 function pageRoutes(): Plugin {
-  const articles = (): string[] => readdirSync('src/app/docs/articles').filter((name) => name.endsWith('.html')).map((name) => name.slice(0, -'.html'.length));
+  // An article whose header says `hidden: yes` gets no address (see src/app/docs/articles/README.md).
+  const isHidden = (name: string): boolean => /^\s*hidden\s*:\s*yes\s*$/m.test(/^\s*<!--([\s\S]*?)-->/.exec(readFileSync(join('src/app/docs/articles', name), 'utf8'))?.[1] ?? '');
+  const articles = (): string[] =>
+    readdirSync('src/app/docs/articles')
+      .filter((name) => name.endsWith('.html') && !isHidden(name))
+      .map((name) => name.slice(0, -'.html'.length));
   const rewrite = (req: IncomingMessage, _res: ServerResponse, next: () => void): void => {
     const [path = '', query] = (req.url ?? '').split('?');
-    const page = path === '/app' ? '/app.html' : path === '/docs' || /^\/docs\/[a-z0-9-]+$/.test(path) ? '/docs.html' : undefined;
+    const slug = /^\/docs\/([a-z0-9-]+)$/.exec(path)?.[1];
+    const page = path === '/app' ? '/app.html' : path === '/docs' || (slug !== undefined && articles().includes(slug)) ? '/docs.html' : undefined;
     if (page) req.url = page + (query === undefined ? '' : `?${query}`);
     next();
   };

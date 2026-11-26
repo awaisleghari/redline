@@ -14,6 +14,8 @@ interface Article {
   order: number;
   icon: string;
   badge?: string;
+  /** Written but not published yet: no menu entry, address, search result or link. */
+  hidden: boolean;
   body: string;
   /** Everything a search looks through, in lower case. */
   text: string;
@@ -69,10 +71,12 @@ const articles: Article[] = Object.entries(files)
       order: Number(fields.get('order') ?? 999),
       icon: fields.get('icon') ?? 'lines',
       badge: fields.get('badge'),
+      hidden: fields.get('hidden') === 'yes',
       body,
       text: `${title} ${plain(intro)} ${plain(body)}`.replace(/\s+/g, ' ').toLowerCase(),
     };
   })
+  .filter((article) => !article.hidden)
   .sort((a, b) => a.order - b.order || a.slug.localeCompare(b.slug));
 
 const addressOf = (article: Article): string => (article === articles[0] ? HOME : `${HOME}/${article.slug}`);
@@ -150,6 +154,15 @@ function show(article: Article, toTop: boolean): void {
   // The articles (intro included) are this site's own files, written by its owner: shown as written.
   element('article-intro').innerHTML = article.intro;
   body.innerHTML = article.body;
+  // A link to an article that is not published (hidden, or not written) keeps its words but stops being a link.
+  for (const link of Array.from(body.querySelectorAll<HTMLAnchorElement>('a[href^="/docs/"]'))) {
+    const slug = /^\/docs\/([a-z0-9-]+)\/?$/.exec(link.getAttribute('href')!)?.[1];
+    if (articles.some((one) => one.slug === slug)) continue;
+    const plainText = document.createElement(link.classList.contains('doc-card') ? 'div' : 'span');
+    plainText.className = link.className;
+    plainText.append(...Array.from(link.childNodes));
+    link.replaceWith(plainText);
+  }
   // The lists of checks come from the app's own list, so the docs cannot fall out of step with it.
   for (const list of Array.from(body.querySelectorAll<HTMLElement>('[data-checks]'))) {
     const kind = list.dataset.checks as OutputKind;
