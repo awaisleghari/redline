@@ -711,7 +711,8 @@ class PartConverter {
         const adds = (k: string | undefined): boolean => k === 'inserted' || k === 'movedTo';
         const tokenOf = (block: Element | undefined): Token | undefined => (block && isWord(block, 'p') && this.markToken.has(block) ? this.tokens[this.markToken.get(block)!] : undefined);
         const wrappers = removes(markKind) ? ['del', 'moveFrom'] : ['ins', 'moveTo'];
-        const lastWhole = content.length > 0 && content.every((c) => wrappers.some((name) => isW(c, name)));
+        // (An empty last paragraph came or went whole too: found on real contracts, a form field's line replaced by an empty one.)
+        const lastWhole = content.every((c) => wrappers.some((name) => isW(c, name)));
         const neighbour = before[before.length - 2];
         if (lastWhole && ((removes(tokenOf(neighbour)) && adds(markKind)) || (adds(tokenOf(neighbour)) && removes(markKind)))) {
           joinWith = neighbour;

@@ -994,6 +994,32 @@ describe('the one line of a cell replaced, written as a removed paragraph and an
 });
 
 /**
+ * Found on real contracts (held-out run 2, Irish and Islamic Development Bank forms): the one line of a cell (a
+ * form field) removed and an empty line left in its place, written as the old line removed with its mark and an
+ * empty paragraph added with the cell's last mark. A rule added in the third batch wrongly left this case out.
+ */
+describe('the one line of a cell replaced by an empty line', () => {
+  it('the static redline passes and the cell holds one paragraph', async () => {
+    const OLD = 'Applicant entry goes on this line';
+    const change = (tag: string, id: number): string => `<w:${tag} w:id="${9500 + id}" w:author="Redline" w:date="2026-11-26T00:00:00Z"`;
+    const cellOf = (paragraphs: string): string => `<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="9000" w:type="dxa"/></w:tcPr>${paragraphs}</w:tc></w:tr></w:tbl>`;
+    const base = (await buildPair(pairById('one-word-change'))).original;
+    const withCell = (paragraphs: string): Promise<Uint8Array> => editPart(base, /^word\/document\.xml$/, (xml) => xml.replace(/<w:p>.*?<\/w:p>/s, (first) => first + cellOf(paragraphs)));
+    const original = await withCell(`<w:p><w:r><w:t xml:space="preserve">${OLD}</w:t></w:r></w:p>`);
+    const modified = await withCell('<w:p/>');
+    const tracked = await withCell(
+      `<w:p><w:pPr><w:rPr>${change('del', 1)}/></w:rPr></w:pPr>${change('del', 2)}><w:r><w:delText xml:space="preserve">${OLD}</w:delText></w:r></w:del></w:p>` +
+        `<w:p><w:pPr><w:rPr>${change('ins', 3)}/></w:rPr></w:pPr></w:p>`,
+    );
+    expect(await failed(checkTrackedChanges({ original, modified, output: tracked }))).toEqual([]);
+    const made = await makeStaticRedline(tracked, original, COVER);
+    expect((await checkStaticRedline({ original, modified, output: made.docx, ...COVER })).checks.filter((c) => !c.passed)).toEqual([]);
+    const cell = /<w:tc>.*?<\/w:tc>/s.exec(decoder.decode((await unzip(made.docx)).get('word/document.xml')!))![0];
+    expect(cell.match(/<w:p[ >]/g)).toHaveLength(1);
+  });
+});
+
+/**
  * Found on a real contract (held-out run 1, an ADB document carrying tracked changes): a cell's one line replaced
  * by twenty paragraphs. The engine writes the old line removed with its mark, then every new paragraph added with
  * its mark, the cell's last included. Left as written, the original read as two paragraphs (the old line, and an
