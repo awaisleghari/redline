@@ -503,7 +503,10 @@ describe('table rows wrapped in content controls', () => {
     expect(counts).toEqual((await bothPass(pair.original, pair.modified)).counts);
   });
 
-  it('the fault is real: straight from the engine, at least one of these tables is refused by the Checker', async () => {
+  // (Until engine version 17 this test asserted the fault: the engine lost ordinary rows of such tables. Version 17
+  // tracks changes inside row-level content controls, and the same three tables now come straight from the engine
+  // in a form the Checker accepts. The unwrapping step is kept until removing it has been measured on real files.)
+  it('since engine version 17 the fault is gone: straight from the engine, none of these tables is refused', async () => {
     let refused = 0;
     for (const id of ['table-row-added', 'table-row-deleted', 'table-cell-change']) {
       const pair = await buildPair(pairById(id));
@@ -512,7 +515,7 @@ describe('table rows wrapped in content controls', () => {
       const raw = await compareDocuments(original, modified, { authorName: 'Redline' });
       if ((await failed(checkTrackedChanges({ original, modified, output: raw }))).length > 0) refused++;
     }
-    expect(refused).toBeGreaterThan(0);
+    expect(refused).toBe(0);
   });
 });
 
