@@ -1090,6 +1090,30 @@ describe('the one line of a cell replaced by several paragraphs', () => {
   }
 });
 
+/** Found on a real contract (held-out run 2): as above, with a smart tag in the middle of the last new paragraph. */
+describe('the one line of a cell replaced by paragraphs, the last holding a smart tag', () => {
+  it('the static redline passes', async () => {
+    const OLD = 'Insert total price per line item';
+    const run = (text: string): string => `<w:r><w:t xml:space="preserve">${text}</w:t></w:r>`;
+    const change = (tag: string, id: number): string => `<w:${tag} w:id="${9700 + id}" w:author="Redline" w:date="2026-11-26T00:00:00Z"`;
+    const tag = (inner: string): string => `<w:smartTag w:uri="urn:schemas-microsoft-com:office:smarttags" w:element="place">${inner}</w:smartTag>`;
+    const cellOf = (paragraphs: string): string => `<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="9000" w:type="dxa"/></w:tcPr>${paragraphs}</w:tc></w:tr></w:tbl>`;
+    const base = (await buildPair(pairById('one-word-change'))).original;
+    const withCell = (paragraphs: string): Promise<Uint8Array> => editPart(base, /^word\/document\.xml$/, (xml) => xml.replace(/<w:p>.*?<\/w:p>/s, (first) => first + cellOf(paragraphs)));
+    const original = await withCell(`<w:p>${run(OLD)}</w:p>`);
+    const modified = await withCell(`<w:p>${run('Total price per line item')}</w:p><w:p>${run('(')}${tag(run('Col.'))}${run(' 4 x 5)')}</w:p>`);
+    const added = (id: number, text: string): string => `${change('ins', id)}>${run(text)}</w:ins>`;
+    const tracked = await withCell(
+      `<w:p><w:pPr><w:rPr>${change('del', 1)}/></w:rPr></w:pPr>${change('del', 2)}><w:r><w:delText xml:space="preserve">${OLD}</w:delText></w:r></w:del></w:p>` +
+        `<w:p><w:pPr><w:rPr>${change('ins', 3)}/></w:rPr></w:pPr>${added(4, 'Total price per line item')}</w:p>` +
+        `<w:p><w:pPr><w:rPr>${change('ins', 5)}/></w:rPr></w:pPr>${added(6, '(')}${tag(added(7, 'Col.'))}${added(8, ' 4 x 5)')}</w:p>`,
+    );
+    expect(await failed(checkTrackedChanges({ original, modified, output: tracked }))).toEqual([]);
+    const made = await makeStaticRedline(tracked, original, COVER);
+    expect((await checkStaticRedline({ original, modified, output: made.docx, ...COVER })).checks.filter((c) => !c.passed)).toEqual([]);
+  });
+});
+
 /** Review finding on the third batch: the replaced line and the new paragraphs numbered. The joined paragraph stays, so it shows no old number. */
 describe('the one numbered line of a cell replaced by several numbered paragraphs', () => {
   it('the static redline passes, and the joined paragraph carries no old clause number', async () => {

@@ -712,7 +712,15 @@ class PartConverter {
         const tokenOf = (block: Element | undefined): Token | undefined => (block && isWord(block, 'p') && this.markToken.has(block) ? this.tokens[this.markToken.get(block)!] : undefined);
         const wrappers = removes(markKind) ? ['del', 'moveFrom'] : ['ins', 'moveTo'];
         // (An empty last paragraph came or went whole too: found on real contracts, a form field's line replaced by an empty one.)
-        const lastWhole = content.every((c) => wrappers.some((name) => isW(c, name)));
+        // (A wrapper such as a smart tag or a link counts when everything inside it came or went: found on a real
+        // contract, a moved-in line with a smart tag in the middle of it.)
+        const changedWhole = (c: Element): boolean => {
+          if (wrappers.some((name) => isW(c, name))) return true;
+          if (isW(c, 'r')) return false;
+          const inside = elementChildren(c).filter((x) => !(isW(x) && /Pr$/.test(x.localName!)));
+          return inside.length > 0 && inside.every(changedWhole);
+        };
+        const lastWhole = content.every(changedWhole);
         const neighbour = before[before.length - 2];
         if (lastWhole && ((removes(tokenOf(neighbour)) && adds(markKind)) || (adds(tokenOf(neighbour)) && removes(markKind)))) {
           joinWith = neighbour;
