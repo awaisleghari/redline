@@ -131,7 +131,7 @@ const keyOf = (rowXml: string): string =>
     .replace(/\s+\/>/g, '/>')
     .replace(/<w:rPr\/>/g, '')
     .replace(/<w:rPr>(?:(?!<\/w:rPr>).)*<\/w:rPr>(?=<\/w:pPr>)/g, '')
-    .replace(/<w:pPr><\/w:pPr>|<w:pPr\/>/g, '');
+    .replace(/<w:pPr><\/w:pPr>|<w:pPr\/>|<w:trPr><\/w:trPr>|<w:trPr\/>/g, '');
 
 /** Pairs of places, in order, at which the two lists hold the same thing. */
 function pairsOf(a: string[], b: string[]): [number, number][] {
