@@ -21,7 +21,8 @@
     "build:pdf-image": "docker build -t redline-pdf pdf-container",
     "test:worker": "vitest run --config vitest.worker.config.ts",
     "test:live": "tsx scripts/live-check.ts",
-    "deploy": "npm run build && wrangler deploy"
+    "deploy": "npm run build && wrangler deploy",
+    "make:share-image": "node scripts/share-image/make.mjs"
   },
   "devDependencies": {
     "@cloudflare/containers": "^0.3.7",
