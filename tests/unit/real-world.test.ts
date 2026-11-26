@@ -14,6 +14,8 @@ import { produceTrackedChanges } from '../../src/producer/produce';
 import { buildDocx, buildPair, pairById } from '../fixtures/pairs';
 import type { DocSpec } from '../fixtures/pairs';
 import { freshRelationshipIds, renameInPart } from '../../src/producer/fresh-relationship-ids';
+import { realignRows } from '../../src/producer/realign-rows';
+import { refineChanges } from '../../src/producer/refine-changes';
 import { repairSectionReferences } from '../../src/producer/repair-section-references';
 import { compareDocuments } from 'docxodus/core';
 import { repairNotes } from '../../src/producer/repair-notes';
@@ -503,7 +505,10 @@ describe('table rows wrapped in content controls', () => {
     expect(counts).toEqual((await bothPass(pair.original, pair.modified)).counts);
   });
 
-  it('the fault is real: straight from the engine, at least one of these tables is refused by the Checker', async () => {
+  // (Until engine version 17 this test asserted the fault: the engine lost ordinary rows of such tables. Version 17
+  // tracks changes inside row-level content controls, and the same three tables now come straight from the engine
+  // in a form the Checker accepts. The unwrapping step is kept until removing it has been measured on real files.)
+  it('since engine version 17 the fault is gone: straight from the engine, none of these tables is refused', async () => {
     let refused = 0;
     for (const id of ['table-row-added', 'table-row-deleted', 'table-cell-change']) {
       const pair = await buildPair(pairById(id));
@@ -512,7 +517,7 @@ describe('table rows wrapped in content controls', () => {
       const raw = await compareDocuments(original, modified, { authorName: 'Redline' });
       if ((await failed(checkTrackedChanges({ original, modified, output: raw }))).length > 0) refused++;
     }
-    expect(refused).toBeGreaterThan(0);
+    expect(refused).toBe(0);
   });
 });
 
@@ -1420,9 +1425,12 @@ describe('wording typed into the footnote separator', () => {
     const modified = await withSeparatorText(pair.modified, 'Contract No: 1 Revision date: 9 June');
     const { tracked, staticRedline } = await bothPass(original, modified);
     const notes = decoder.decode((await unzip(tracked)).get('word/footnotes.xml')!);
-    expect(notes).toMatch(/<w:del\b[^>]*>(?:(?!<\/w:del>).)*Revision date: 1 May/s);
-    expect(notes).toMatch(/<w:ins\b[^>]*>(?:(?!<\/w:ins>).)*Revision date: 9 June/s);
-    expect(decoder.decode((await unzip(staticRedline)).get('word/footnotes.xml')!)).toContain('Revision date: 1 May');
+    // (Only the words that differ are marked: the separator repair replaces the line, and the refining step then
+    // leaves the words both versions share unmarked.)
+    expect(notes).toMatch(/<w:del\b[^>]*>(?:(?!<\/w:del>).)*1 May/s);
+    expect(notes).toMatch(/<w:ins\b[^>]*>(?:(?!<\/w:ins>).)*9 June/s);
+    expect(notes).not.toMatch(/<w:(?:del|ins)\b[^>]*>(?:(?!<\/w:(?:del|ins)>).)*Contract No/s);
+    expect(decoder.decode((await unzip(staticRedline)).get('word/footnotes.xml')!)).toContain('1 May');
   });
 
   it('the same wording in both is left exactly as the engine wrote it', async () => {
@@ -1579,5 +1587,235 @@ describe('a text box whose two stored forms show the same words, one of them thr
     const differing = await editPart(await withBox(pair.modified), /^word\/document\.xml$/, (xml) => xml.replace(/(<mc:Fallback>.*?)www\.example\.org<\/w:t>/s, '$1www.example.net</w:t>'));
     const tracked = await produceTrackedChanges(original, differing);
     expect(await failed(checkTrackedChanges({ original, modified: differing, output: tracked }))).toContain('completeness');
+  });
+});
+
+/**
+ * Reported by the owner on a real comparison: text nobody changed shown removed and typed again. Reproduced: a
+ * table cell's line holding an e-mail address as a link field gains a semicolon and a second line, and the engine
+ * re-issues the whole line. The refining step compares the two readings word by word.
+ */
+describe('text that did not change is not shown removed and typed again', () => {
+  const WNS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+  const stamp = 'w:author="x" w:date="2026-11-26T00:00:00Z"';
+  const run = (text: string): string => `<w:r><w:t xml:space="preserve">${text}</w:t></w:r>`;
+  const gone = (text: string, id: number): string => `<w:del w:id="${id}" ${stamp}><w:r><w:delText xml:space="preserve">${text}</w:delText></w:r></w:del>`;
+  const come = (text: string, id: number): string => `<w:ins w:id="${id}" ${stamp}>${run(text)}</w:ins>`;
+  const markOf = (tag: string, id: number): string => `<w:pPr><w:rPr><w:${tag} w:id="${id}" ${stamp}/></w:rPr></w:pPr>`;
+  const body = (inner: string): string => `<w:document ${WNS}><w:body>${inner}<w:sectPr/></w:body></w:document>`;
+  const plainText = (xml: string): string => xml.replace(/<[^>]+>/g, '');
+
+  it('a line with a link field that gains a semicolon and a second line: only those are marked', async () => {
+    const base = (await buildPair(pairById('one-word-change'))).original;
+    const field = (address: string): string =>
+      `<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> HYPERLINK "mailto:${address}" </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>${run(address)}<w:r><w:fldChar w:fldCharType="end"/></w:r>`;
+    const cell = (paragraphs: string): string => `<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="9000" w:type="dxa"/></w:tcPr>${paragraphs}</w:tc></w:tr></w:tbl>`;
+    const withCell = (paragraphs: string): Promise<Uint8Array> => editPart(base, /^word\/document\.xml$/, (xml) => xml.replace(/<w:p>.*?<\/w:p>/s, (first) => first + cell(paragraphs)));
+    const original = await withCell(`<w:p>${run('Email: ')}${field('info@example.org')}</w:p>`);
+    const modified = await withCell(`<w:p>${run('Email: ')}${field('info@example.org')}${run(';')}</w:p><w:p>${field('second@example.org')}</w:p>`);
+    const { tracked } = await bothPass(original, modified);
+    const xml = decoder.decode((await unzip(tracked)).get('word/document.xml')!);
+    const removed = (xml.match(/<w:del\b[^>\/]*>.*?<\/w:del>/gs) ?? []).map(plainText).join('');
+    const added = (xml.match(/<w:ins\b[^>\/]*>.*?<\/w:ins>/gs) ?? []).map(plainText).join('');
+    expect(removed).toBe('');
+    expect(added).not.toContain('info@example.org');
+    expect(added).toContain('second@example.org');
+  });
+
+  it('a removed paragraph followed by an added one that differs in a word: one paragraph, one word marked', () => {
+    const refined = refineChanges(body(`<w:p>${run('Before')}</w:p><w:p>${markOf('del', 1)}${gone('The Supplier shall invoice the Customer monthly in arrear.', 2)}</w:p><w:p>${markOf('ins', 4)}${come('The Supplier shall invoice the Customer quarterly in arrear.', 3)}</w:p><w:p>${run('After')}</w:p>`))!;
+    expect(refined.match(/<w:p[ >\/]/g)).toHaveLength(3);
+    expect((refined.match(/<w:delText[^>]*>[^<]*/g) ?? []).map(plainText)).toEqual(['monthly']);
+    expect(plainText((refined.match(/<w:ins\b[^>\/]*>.*?<\/w:ins>/gs) ?? []).join(''))).toBe('quarterly');
+  });
+
+  it('a changed figure is shown replaced whole, never digit by digit', async () => {
+    // (Found by the damaged-output tests: "$300,000" to "$30,000" was being shown as "300" to "30" inside the figure.)
+    const pair = await buildPair(pairById('number-change'));
+    const { tracked } = await bothPass(pair.original, pair.modified);
+    const xml = decoder.decode((await unzip(tracked)).get('word/document.xml')!);
+    expect((xml.match(/<w:delText[^>]*>[^<]*/g) ?? []).map(plainText).join('|')).toContain('$300,000');
+    expect(plainText((xml.match(/<w:ins\b[^>\/]*>.*?<\/w:ins>/gs) ?? []).join('|'))).toContain('$30,000');
+    const refined = refineChanges(body(`<w:p>${markOf('ins', 1)}${come('The fee is 12.5% of $1,200.50 payable on 01/02/2027.', 2)}</w:p><w:p>${markOf('del', 3)}${gone('The fee is 12.75% of $1,300.50 payable on 01/03/2027.', 4)}</w:p><w:p>${run('After')}</w:p>`))!;
+    // ("of" between the two changed figures goes with them: a short word stranded between changes is not kept apart.)
+    expect((refined.match(/<w:delText[^>]*>[^<]*/g) ?? []).map(plainText)).toEqual(['12.75% of $1,300.50', '01/03/2027']);
+  });
+
+  it('small words left stranded between changes are not kept as islands', () => {
+    const refined = refineChanges(body(`<w:p>${gone('Payment is due on the first day', 1)}${come('Rent falls payable on a quarter date', 2)}</w:p>`));
+    // "on" is in both, but alone between changed words it would only make the line harder to read: nothing marks less, so nothing is rewritten.
+    expect(refined).toBeUndefined();
+  });
+
+  it('a stretch holding something this step does not handle is left exactly as the engine wrote it', () => {
+    const withDrawing = body(`<w:p>${markOf('del', 1)}${gone('Same words here', 2)}<w:r><w:drawing/></w:r></w:p><w:p>${come('Same words here', 3)}</w:p>`);
+    expect(refineChanges(withDrawing)).toBeUndefined();
+    const withMove = body(`<w:p>${markOf('del', 1)}<w:moveFrom w:id="2" ${stamp}>${run('Same words here')}</w:moveFrom></w:p><w:p>${come('Same words here', 3)}</w:p>`);
+    expect(refineChanges(withMove)).toBeUndefined();
+    const differentSettings = body(`<w:p><w:pPr><w:jc w:val="center"/><w:rPr><w:del w:id="1" ${stamp}/></w:rPr></w:pPr>${gone('Same words here', 2)}</w:p><w:p>${come('Same words here', 3)}</w:p>`);
+    expect(refineChanges(differentSettings)).toBeUndefined();
+  });
+
+  it('a link whose words change stays one link (review finding)', async () => {
+    const base = (await buildPair(pairById('one-word-change'))).original;
+    const link = (inner: string): string => `<w:hyperlink w:anchor="clause"><w:r><w:t xml:space="preserve">${inner}</w:t></w:r></w:hyperlink>`;
+    const para = (inner: string): string => `<w:p>${run('See ')}${inner}${run(' for details.')}</w:p>`;
+    const withPara = (inner: string): Promise<Uint8Array> => editPart(base, /^word\/document\.xml$/, (xml) => xml.replace(/<w:p>.*?<\/w:p>/s, (first) => first + inner));
+    const original = await withPara(para(link('clause 4 (Delivery)')));
+    const modified = await withPara(para(link('clause 5 (Delivery)')));
+    // As the engine writes a line it re-issues: the new paragraph added and the old one removed, marks and all.
+    const fresh = `<w:p>${markOf('ins', 1)}${come('See ', 5)}<w:hyperlink w:anchor="clause">${come('clause 5 (Delivery)', 6)}</w:hyperlink>${come(' for details.', 7)}</w:p>`;
+    const old = `<w:p>${markOf('del', 8)}${gone('See ', 2)}<w:hyperlink w:anchor="clause">${gone('clause 4 (Delivery)', 3)}</w:hyperlink>${gone(' for details.', 4)}</w:p>`;
+    const engineLike = await withPara(fresh + old);
+    expect(await failed(checkTrackedChanges({ original, modified, output: engineLike }))).toEqual([]);
+    const better = await editPart(engineLike, /^word\/document\.xml$/, (xml) => refineChanges(xml)!);
+    expect(await failed(checkTrackedChanges({ original, modified, output: better }))).toEqual([]);
+    const made = await makeStaticRedline(better, original, COVER);
+    expect((await checkStaticRedline({ original, modified, output: made.docx, ...COVER })).checks.filter((c) => !c.passed)).toEqual([]);
+    expect(decoder.decode((await unzip(better)).get('word/document.xml')!).match(/<w:hyperlink\b/g)).toHaveLength(1);
+  });
+
+  it('text written without "keep white space" is left to the engine (review finding)', () => {
+    const bare = body(`<w:p>${markOf('del', 1)}<w:del w:id="2" ${stamp}><w:r><w:delText>Email: </w:delText></w:r></w:del>${gone('one two three', 3)}</w:p><w:p>${markOf('ins', 4)}${come('Email: one two four', 5)}</w:p><w:p>${run('After')}</w:p>`);
+    expect(refineChanges(bare)).toBeUndefined();
+  });
+
+  it('a bookmark inside the stretch stays in the document', () => {
+    const refined = refineChanges(body(`<w:p>${markOf('del', 1)}${gone('The Supplier shall invoice monthly.', 2)}</w:p><w:bookmarkEnd w:id="9"/><w:p><w:bookmarkStart w:id="10" w:name="x"/>${come('The Supplier shall invoice quarterly.', 3)}<w:bookmarkEnd w:id="10"/></w:p>`))!;
+    expect(refined).toContain('<w:bookmarkEnd w:id="9"/>');
+    expect(refined).toContain('w:name="x"');
+  });
+});
+
+/**
+ * Found on real contracts and on the owner's own comparison (a fee table shown almost wholly rewritten): the engine
+ * pairs the rows of a table by position, so when a row is removed every later row is paired with its neighbour
+ * and shown as rewritten. The rows are paired again by what they say.
+ */
+describe('a table that loses a row keeps its other rows unmarked', () => {
+  const P = (text: string): string => `<w:p><w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`;
+  const row = (cells: string[]): string => `<w:tr>${cells.map((c) => `<w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr>${P(c)}</w:tc>`).join('')}</w:tr>`;
+  const table = (rows: string[][]): string => `<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/><w:gridCol w:w="3000"/><w:gridCol w:w="3000"/></w:tblGrid>${rows.map(row).join('')}</w:tbl>`;
+  const ROWS = [
+    ['Topic', 'Declaration', 'Response of the respondent'],
+    ['Terms', 'We have read and fully understand the terms of the request and agree to be bound by them', 'agree or disagree'],
+    ['Further information', 'The respondent authorises the buyer to collect any information from any relevant third party', 'agree or disagree'],
+    ['Requirements', 'We have read and fully understand the nature and extent of the requirements described in section two', 'agree or disagree'],
+    ['Ethics', 'By submitting this proposal the respondent warrants that it has not entered into any improper arrangement', 'agree or disagree'],
+    ['Offer validity', 'We confirm that this proposal remains open for acceptance for the offer validity period stated', 'agree or disagree'],
+    ['Conflict of interest', 'The respondent warrants that it has no actual potential or perceived conflict of interest', 'agree or disagree'],
+  ];
+  // As on the real form: a heading row of one merged cell above, and a last row of two cells, the second merged.
+  const cell = (text: string, width: number, span: number): string => `<w:tc><w:tcPr><w:tcW w:w="${width}" w:type="dxa"/>${span > 1 ? `<w:gridSpan w:val="${span}"/>` : ''}</w:tcPr>${P(text)}</w:tc>`;
+  const shaped = (rows: string[][]): string =>
+    `<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/><w:gridCol w:w="3000"/><w:gridCol w:w="3000"/></w:tblGrid>` +
+    `<w:tr>${cell('Declaration by the respondent', 9000, 3)}</w:tr>${rows.map(row).join('')}<w:tr>${cell('Details of any conflict', 3000, 1)}${cell('Describe the conflict briefly or write not applicable', 6000, 2)}</w:tr></w:tbl>`;
+  const withShaped = async (rows: string[][]): Promise<Uint8Array> => {
+    const base = (await buildPair(pairById('one-word-change'))).original;
+    return editPart(base, /^word\/document\.xml$/, (xml) => xml.replace(/<w:p>.*?<\/w:p>/s, (first) => first + shaped(rows)));
+  };
+  it('the same in a table whose first and last rows are merged differently from the rest', async () => {
+    const swaps: [string, string][] = [['fully understand', 'accept'], ['any relevant', 'a named'], ['nature and extent', 'scope'], ['improper', 'unlawful'], ['remains open', 'stays open'], ['actual potential or perceived', 'known']];
+    const changed = ROWS.slice(1).map((r, index) => [r[0]!, r[1]!.replace(swaps[index]![0], swaps[index]![1]), r[2]!]);
+    const { tracked } = await bothPass(await withShaped(ROWS), await withShaped(changed));
+    expect(markedWords(decoder.decode((await unzip(tracked)).get('word/document.xml')!))).toBeLessThanOrEqual(45);
+  });
+
+  const withTable = async (rows: string[][]): Promise<Uint8Array> => {
+    const base = (await buildPair(pairById('one-word-change'))).original;
+    return editPart(base, /^word\/document\.xml$/, (xml) => xml.replace(/<w:p>.*?<\/w:p>/s, (first) => first + table(rows)));
+  };
+  const markedWords = (xml: string): number => (xml.match(/<w:(?:ins|del)\b[^>\/]*>.*?<\/w:(?:ins|del)>/gs) ?? []).map((x) => x.replace(/<[^>]+>/g, ' ')).join(' ').split(/\s+/).filter(Boolean).length;
+
+  it('the first row removed and one word changed further down: only that row and that word are marked', async () => {
+    const original = await withTable(ROWS);
+    const changed = ROWS.slice(1).map((r) => [...r]);
+    changed[2]![1] = changed[2]![1]!.replace('nature and extent', 'scope');
+    const modified = await withTable(changed);
+    const { tracked } = await bothPass(original, modified);
+    const xml = decoder.decode((await unzip(tracked)).get('word/document.xml')!);
+    // The removed row (five words), "nature and extent" removed and "scope" added: nine words, and nothing else.
+    expect(markedWords(xml)).toBeLessThanOrEqual(12);
+    expect(xml).toMatch(/<w:trPr>(?:(?!<\/w:trPr>).)*<w:del\b/s);
+  });
+
+  it('a row removed and a small change in every row that stays: each row is still paired with itself', async () => {
+    const original = await withTable(ROWS);
+    const swaps: [string, string][] = [['fully understand', 'accept'], ['any relevant', 'a named'], ['nature and extent', 'scope'], ['improper', 'unlawful'], ['remains open', 'stays open'], ['actual potential or perceived', 'known']];
+    const changed = ROWS.slice(1).map((r, index) => [r[0]!, r[1]!.replace(swaps[index]![0], swaps[index]![1]), r[2]!]);
+    for (const [index, r] of changed.entries()) expect(r[1]).not.toBe(ROWS[index + 1]![1]);
+    const { tracked } = await bothPass(original, await withTable(changed));
+    const xml = decoder.decode((await unzip(tracked)).get('word/document.xml')!);
+    // The removed row (five words) and the six small changes (some twenty words): far from the two hundred of a table shown rewritten.
+    expect(markedWords(xml)).toBeLessThanOrEqual(45);
+  });
+
+  for (const direction of ['a row removed', 'a row added'] as const) {
+    it(`rows the engine paired by position are paired again by what they say: ${direction} (the engine's output built by hand)`, async () => {
+      // (The engine pairs these simple tables correctly itself; the fault was met on real forms. So its faulty
+      // output is built here by hand: each row paired with the row in the same position, the last one removed or added.)
+      const swaps: [string, string][] = [['fully understand', 'accept'], ['any relevant', 'a named'], ['nature and extent', 'scope'], ['improper', 'unlawful'], ['remains open', 'stays open'], ['actual potential or perceived', 'known']];
+      const shorter = ROWS.slice(1).map((r, index) => [r[0]!, r[1]!.replace(swaps[index]![0], swaps[index]![1]), r[2]!]);
+      const [olds, news] = direction === 'a row removed' ? [ROWS, shorter] : [shorter, ROWS];
+      const stamp = 'w:author="Redline" w:date="2026-11-26T00:00:00Z"';
+      let id = 9800;
+      const gone = (text: string): string => `<w:del w:id="${id++}" ${stamp}><w:r><w:delText xml:space="preserve">${text}</w:delText></w:r></w:del>`;
+      const come = (text: string): string => `<w:ins w:id="${id++}" ${stamp}><w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:ins>`;
+      const tc = (inner: string): string => `<w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p>${inner}</w:p></w:tc>`;
+      const shared = Math.min(olds.length, news.length);
+      const paired = Array.from({ length: shared }, (_, k) => `<w:tr>${news[k]!.map((text, c) => tc(text === olds[k]![c] ? `<w:r><w:t xml:space="preserve">${text}</w:t></w:r>` : gone(olds[k]![c]!) + come(text))).join('')}</w:tr>`).join('');
+      const extra = direction === 'a row removed' ? olds[olds.length - 1]! : news[news.length - 1]!;
+      const flag = direction === 'a row removed' ? 'del' : 'ins';
+      const last = `<w:tr><w:trPr><w:${flag} w:id="${id++}" ${stamp}/></w:trPr>${extra.map((text) => tc(flag === 'del' ? gone(text) : come(text))).join('')}</w:tr>`;
+      const byPosition = `<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/><w:gridCol w:w="3000"/><w:gridCol w:w="3000"/></w:tblGrid>${paired}${last}</w:tbl>`;
+      const original = await withTable(olds);
+      const modified = await withTable(news);
+      const base = (await buildPair(pairById('one-word-change'))).original;
+      const engineLike = await editPart(base, /^word\/document\.xml$/, (xml) => xml.replace(/<w:p>.*?<\/w:p>/s, (first) => first + byPosition));
+      expect(await failed(checkTrackedChanges({ original, modified, output: engineLike }))).toEqual([]);
+      expect(markedWords(decoder.decode((await unzip(engineLike)).get('word/document.xml')!))).toBeGreaterThan(150);
+      const better = await editPart(engineLike, /^word\/document\.xml$/, (xml) => {
+        const realigned = realignRows(xml);
+        expect(realigned).toBeDefined();
+        return refineChanges(realigned!) ?? realigned!;
+      });
+      expect(await failed(checkTrackedChanges({ original, modified, output: better }))).toEqual([]);
+      const made = await makeStaticRedline(better, original, COVER);
+      expect((await checkStaticRedline({ original, modified, output: made.docx, ...COVER })).checks.filter((c) => !c.passed)).toEqual([]);
+      expect(markedWords(decoder.decode((await unzip(better)).get('word/document.xml')!))).toBeLessThanOrEqual(45);
+    });
+  }
+
+  it('a change in the look of a paragraph mark is not lost when rows are paired again (review finding)', () => {
+    // Two rows; the engine-like output pairs them crosswise. The second old row's mark was bold; the new one's is not.
+    const stamp = 'w:author="Redline" w:date="2026-11-26T00:00:00Z"';
+    const WNS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+    const text = (t: string, mark = ''): string => `<w:tc><w:tcPr><w:tcW w:w="9000" w:type="dxa"/></w:tcPr><w:p>${mark}<w:r><w:t xml:space="preserve">${t}</w:t></w:r></w:p></w:tc>`;
+    const A = 'The supplier shall deliver the goods to the named place on the agreed date';
+    const B = 'The buyer shall pay the price within thirty days of a valid invoice being received';
+    const BOLD = '<w:pPr><w:rPr><w:b/></w:rPr></w:pPr>';
+    const crossed =
+      `<w:tr><w:tc><w:tcPr><w:tcW w:w="9000" w:type="dxa"/></w:tcPr><w:p><w:del w:id="1" ${stamp}><w:r><w:delText xml:space="preserve">${A}</w:delText></w:r></w:del><w:ins w:id="2" ${stamp}><w:r><w:t xml:space="preserve">${B}</w:t></w:r></w:ins></w:p></w:tc></w:tr>` +
+      `<w:tr><w:trPr><w:del w:id="3" ${stamp}/></w:trPr><w:tc><w:tcPr><w:tcW w:w="9000" w:type="dxa"/></w:tcPr><w:p>${BOLD}<w:del w:id="4" ${stamp}><w:r><w:delText xml:space="preserve">${B}</w:delText></w:r></w:del></w:p></w:tc></w:tr>`;
+    const realigned = realignRows(`<w:document ${WNS}><w:body><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid>${crossed}</w:tbl><w:sectPr/></w:body></w:document>`);
+    void text;
+    // Either the table is left as the engine wrote it, or the earlier look of the mark is on record.
+    if (realigned !== undefined) expect(realigned).toMatch(/<w:rPrChange\b[^>]*><w:rPr><w:b\/><\/w:rPr><\/w:rPrChange>/);
+  });
+
+  it('a table the engine paired well is left exactly as it is', async () => {
+    const original = await withTable(ROWS);
+    const changed = ROWS.map((r) => [...r]);
+    changed[3]![1] = changed[3]![1]!.replace('nature and extent', 'scope');
+    const { tracked } = await bothPass(original, await withTable(changed));
+    expect(realignRows(decoder.decode((await unzip(tracked)).get('word/document.xml')!))).toBeUndefined();
+  });
+
+  it('a row added in the middle: only that row is marked', async () => {
+    const original = await withTable(ROWS);
+    const more = [...ROWS.slice(0, 3), ['Insurance', 'The respondent holds the insurances the buyer requires and will keep them in force', 'agree or disagree'], ...ROWS.slice(3)];
+    const { tracked } = await bothPass(original, await withTable(more));
+    const xml = decoder.decode((await unzip(tracked)).get('word/document.xml')!);
+    expect(markedWords(xml)).toBeLessThanOrEqual(20);
   });
 });

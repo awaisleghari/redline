@@ -38,7 +38,7 @@
     "wrangler": "^4.167.0"
   },
   "dependencies": {
-    "docxodus": "^16.1.0",
+    "docxodus": "^17.0.0",
     "jszip": "^3.10.2",
     "pdfjs-dist": "^6.5.438",
     "saxes": "^6.0.0"
