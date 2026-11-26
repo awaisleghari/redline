@@ -63,7 +63,9 @@ interface Token {
 
 const IN_RUN_ITEM = new Set(['tab', 'br', 'cr', 'noBreakHyphen', 'softHyphen', 'sym']);
 const PASSED_OVER = new Set(['proofErr']);
-const WORDS = /[\p{L}\p{N}]+|\s+|[^\p{L}\p{N}\s]/gu;
+// A figure is one unit, with its currency sign, separators, decimals and per cent sign ("$300,000", "12.5%", "1,200"):
+// a changed amount is shown replaced whole, never digit by digit. So is a word with its inner apostrophes or hyphens.
+const WORDS = /\p{Sc}?\p{N}+(?:[.,:\/-]\p{N}+)*%?|[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*|\s+|[^\p{L}\p{N}\s]/gu;
 
 class Unsupported extends Error {}
 

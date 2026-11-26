@@ -1629,6 +1629,18 @@ describe('text that did not change is not shown removed and typed again', () => 
     expect(plainText((refined.match(/<w:ins\b[^>\/]*>.*?<\/w:ins>/gs) ?? []).join(''))).toBe('quarterly');
   });
 
+  it('a changed figure is shown replaced whole, never digit by digit', async () => {
+    // (Found by the damaged-output tests: "$300,000" to "$30,000" was being shown as "300" to "30" inside the figure.)
+    const pair = await buildPair(pairById('number-change'));
+    const { tracked } = await bothPass(pair.original, pair.modified);
+    const xml = decoder.decode((await unzip(tracked)).get('word/document.xml')!);
+    expect((xml.match(/<w:delText[^>]*>[^<]*/g) ?? []).map(plainText).join('|')).toContain('$300,000');
+    expect(plainText((xml.match(/<w:ins\b[^>\/]*>.*?<\/w:ins>/gs) ?? []).join('|'))).toContain('$30,000');
+    const refined = refineChanges(body(`<w:p>${markOf('ins', 1)}${come('The fee is 12.5% of $1,200.50 payable on 01/02/2027.', 2)}</w:p><w:p>${markOf('del', 3)}${gone('The fee is 12.75% of $1,300.50 payable on 01/03/2027.', 4)}</w:p><w:p>${run('After')}</w:p>`))!;
+    // ("of" between the two changed figures goes with them: a short word stranded between changes is not kept apart.)
+    expect((refined.match(/<w:delText[^>]*>[^<]*/g) ?? []).map(plainText)).toEqual(['12.75% of $1,300.50', '01/03/2027']);
+  });
+
   it('small words left stranded between changes are not kept as islands', () => {
     const refined = refineChanges(body(`<w:p>${gone('Payment is due on the first day', 1)}${come('Rent falls payable on a quarter date', 2)}</w:p>`));
     // "on" is in both, but alone between changed words it would only make the line harder to read: nothing marks less, so nothing is rewritten.
