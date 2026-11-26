@@ -14,6 +14,7 @@ import { repairNotes } from './repair-notes';
 import { restorePictures } from './restore-pictures';
 import { unwrapRowControls } from './unwrap-row-controls';
 import { repairParagraphProperties } from './repair-paragraphs';
+import { realignRows } from './realign-rows';
 import { refineChanges } from './refine-changes';
 import { repairSeparators } from './repair-separators';
 import { repairSectionReferences } from './repair-section-references';
@@ -65,7 +66,9 @@ export async function produceTrackedChanges(original: Uint8Array, modified: Uint
   // Text nobody changed is not shown removed and typed again: over-marked stretches are compared word by word (refine-changes.ts).
   for (const [name, xml] of parts) {
     if (!/^word\/(document|header\d*|footer\d*|footnotes|endnotes)\.xml$/.test(name)) continue;
-    const refined = refineChanges(xml);
+    // (First the rows of changed tables are paired again by what they say: realign-rows.ts.)
+    const realigned = realignRows(xml) ?? xml;
+    const refined = refineChanges(realigned) ?? (realigned === xml ? undefined : realigned);
     if (refined) parts.set(name, refined);
   }
   for (const [name, xml] of parts) files.set(name, encoder.encode(labelAuthors(xml)));
