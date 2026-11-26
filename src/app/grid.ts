@@ -1,9 +1,9 @@
 /**
  * The brand bitmap: 7 px squares on a 10 px grid in the three brand colours.
  *
- * Ported as is from the design handoff (reference/index.html, app.html and
+ * Ported from the design handoff (reference/index.html, app.html and
  * docs.html). Every number here is the design's; do not "simplify" the timing
- * or the falloff maths.
+ * or the falloff maths. One deliberate change, at the owner's request: see paintLit.
  */
 
 export interface GridHandle {
@@ -21,6 +21,41 @@ const rgba = (k: number, a: number, digits: number): string => {
 };
 const reducedMotion = (): boolean => !!window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const env = (x: number): number => (x < 0.22 ? 1 - Math.pow(1 - x / 0.22, 3) : Math.pow(1 - (x - 0.22) / 0.78, 2));
+
+/**
+ * Paint the lit squares and return the ones still alight.
+ *
+ * Changed from the design's reference at the owner's request (2026-11-26): the reference added every lit
+ * square's light to whatever was beneath it, so where ignitions crowd together (the bright edge) several
+ * colours piled up on one square and it turned white. Here a square shows one colour at a time (the
+ * earliest ignition still alight) and nothing is added together, so the edge stays in the three colours.
+ */
+function paintLit(ctx: CanvasRenderingContext2D, lit: Lit[], now: number, cols: number, place: (q: Lit) => [number, number]): Lit[] {
+  const keep: Lit[] = [];
+  const shown = new Map<number, [Lit, number]>();
+  for (const q of lit) {
+    const x = (now - q.t0) / q.d;
+    if (x >= 1) continue;
+    keep.push(q);
+    if (x < 0) continue;
+    const a = q.p * env(x);
+    if (a < 0.01) continue;
+    const cell = q.r * cols + q.c;
+    if (!shown.has(cell)) shown.set(cell, [q, a]);
+  }
+  ctx.globalCompositeOperation = 'source-over';
+  for (const [q, a] of shown.values()) {
+    const [px, py] = place(q);
+    ctx.fillStyle = rgba(q.k, a * 0.16, 3);
+    ctx.fillRect(px - 3, py - 3, CELL + 6, CELL + 6); /* halo */
+  }
+  for (const [q, a] of shown.values()) {
+    const [px, py] = place(q);
+    ctx.fillStyle = rgba(q.k, a, 3);
+    ctx.fillRect(px, py, CELL, CELL);
+  }
+  return keep;
+}
 
 /** The landing page's animated grid. `invert` puts the bright edge at the bottom. */
 export function startGrid(cv: HTMLCanvasElement, invert: boolean): GridHandle {
@@ -94,23 +129,7 @@ export function startGrid(cv: HTMLCanvasElement, invert: boolean): GridHandle {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
     ctx.drawImage(base, 0, 0, W, H);
-    ctx.globalCompositeOperation = 'lighter';
-    const keep: Lit[] = [];
-    for (const q of lit) {
-      const x = (now - q.t0) / q.d;
-      if (x >= 1) continue;
-      keep.push(q);
-      if (x < 0) continue;
-      const a = q.p * env(x);
-      if (a < 0.01) continue;
-      const px = ox + q.c * PITCH, py = yOf(q.r);
-      ctx.fillStyle = rgba(q.k, a * 0.16, 3);
-      ctx.fillRect(px - 3, py - 3, CELL + 6, CELL + 6); /* halo */
-      ctx.fillStyle = rgba(q.k, a, 3);
-      ctx.fillRect(px, py, CELL, CELL);
-    }
-    ctx.globalCompositeOperation = 'source-over';
-    lit = keep;
+    lit = paintLit(ctx, lit, now, cols, (q) => [ox + q.c * PITCH, yOf(q.r)]);
   };
 
   const tick = (now: number): void => {
@@ -170,23 +189,7 @@ export function bandGrid(cv: HTMLCanvasElement, animate: boolean): GridHandle {
     ctx.clearRect(0, 0, W, H);
     ctx.drawImage(base, 0, 0, W, H);
     if (!lit.length) return;
-    ctx.globalCompositeOperation = 'lighter';
-    const keep: Lit[] = [];
-    for (const q of lit) {
-      const x = (now - q.t0) / q.d;
-      if (x >= 1) continue;
-      keep.push(q);
-      if (x < 0) continue;
-      const a = q.p * env(x);
-      if (a < 0.01) continue;
-      const px = ox + q.c * PITCH, py = q.r * PITCH;
-      ctx.fillStyle = rgba(q.k, a * 0.16, 3);
-      ctx.fillRect(px - 3, py - 3, CELL + 6, CELL + 6);
-      ctx.fillStyle = rgba(q.k, a, 3);
-      ctx.fillRect(px, py, CELL, CELL);
-    }
-    ctx.globalCompositeOperation = 'source-over';
-    lit = keep;
+    lit = paintLit(ctx, lit, now, cols, (q) => [ox + q.c * PITCH, q.r * PITCH]);
   }
   const resize = (): void => {
     const rect = cv.getBoundingClientRect();
