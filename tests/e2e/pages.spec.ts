@@ -214,7 +214,7 @@ test.describe('the docs', () => {
     await expect(page).toHaveURL(/\/docs$/);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Overview');
     // The overview's cards and the links in the text lead to articles too.
-    await page.getByRole('link', { name: /Checked before you download/ }).click();
+    await page.getByRole('link', { name: /Paranoid by default/ }).click();
     await expect(page).toHaveURL(/\/docs\/the-checks$/);
     await page.goBack();
     await page.locator('#article-body').getByRole('link', { name: 'privacy' }).click();
