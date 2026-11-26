@@ -1,0 +1,41 @@
+<!doctype html>
+<!-- The picture shown when a link to the site is shared (WhatsApp, LinkedIn, X, iMessage…).
+     Rendered to public/share-image.jpg by `npm run make:share-image`. 1200 × 630, the size those apps expect. -->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<style>
+  @font-face { font-family: 'Newsreader'; src: url('../../public/fonts/Newsreader-Medium.woff2') format('woff2'); font-weight: 500; }
+  @font-face { font-family: 'Geist'; src: url('../../public/fonts/Geist-Regular.woff2') format('woff2'); font-weight: 400; }
+  html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; background: #0E0F12; }
+  canvas { position: absolute; inset: 0; }
+  .fade { position: absolute; inset: 0; background: radial-gradient(ellipse 62% 58% at 50% 52%, #0E0F12 38%, rgba(14,15,18,0.86) 62%, rgba(14,15,18,0.25) 100%); }
+  .logo { position: absolute; top: 56px; left: 64px; height: 44px; }
+  h1 { position: absolute; left: 0; right: 0; top: 214px; margin: 0 auto; max-width: 900px; text-align: center; font-family: 'Newsreader', Georgia, serif; font-weight: 500; font-size: 76px; line-height: 1.06; letter-spacing: -0.022em; color: #F4F4F2; text-wrap: balance; }
+  .nowrap { white-space: nowrap; }
+  .url { position: absolute; left: 0; right: 0; bottom: 58px; text-align: center; font-family: 'Geist', system-ui, sans-serif; font-size: 26px; color: #8B9099; letter-spacing: 0.01em; }
+</style>
+</head>
+<body>
+<canvas id="grid" width="1200" height="630"></canvas>
+<div class="fade"></div>
+<img class="logo" src="../../public/brand/redline-logo-for-dark-ui.svg" alt="" />
+<h1>For the paragraphs someone tweaked at <span class="nowrap">11:58 PM.</span></h1>
+<div class="url">useredline.dev</div>
+<script>
+  // The landing page's grid of small squares, in the redline colours: fixed, so the picture is the same every time.
+  const ctx = document.getElementById('grid').getContext('2d');
+  let seed = 7;
+  const random = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+  const colours = ['255,90,92', '44,194,133', '85,133,255'];
+  const size = 12, gap = 3;
+  for (let y = 0; y < 630; y += size + gap) {
+    for (let x = 0; x < 1200; x += size + gap) {
+      const r = random();
+      ctx.fillStyle = r < 0.16 ? `rgba(${colours[Math.floor(random() * 3)]},${0.25 + random() * 0.55})` : 'rgba(255,255,255,0.035)';
+      ctx.fillRect(x, y, size, size);
+    }
+  }
+</script>
+</body>
+</html>

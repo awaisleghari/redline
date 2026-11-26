@@ -168,6 +168,29 @@ const HIDDEN = [
   ['privacy', 'Privacy'],
 ] as const;
 
+test('a shared link shows a title, a description and the picture, without running any script', async ({ request }) => {
+  // Link previews (WhatsApp, LinkedIn, X, iMessage…) read the page as sent, so the tags must be in the HTML itself.
+  const tag = (html: string, key: string): string | undefined => new RegExp(`<meta (?:property|name)="${key}" content="([^"]*)"`).exec(html)?.[1];
+  for (const [path, title] of [['/', 'redline — For the paragraphs someone tweaked at 11:58 PM.'], ['/docs', 'redline — docs'], ['/docs/quick-start', 'redline — docs'], ['/app', 'redline — workspace']] as const) {
+    const html = await (await request.get(path)).text();
+    expect(tag(html, 'og:title'), path).toBe(title);
+    expect(tag(html, 'og:description')?.length, path).toBeGreaterThan(40);
+    expect(tag(html, 'og:image'), path).toBe('https://useredline.dev/share-image.jpg');
+    expect(tag(html, 'og:url'), path).toMatch(/^https:\/\/useredline\.dev\//);
+    expect(tag(html, 'twitter:card'), path).toBe('summary_large_image');
+  }
+  // The picture itself: served by the site, a JPEG, and small enough for WhatsApp (which drops large ones).
+  const image = await request.get('/share-image.jpg');
+  expect(image.status()).toBe(200);
+  expect(image.headers()['content-type']).toBe('image/jpeg');
+  const bytes = await image.body();
+  expect(bytes.length).toBeLessThan(300_000);
+  // Width and height from the JPEG's frame header: 1200 × 630.
+  let at = 2;
+  while (at < bytes.length && !(bytes[at] === 0xff && bytes[at + 1]! >= 0xc0 && bytes[at + 1]! <= 0xc2)) at += 2 + bytes.readUInt16BE(at + 2);
+  expect([bytes.readUInt16BE(at + 7), bytes.readUInt16BE(at + 5)]).toEqual([1200, 630]);
+});
+
 test.describe('the docs', () => {
   test('every article has its own address, its section colour in the menu, and previous/next in menu order', async ({ page }) => {
     const errors = watchForErrors(page);
