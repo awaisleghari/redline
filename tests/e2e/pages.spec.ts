@@ -117,6 +117,32 @@ test.describe('the landing page', () => {
     }
   });
 
+  test('the grids stay in the three brand colours: no square washes out to white, even at the bright edges', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/');
+    // Let the animation run until the bright edges are as busy as they get.
+    await page.waitForTimeout(3500);
+    for (const id of ['grid-top', 'grid-bottom']) {
+      const { coloured, pale } = await page.locator(`#${id}`).evaluate((canvas: HTMLCanvasElement) => {
+        const data = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data;
+        let coloured = 0;
+        let pale = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          const alpha = data[i + 3]! / 255;
+          // The colour as it appears over the page's dark background.
+          const [r, g, b] = [data[i]! * alpha, data[i + 1]! * alpha, data[i + 2]! * alpha];
+          if (Math.max(r, g, b) < 60) continue;
+          coloured++;
+          // Pale: bright, with its weakest channel close to its strongest (white, or a washed-out pastel).
+          if (Math.min(r, g, b) > 150) pale++;
+        }
+        return { coloured, pale };
+      });
+      expect(coloured).toBeGreaterThan(5_000);
+      expect(pale).toBe(0);
+    }
+  });
+
   test('with reduced motion the grids are drawn once and stay still', async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto('/');
