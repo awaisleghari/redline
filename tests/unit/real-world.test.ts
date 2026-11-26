@@ -1106,7 +1106,7 @@ describe('the one line of a cell replaced by paragraphs, the last holding a smar
     const tracked = await withCell(
       `<w:p><w:pPr><w:rPr>${change('del', 1)}/></w:rPr></w:pPr>${change('del', 2)}><w:r><w:delText xml:space="preserve">${OLD}</w:delText></w:r></w:del></w:p>` +
         `<w:p><w:pPr><w:rPr>${change('ins', 3)}/></w:rPr></w:pPr>${added(4, 'Total price per line item')}</w:p>` +
-        `<w:p><w:pPr><w:rPr>${change('ins', 5)}/></w:rPr></w:pPr>${added(6, '(')}${tag(added(7, 'Col.'))}${added(8, ' 4 x 5)')}</w:p>`,
+        `<w:p><w:pPr><w:rPr>${change('ins', 5)}/></w:rPr></w:pPr>${added(6, '(')}${tag(`<w:proofErr w:type="spellStart"/>${added(7, 'Col.')}<w:proofErr w:type="spellEnd"/>`)}${added(8, ' 4 x 5)')}</w:p>`,
     );
     expect(await failed(checkTrackedChanges({ original, modified, output: tracked }))).toEqual([]);
     const made = await makeStaticRedline(tracked, original, COVER);
@@ -1558,6 +1558,19 @@ describe('a text box whose two stored forms show the same words, one of them thr
     expect(await failed(checkTrackedChanges({ original, modified, output: await damage(tracked) }))).not.toEqual([]);
     const report = await checkStaticRedline({ original, modified, output: await damage(staticRedline), ...COVER });
     expect(report.checks.filter((c) => !c.passed)).not.toEqual([]);
+  });
+
+  it('a field that is not a whole, simple one is compared in full (review finding)', async () => {
+    const pair = await buildPair(pairById('one-word-change'));
+    const odd = `<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> XE "x" </w:instrText></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t>EXTRA VISIBLE WORDS</w:t></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>${plain}`;
+    const withOddBox = (docx: Uint8Array): Promise<Uint8Array> =>
+      editPart(docx, /^word\/document\.xml$/, (xml) =>
+        xml.replace(/<w:p>.*?<\/w:p>/s, (first) => `${first}<w:p><w:r><mc:AlternateContent ${NS_BOX}><mc:Choice Requires="wps"><w:drawing><wps:txbx>${box(plain)}</wps:txbx></w:drawing></mc:Choice><mc:Fallback><w:pict><v:textbox>${box(odd)}</v:textbox></w:pict></mc:Fallback></mc:AlternateContent></w:r></w:p>`),
+      );
+    const original = await withOddBox(pair.original);
+    const modified = await withOddBox(pair.modified);
+    const tracked = await produceTrackedChanges(original, modified);
+    expect(await failed(checkTrackedChanges({ original, modified, output: tracked }))).toContain('completeness');
   });
 
   it('forms that show different words are still refused', async () => {

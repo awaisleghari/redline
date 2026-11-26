@@ -714,13 +714,19 @@ class PartConverter {
         // (An empty last paragraph came or went whole too: found on real contracts, a form field's line replaced by an empty one.)
         // (A wrapper such as a smart tag or a link counts when everything inside it came or went: found on a real
         // contract, a moved-in line with a smart tag in the middle of it.)
-        const changedWhole = (c: Element): boolean => {
-          if (wrappers.some((name) => isW(c, name))) return true;
-          if (isW(c, 'r')) return false;
-          const inside = elementChildren(c).filter((x) => !(isW(x) && /Pr$/.test(x.localName!)));
-          return inside.length > 0 && inside.every(changedWhole);
+        // (Markers that hold no text, such as bookmarks and spelling marks, are passed over, inside a wrapper as
+        // beside it; a wrapper holding nothing at all has nothing that stays. Review finding.)
+        const wholeIn = (names: string[]) => {
+          const whole = (c: Element): boolean => {
+            if (names.some((name) => isW(c, name))) return true;
+            if (isW(c, 'r')) return false;
+            return elementChildren(c)
+              .filter((x) => !(isW(x) && /Pr$|^(bookmarkStart|bookmarkEnd|proofErr|permStart|permEnd)$/.test(x.localName!)))
+              .every(whole);
+          };
+          return whole;
         };
-        const lastWhole = content.every(changedWhole);
+        const lastWhole = content.every(wholeIn(wrappers));
         const neighbour = before[before.length - 2];
         if (lastWhole && ((removes(tokenOf(neighbour)) && adds(markKind)) || (adds(tokenOf(neighbour)) && removes(markKind)))) {
           joinWith = neighbour;
@@ -748,7 +754,7 @@ class PartConverter {
         while (at >= 0 && isWord(before[at]!, 'p') && this.markToken.has(before[at]!) && inRun(this.tokens[this.markToken.get(before[at]!)!])) at--;
         const single = at === before.length - 2;
         const removal = markKind === 'deleted' || markKind === 'movedFrom';
-        const whollyRemoved = removal && content.length > 0 && content.every((c) => isW(c, markKind === 'deleted' ? 'del' : 'moveFrom'));
+        const whollyRemoved = removal && content.length > 0 && content.every(wholeIn([markKind === 'deleted' ? 'del' : 'moveFrom']));
         const previous = before[at];
         // The block before may instead be a table that came or went whole, with this paragraph the empty one
         // that must follow a table in a cell (found on real contracts: a table within a table, replaced). There
@@ -757,7 +763,7 @@ class PartConverter {
         const tableBefore = before[before.length - 2];
         const rowsBefore = tableBefore && isWord(tableBefore, 'tbl') ? kids(tableBefore).filter((c) => isWord(c, 'tr')) : [];
         // (The paragraph may also have had text that went, or came, with the table: review finding.)
-        const whollyAdded = !removal && content.length > 0 && content.every((c) => isW(c, markKind === 'inserted' ? 'ins' : 'moveTo'));
+        const whollyAdded = !removal && content.length > 0 && content.every(wholeIn([markKind === 'inserted' ? 'ins' : 'moveTo']));
         const followsChangedTable = (content.length === 0 || whollyRemoved || whollyAdded) && rowsBefore.length > 0 && rowsBefore.every((r) => this.cellChange.get(r) === (removal ? 'deleted' : 'inserted'));
         const index = previous && isWord(previous, 'p') ? this.markToken.get(previous) : undefined;
         // (A run of removed paragraphs ending in one of which part remains is left as it is: which clause number
