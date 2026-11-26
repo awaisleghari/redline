@@ -1428,3 +1428,44 @@ describe('an upload whose emptied footnote has its only paragraph mark flagged a
     expect(await failed(checkTrackedChanges({ original, modified, output: damaged }))).not.toEqual([]);
   });
 });
+
+/**
+ * Found on real contracts (held-out run 2, Islamic Development Bank documents): a text box whose modern form
+ * holds a web address as plain text and whose legacy form holds the same words as a link. A reader sees the same
+ * words either way; the Checker refused the upload itself because the two forms did not read identically.
+ */
+describe('a text box whose two stored forms show the same words, one of them through a link field', () => {
+  const NS_BOX = 'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" xmlns:v="urn:schemas-microsoft-com:vml"';
+  const plain = '<w:r><w:t>www.example.org</w:t></w:r>';
+  const linked = (address: string): string =>
+    `<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> HYPERLINK "${address}" </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>${plain}<w:r><w:fldChar w:fldCharType="end"/></w:r>`;
+  const box = (inner: string): string => `<w:txbxContent><w:p>${inner}</w:p></w:txbxContent>`;
+  const withBox = (docx: Uint8Array): Promise<Uint8Array> =>
+    editPart(docx, /^word\/document\.xml$/, (xml) =>
+      xml.replace(/<w:p>.*?<\/w:p>/s, (first) => `${first}<w:p><w:r><mc:AlternateContent ${NS_BOX}><mc:Choice Requires="wps"><w:drawing><wps:txbx>${box(plain)}</wps:txbx></w:drawing></mc:Choice><mc:Fallback><w:pict><v:textbox>${box(linked('http://www.example.org'))}</v:textbox></w:pict></mc:Fallback></mc:AlternateContent></w:r></w:p>`),
+    );
+
+  it('both Word files pass; an output whose hidden form points the link elsewhere is caught', async () => {
+    const pair = await buildPair(pairById('one-word-change'));
+    const original = await withBox(pair.original);
+    const modified = await withBox(pair.modified);
+    const { tracked, staticRedline } = await bothPass(original, modified);
+    const damage = (docx: Uint8Array): Promise<Uint8Array> =>
+      editPart(docx, /^word\/document\.xml$/, (xml) => {
+        const out = xml.replace('http://www.example.org', 'http://www.example.net');
+        if (out === xml) throw new Error('nothing was damaged');
+        return out;
+      });
+    expect(await failed(checkTrackedChanges({ original, modified, output: await damage(tracked) }))).not.toEqual([]);
+    const report = await checkStaticRedline({ original, modified, output: await damage(staticRedline), ...COVER });
+    expect(report.checks.filter((c) => !c.passed)).not.toEqual([]);
+  });
+
+  it('forms that show different words are still refused', async () => {
+    const pair = await buildPair(pairById('one-word-change'));
+    const original = await withBox(pair.original);
+    const differing = await editPart(await withBox(pair.modified), /^word\/document\.xml$/, (xml) => xml.replace(/(<mc:Fallback>.*?)www\.example\.org<\/w:t>/s, '$1www.example.net</w:t>'));
+    const tracked = await produceTrackedChanges(original, differing);
+    expect(await failed(checkTrackedChanges({ original, modified: differing, output: tracked }))).toContain('completeness');
+  });
+});

@@ -145,7 +145,7 @@ export function numberingFailure(modified: Story[], accepted: Story[]): CheckFai
 export function otherFormsFailure(modified: string[], accepted: string[]): CheckFailure | undefined {
   if (modified.length === accepted.length && modified.every((form, i) => form === accepted[i])) return undefined;
   return {
-    message: 'A text box is stored in a second form (for older programs) whose numbered paragraphs differ from the modified document.',
+    message: 'A text box is stored in a second form (for older programs) whose numbered paragraphs or field instructions differ from the modified document.',
     where: 'text boxes and drawings',
   };
 }
