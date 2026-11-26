@@ -2,17 +2,16 @@
 section: get started
 label: downloads
 title: Downloads
-intro: One button, three formats. PDF is the default. Pick another from the arrow next to it, and redline remembers your choice.
+intro: You get one download button and three ways to take the file with you. By default it makes a PDF, though if you click the small arrow beside it and pick a Word format instead, <code>redline</code> will remember that choice next time.
 order: 4
 icon: download
 -->
-<h2 id="dl-formats">The formats</h2>
+<h2 id="dl-formats">The three formats</h2>
 <div class="doc-formats">
-  <div><span class="doc-tag doc-tag-pdf" aria-hidden="true">PDF</span><span><b>pdf</b><br><span class="doc-muted">The static redline as a PDF, ready to send. Best for sharing and printing.</span></span></div>
-  <div><span class="doc-tag doc-tag-static" aria-hidden="true">DOC</span><span><b>word · static redline</b><br><span class="doc-muted">A Word file with the changes marked up as text, and no tracked changes. Good when you want to edit around the marks.</span></span></div>
-  <div><span class="doc-tag doc-tag-tracked" aria-hidden="true">DOC</span><span><b>word · tracked changes</b><br><span class="doc-muted">A Word file where every change is a tracked change, so you can accept or reject each one in Word.</span></span></div>
+  <div><span class="doc-tag doc-tag-pdf" aria-hidden="true">PDF</span><span><b>pdf</b><br><span class="doc-muted">A flat PDF of the redline, best when you are emailing a draft around or printing it out and do not want anyone's local Word settings messing with the layout.</span><br><br><span class="doc-muted">Making a PDF is the only point where a file leaves your computer. <code>redline</code> sends the static redline to its server to render the pages, then deletes it as soon as the PDF comes back.</span></span></div>
+  <div><span class="doc-tag doc-tag-static" aria-hidden="true">DOC</span><span><b>word · static redline</b><br><span class="doc-muted">A <code>.docx</code> where the insertions and deletions are painted onto the text with normal formatting rather than live revision tracking. This is the one to grab if you want to type comments or rewrite a clause right next to the edits without Word stacking tracked changes inside tracked changes until the margin balloons turn into modern art.</span></span></div>
+  <div><span class="doc-tag doc-tag-tracked" aria-hidden="true">DOC</span><span><b>word · tracked changes</b><br><span class="doc-muted">A standard <code>.docx</code> with real Word revision markup. Open it in Word and use Accept or Reject to work through the changes properly.</span></span></div>
 </div>
 
-<h2 id="dl-offered">When a format is not offered</h2>
-<p>A format appears only when every check on that file has passed. If a check fails, the format is greyed out in the menu and the reason is in <a href="/docs/the-checks">the checks</a>.</p>
-<p>Making a PDF is the one time a file leaves your browser: the static redline is sent to the redline server to be converted, and deleted there straight afterwards.</p>
+<h2 id="dl-offered">Why an option might be greyed out</h2>
+<p>Before <code>redline</code> lets you download any file, it checks the output against both of your original documents. If something does not match up, that format stays greyed out in the menu so you do not end up sending out a corrupted file. You can see what tripped it in <a href="/docs/the-checks">the checks</a>.</p>

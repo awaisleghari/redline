@@ -3,7 +3,6 @@
  * The workspace is in compare.spec.ts.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { CHECK_TITLES, CHECKS_FOR } from '../../src/checker';
 
 function watchForErrors(page: Page): string[] {
   const errors: string[] = [];
@@ -36,11 +35,11 @@ test.describe('the landing page', () => {
     });
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/');
-    await expect(page).toHaveTitle('redline — generate free legal-quality redlines in seconds');
+    await expect(page).toHaveTitle('redline — For the paragraphs someone tweaked at 11:58 PM.');
     await expect(page.locator('link[rel="icon"]')).toHaveAttribute('href', '/redline-favicon.svg');
     expect((await page.request.get('/redline-favicon.svg')).headers()['content-type']).toContain('image/svg+xml');
     const headline = page.getByRole('heading', { level: 1 });
-    await expect(headline).toHaveText('generate free legal-quality redlines in seconds');
+    await expect(headline).toHaveText('For the paragraphs someone tweaked at 11:58 PM.');
     await expect(headline).toHaveCSS('font-family', /Newsreader/);
     await expect(headline).toHaveCSS('font-size', '60px');
     await expect(headline.locator('span')).toHaveCSS('white-space', 'nowrap');
@@ -117,6 +116,32 @@ test.describe('the landing page', () => {
     }
   });
 
+  test('the grids stay in the three brand colours: no square washes out to white, even at the bright edges', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/');
+    // Let the animation run until the bright edges are as busy as they get.
+    await page.waitForTimeout(3500);
+    for (const id of ['grid-top', 'grid-bottom']) {
+      const { coloured, pale } = await page.locator(`#${id}`).evaluate((canvas: HTMLCanvasElement) => {
+        const data = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data;
+        let coloured = 0;
+        let pale = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          const alpha = data[i + 3]! / 255;
+          // The colour as it appears over the page's dark background.
+          const [r, g, b] = [data[i]! * alpha, data[i + 1]! * alpha, data[i + 2]! * alpha];
+          if (Math.max(r, g, b) < 60) continue;
+          coloured++;
+          // Pale: bright, with its weakest channel close to its strongest (white, or a washed-out pastel).
+          if (Math.min(r, g, b) > 150) pale++;
+        }
+        return { coloured, pale };
+      });
+      expect(coloured).toBeGreaterThan(5_000);
+      expect(pale).toBe(0);
+    }
+  });
+
   test('with reduced motion the grids are drawn once and stay still', async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto('/');
@@ -132,13 +157,16 @@ const ARTICLES = [
   ['quick-start', 'get started', 'Quick start'],
   ['reading-a-redline', 'get started', 'Reading a redline'],
   ['downloads', 'get started', 'Downloads'],
-  ['why-it-works-this-way', 'how it works', 'Why it works this way'],
-  ['the-checks', 'how it works', 'The checks'],
-  ['privacy', 'how it works', 'Privacy'],
   ['supported-documents', 'reference', 'Supported documents'],
   ['keyboard-shortcuts', 'reference', 'Keyboard shortcuts'],
 ] as const;
-const SECTION_COLOURS = { 'get started': 'rgb(255, 142, 144)', 'how it works': 'rgb(111, 221, 174)', reference: 'rgb(169, 193, 255)' };
+const SECTION_COLOURS = { 'get started': 'rgb(255, 142, 144)', reference: 'rgb(169, 193, 255)' };
+/** Written but not published yet (`hidden: yes`): the whole "how it works" section. */
+const HIDDEN = [
+  ['why-it-works-this-way', 'Why it works this way'],
+  ['the-checks', 'The checks'],
+  ['privacy', 'Privacy'],
+] as const;
 
 test.describe('the docs', () => {
   test('every article has its own address, its section colour in the menu, and previous/next in menu order', async ({ page }) => {
@@ -176,23 +204,17 @@ test.describe('the docs', () => {
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Overview');
     await page.locator('#reader').evaluate((reader) => reader.scrollTo(0, 400));
-    await page.locator('#docs-nav').getByRole('link', { name: 'privacy' }).click();
-    await expect(page).toHaveURL(/\/docs\/privacy$/);
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Privacy');
+    await page.locator('#docs-nav').getByRole('link', { name: 'downloads' }).click();
+    await expect(page).toHaveURL(/\/docs\/downloads$/);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Downloads');
     expect(await page.locator('#reader').evaluate((reader) => reader.scrollTop)).toBe(0);
     await page.locator('#next-article').click();
     await expect(page).toHaveURL(/\/docs\/supported-documents$/);
     await page.goBack();
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Privacy');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Downloads');
     await page.goBack();
     await expect(page).toHaveURL(/\/docs$/);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Overview');
-    // The overview's cards and the links in the text lead to articles too.
-    await page.getByRole('link', { name: /Checked before you download/ }).click();
-    await expect(page).toHaveURL(/\/docs\/the-checks$/);
-    await page.goBack();
-    await page.locator('#article-body').getByRole('link', { name: 'privacy' }).click();
-    await expect(page).toHaveURL(/\/docs\/privacy$/);
     // Out of the docs: the workspace, the source code, the landing page.
     await expect(page.getByRole('link', { name: 'open redline' })).toHaveAttribute('href', '/app');
     await expect(page.getByRole('link', { name: 'source', exact: true })).toHaveAttribute('href', 'https://github.com/awaisleghari/redline');
@@ -201,31 +223,44 @@ test.describe('the docs', () => {
     await expect(page.locator('#docs-nav .rl-badge')).toHaveText('soon');
   });
 
-  test('the checks article lists the app\'s real checks, and the placeholders the owner will fill are left in place', async ({ page }) => {
-    await page.goto('/docs/the-checks');
-    await expect(page.locator('[data-checks="static-redline"] > div')).toHaveText(CHECKS_FOR['static-redline'].map((id) => CHECK_TITLES[id]));
-    await expect(page.locator('[data-checks="tracked-changes"] > div')).toHaveText(CHECKS_FOR['tracked-changes'].map((id) => CHECK_TITLES[id]));
-    await page.goto('/docs/privacy');
-    await expect(page.locator('#article-body')).toContainText('[Confirm: does the site use analytics or cookies? Say so here either way.]');
+  test('the hidden articles are nowhere: no menu entry, no address, no search result, and links to them are plain words', async ({ page }) => {
+    await page.goto('/docs');
+    await expect(page.locator('#docs-nav .rl-navtitle')).toHaveText(['get started', 'reference']);
+    for (const [slug, title] of HIDDEN) {
+      await expect(page.locator(`#docs-nav a[href="/docs/${slug}"]`)).toHaveCount(0);
+      await expect(page.locator(`a[href="/docs/${slug}"]`)).toHaveCount(0);
+      const reply = await page.request.get(`/docs/${slug}`);
+      expect(await reply.text()).not.toContain('id="article-body"');
+      await page.getByRole('combobox', { name: 'Search the docs' }).fill(title.toLowerCase());
+      await expect(page.getByRole('listbox', { name: 'Search results' }).getByRole('option', { name: new RegExp(`^${title}`) })).toHaveCount(0);
+    }
+    // The overview's cards keep their words, but are no longer links; nor is "privacy" in its text.
+    await page.getByRole('combobox', { name: 'Search the docs' }).fill('');
+    await expect(page.locator('.doc-card')).toHaveCount(3);
+    await expect(page.locator('a.doc-card')).toHaveCount(0);
+    await expect(page.locator('.doc-card').nth(1)).toContainText('Paranoid by default');
+    await expect(page.locator('#article-body')).toContainText('See privacy for the exact mechanics.');
+    await page.goto('/docs/downloads');
+    await expect(page.locator('#article-body a')).toHaveCount(0);
+    await expect(page.locator('#article-body')).toContainText('in the checks.');
+    // The last placeholder left in a published article is gone.
     await page.goto('/docs/supported-documents');
-    await expect(page.locator('#article-body')).toContainText('[Confirm which parts to list by name, for example headers, footers, footnotes, tables and comments.]');
-    await page.goto('/docs/why-it-works-this-way');
-    await expect(page.locator('#article-body')).toContainText('[Optional, in your own words: anything about your background as a corporate lawyer that shaped these choices.]');
+    await expect(page.locator('#article-body')).not.toContainText('[Confirm');
   });
 
   test('"on this page" follows the reader down the article, and a click scrolls to the heading', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 700 });
-    await page.goto('/docs/why-it-works-this-way');
+    await page.goto('/docs/quick-start');
     const toc = page.locator('#toc a');
-    await expect(toc).toHaveText(['In the browser', 'No AI', 'A separate checker', 'Marks lawyers know', 'Open source']);
+    await expect(toc).toHaveText(['Open the workspace', 'Drop in the original', 'Drop in the modified version', 'Run the comparison', 'Read the damage', 'Download your copy', 'Files with tracked changes']);
     await expect(toc.nth(0)).toHaveAttribute('aria-current', 'true');
     await toc.nth(2).click();
     await expect(toc.nth(2)).toHaveAttribute('aria-current', 'true');
     await expect(toc.nth(0)).not.toHaveAttribute('aria-current', 'true');
-    await expect(page.getByRole('heading', { name: 'A checker that is separate from the redline maker' })).toBeInViewport();
-    await expect(page).toHaveURL(/\/docs\/why-it-works-this-way$/);
+    await expect(page.getByRole('heading', { name: 'Drop in the modified version' })).toBeInViewport();
+    await expect(page).toHaveURL(/\/docs\/quick-start$/);
     await page.locator('#reader').evaluate((reader) => reader.scrollTo(0, reader.scrollHeight));
-    await expect(toc.nth(4)).toHaveAttribute('aria-current', 'true');
+    await expect(toc.nth(6)).toHaveAttribute('aria-current', 'true');
     await page.locator('#reader').evaluate((reader) => reader.scrollTo(0, 0));
     await expect(toc.nth(0)).toHaveAttribute('aria-current', 'true');
     // Narrower than 1180 px there is no such column.
@@ -241,9 +276,9 @@ test.describe('the docs', () => {
     await page.keyboard.press(hint.startsWith('⌘') ? 'Meta+K' : 'Control+K');
     await expect(search).toBeFocused();
     // By title.
-    await search.fill('privacy');
+    await search.fill('downloads');
     const results = page.getByRole('listbox', { name: 'Search results' });
-    await expect(results.getByRole('option').first()).toContainText('Privacy');
+    await expect(results.getByRole('option').first()).toContainText('Downloads');
     // By words that are only in an article's text.
     await search.fill('struck through');
     await expect(results.getByRole('option')).toHaveCount(1);

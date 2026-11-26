@@ -62,9 +62,15 @@ describe('deployment settings', () => {
   it('serve the built site and nothing else, at one address, with no stored data and no secrets', () => {
     expect(config.assets).toEqual({ directory: './dist', binding: 'ASSETS', not_found_handling: 'none' });
     expect(config.preview_urls).toBe(false);
+    // The two public addresses, and no others: no workers.dev address, no wildcard routes.
+    expect(config.workers_dev).toBe(false);
+    expect(config.routes).toEqual([
+      { pattern: 'useredline.dev', custom_domain: true },
+      { pattern: 'www.useredline.dev', custom_domain: true },
+    ]);
     // No storage of any kind is attached, and no variable or secret is declared.
     for (const key of ['vars', 'secrets', 'kv_namespaces', 'r2_buckets', 'd1_databases', 'queues', 'analytics_engine_datasets', 'hyperdrive', 'vectorize', 'services', 'ai']) expect(config[key], key).toBeUndefined();
-    expect(Object.keys(config).sort()).toEqual(['$schema', 'assets', 'compatibility_date', 'containers', 'durable_objects', 'main', 'migrations', 'name', 'observability', 'preview_urls', 'workers_dev'].sort());
+    expect(Object.keys(config).sort()).toEqual(['$schema', 'assets', 'compatibility_date', 'containers', 'durable_objects', 'main', 'migrations', 'name', 'observability', 'preview_urls', 'routes', 'workers_dev'].sort());
   });
 
   it('the site-wide headers file is part of the build', () => {

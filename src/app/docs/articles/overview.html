@@ -2,31 +2,34 @@
 section: get started
 label: overview
 title: Overview
-intro: redline compares two versions of a Word document and gives you a legal-style redline: what was inserted, what was deleted and what moved, marked the way lawyers expect. It is free, it runs in your browser, and it does not use AI.
+intro: Somebody sent back a "clean" version of the contract at midnight and swore they only fixed a typo. <code>redline</code> is how you check their math.
 order: 1
 icon: lines
 -->
+<p>This is not a perfect tool, though. It could be just that one day.</p>
+
+<p>Drop in two <code>.docx</code> files. In a few seconds, you get a complete forensic breakdown of every word added, deleted, shifted around, or quietly reformatted. No enterprise sales call, no desktop installer from 2009, and no praying that a random web server isn't logging your client's merger agreement.</p>
+
 <div class="doc-cards">
-  <a class="doc-card doc-card-red" href="/docs/privacy"><b>In your browser</b><span>Documents are compared on your own computer. Nothing is uploaded to do it.</span></a>
-  <a class="doc-card doc-card-green" href="/docs/the-checks"><b>Checked before you download</b><span>redline tests its own output and offers only the files that pass.</span></a>
-  <a class="doc-card doc-card-blue" href="/docs/why-it-works-this-way"><b>Free and open source</b><span>No account and no fee. Anyone can read the code.</span></a>
+  <a class="doc-card doc-card-red" href="/docs/privacy"><b>Your machine, your files</b><span>The diff engine runs entirely inside your browser tab. Your documents never touch a server just to be compared.</span></a>
+  <a class="doc-card doc-card-green" href="/docs/the-checks"><b>Paranoid by default</b><span>Before giving you a download link, <code>redline</code> audits its own output against both source files. If an export fails verification, you never even see it.</span></a>
+  <a class="doc-card doc-card-blue" href="/docs/why-it-works-this-way"><b>Free and open source</b><span>No accounts, no usage caps, no "book a demo" buttons. Read the source code yourself.</span></a>
 </div>
 
-<h2 id="ov-why">Why I built it</h2>
-<p>I built redline for my own legal work and for friends who need the same thing: a clean, Litera-style redline, without a licence fee and without sending anyone's document to a server.</p>
+<h2 id="ov-how">How it works</h2>
+<ol class="doc-steps">
+  <li><div><h3 id="ov-1" data-toc="Feed it two drafts">Feed it two drafts.</h3><p>Drop in your original <code>.docx</code> and the modified <code>.docx</code>.</p></div></li>
+  <li><div><h3 id="ov-2" data-toc="Read the damage">Read the damage.</h3><p>Inspect every insertion, deletion, moved paragraph, and formatting change right in the browser. Switch between a continuous scroll or paginated Word-style sheets, in light mode or dark mode.</p></div></li>
+  <li><div><h3 id="ov-3" data-toc="Take your pick of exports">Take your pick of exports.</h3><p>Download a PDF, a static Word doc with changes burned into the styling, or a <code>.docx</code> with native Word tracked changes.</p></div></li>
+</ol>
 
-<h2 id="ov-does">What it does</h2>
-<ul>
-  <li>Compares an <b>original</b> and a <b>modified</b> Word document (.docx).</li>
-  <li>Marks text that was <span class="rl-ins">inserted</span>, <span class="rl-del">deleted</span> or <span class="rl-mvt">moved</span>, and counts formatting changes.</li>
-  <li>Lets you read the redline as one continuous page or as Word-style pages, on a dark or light page.</li>
-  <li>Downloads it as a PDF, a Word file with the changes marked up, or a Word file with tracked changes.</li>
-  <li>Checks every file against your two documents before offering it.</li>
-</ul>
+<h2 id="ov-why">Why I built this</h2>
+<p>I am a lawyer. Half my life is staring at two versions of the same Word document trying to figure out - through existential crises sometimes - why someone did what they did.</p>
+<p>If you are not sitting inside a massive firm with an IT department paying Litera-sized licensing fees, your options are bleak: squint at Word's built-in compare tool until your eyes bleed, or upload confidential client files to sketchy online converters. I built <code>redline</code> for my own practice and a few friends who were tired of both. How about you give it a try?</p>
 
-<h2 id="ov-doesnt">What it does not do</h2>
+<h2 id="ov-rules">The ground rules</h2>
 <ul>
-  <li>It does not upload your documents. The one exception is making a PDF, covered in <a href="/docs/privacy">privacy</a>.</li>
-  <li>It does not use AI. The same two documents always give the same redline.</li>
-  <li>It does not need an account, and it keeps nothing.</li>
+  <li><b>Zero AI.</b> Document comparison is a deterministic problem, not a creative writing exercise. An LLM will hallucinate a clause or silently skip a comma. Run the same two files through <code>redline</code> a hundred times and you will get the exact same diff a hundred times.</li>
+  <li><b>Zero storage.</b> There is no database waiting to leak your drafts. Close the tab and everything vanishes. (The sole exception is PDF rendering, which runs briefly in a sandboxed server pipeline. See <a href="/docs/privacy">privacy</a> for the exact mechanics.)</li>
+  <li><b>Zero hype.</b> It is a fast, sharp diff tool for <code>.docx</code> files.</li>
 </ul>

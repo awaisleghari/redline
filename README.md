@@ -109,7 +109,10 @@ the repository holds no password, token or key.
 
 What gets set up on Cloudflare:
 
-- **A Worker called `redline`**, at `https://redline.<your-account>.workers.dev`.
+- **A Worker called `redline`**, at `https://useredline.dev` and
+  `https://www.useredline.dev` (both "custom domains", set in `wrangler.jsonc`;
+  the domain must be in the same Cloudflare account, with no other DNS record
+  on either name). The `workers.dev` address is switched off.
   Cloudflare serves the built site (`dist/`) directly. The Worker's own code
   (`worker/`) answers two addresses only: `/api/pdf` (the PDF step) and
   `/api/converter-state` (below).
@@ -149,7 +152,7 @@ Things to know:
   Use **Retry build** in the dashboard.
 - **The first deployment needs a few minutes** after it finishes before the
   converter answers.
-- **What Cloudflare itself adds.** On a `workers.dev` address Cloudflare attaches
+- **What Cloudflare itself adds.** Cloudflare may attach
   its own network-error reporting headers (`report-to`, `nel`) to every reply,
   so a visitor's browser may tell Cloudflare when a request to the site fails
   (the address, the time, the visitor's IP address; never a document). It also
@@ -173,7 +176,7 @@ npm run build
 ```
 
 ```bash
-npm run test:live -- https://redline.<your-account>.workers.dev
+npm run test:live -- https://useredline.dev
 ```
 
 makes real PDFs through the live converter, runs the Checker on each, and
@@ -181,7 +184,7 @@ confirms the refusals and the security headers. It needs `curl`; behind a
 proxy, set `NODE_USE_ENV_PROXY=1`.
 
 ```bash
-REDLINE_URL=https://redline.<your-account>.workers.dev npm run test:e2e
+REDLINE_URL=https://useredline.dev npm run test:e2e
 ```
 
 runs the whole browser suite against the live site (Docker is still needed
