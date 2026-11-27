@@ -6,6 +6,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { makePrintCopy } from '../../src/producer/print-copy';
 
 export const CONTAINER_NAME = 'redline-pdf-test';
 export const CONTAINER_PORT = 8791;
@@ -79,8 +80,10 @@ export function startExtraContainer(name: string, port: number, env: Record<stri
 }
 export const removeContainer = (name: string): void => void docker(['rm', '-f', name], true);
 
+/** As the page does it: the converter is sent the copy prepared for it. */
 export async function convertToPdf(docx: Uint8Array): Promise<Uint8Array> {
-  const response = await fetch(CONVERT_URL, { method: 'POST', headers: { 'Content-Type': DOCX_TYPE }, body: new Blob([docx.slice().buffer]) });
+  const copy = await makePrintCopy(docx);
+  const response = await fetch(CONVERT_URL, { method: 'POST', headers: { 'Content-Type': DOCX_TYPE }, body: new Blob([copy.slice().buffer]) });
   if (!response.ok) throw new Error(`conversion failed with status ${response.status}`);
   return new Uint8Array(await response.arrayBuffer());
 }

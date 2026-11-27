@@ -5,6 +5,7 @@
  * hands back a file only when the independent Checker has passed it, and this
  * page offers for download, and shows in the viewer, only files it was handed.
  */
+import { makePrintCopy } from './producer/print-copy';
 import { ProducerError, runComparison, runPdf, type FlowResult } from './app/flow';
 import { displayName, formatComparedAt } from './app/format';
 import { bandGrid, type GridHandle } from './app/grid';
@@ -362,7 +363,9 @@ async function makePdf(): Promise<void> {
   try {
     const reviewed = await runPdf(staticRedline, {
       convert: async (docx) => {
-        const response = await fetch(PDF_ENDPOINT, { method: 'POST', headers: { 'Content-Type': DOCX }, body: new Blob([docx.slice().buffer], { type: DOCX }) });
+        // The converter is given a copy prepared for it (print-copy.ts); the Checker still holds the PDF to the redline itself.
+        const copy = await makePrintCopy(docx);
+        const response = await fetch(PDF_ENDPOINT, { method: 'POST', headers: { 'Content-Type': DOCX }, body: new Blob([copy.slice().buffer], { type: DOCX }) });
         if (!response.ok) throw new Error((await response.text()).slice(0, 200) || `the server answered ${response.status}`);
         const pdf = new Uint8Array(await response.arrayBuffer());
         converted = true;
