@@ -13,7 +13,8 @@
  */
 import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
 import { NS } from '../common/namespaces';
-import { BIT, isWord, kid, kids, paragraphsInCountingOrder, shownText, unitsOf, type OriginalInfo, type StyleSheet } from './original-reader';
+import { BIT, isWord, kid, kids, linkKey, paragraphsInCountingOrder, shownText, unitsOf, type LinkResolver, type OriginalInfo, type StyleSheet } from './original-reader';
+import { mergeRelinkedWords } from './same-words';
 
 const W = NS.w;
 
@@ -40,6 +41,8 @@ export interface OriginalContext {
   styles: StyleSheet;
   /** Whether the part being converted is the main document (old clause numbers are shown there). */
   isMain: boolean;
+  /** Where the links of the part being converted point (its relationships). */
+  linkTarget?: LinkResolver;
 }
 
 /** The formatting that marks each kind of change. */
@@ -290,12 +293,14 @@ function shadeRun(run: Element, changed: boolean[]): void {
 
 /**
  * Before conversion, while the tracked changes still say what is kept and what
- * is deleted: shade unchanged text whose formatting differs from the original's.
+ * is deleted: shade unchanged text whose formatting differs from the original's,
+ * or which links somewhere else than it did (or has gained or lost a link).
  */
 function markFormattingChanges(root: Element, original: OriginalContext): void {
+  const resolve: LinkResolver = original.linkTarget ?? (() => undefined);
   for (const unit of unitsOf(root)) {
     // This unit as the original had it: unchanged and deleted text, in order.
-    const pieces: { run: Element; kept: boolean; bits: number; length: number }[] = [];
+    const pieces: { run: Element; kept: boolean; bits: number; link: string; length: number }[] = [];
     let text = '';
     const runs = unit.getElementsByTagNameNS(W, 'r');
     for (let i = 0; i < runs.length; i++) {
@@ -310,7 +315,7 @@ function markFormattingChanges(root: Element, original: OriginalContext): void {
           length += shown.length;
         }
       }
-      if (length > 0) pieces.push({ run, kept, bits: original.styles.bits(kid(run, 'rPr'), nearestParagraph(run)), length });
+      if (length > 0) pieces.push({ run, kept, bits: original.styles.bits(kid(run, 'rPr'), nearestParagraph(run)), link: linkKey(run, resolve), length });
     }
     // Find the same unit in the original by its text.
     const match = original.info.streams.find((s) => !s.used && s.kind === root.localName && s.stream.text === text);
@@ -319,7 +324,7 @@ function markFormattingChanges(root: Element, original: OriginalContext): void {
     let at = 0;
     for (const piece of pieces) {
       const changed: boolean[] = [];
-      for (let k = 0; k < piece.length; k++) changed.push(piece.kept && match.stream.bits[at + k] !== piece.bits);
+      for (let k = 0; k < piece.length; k++) changed.push(piece.kept && (match.stream.bits[at + k] !== piece.bits || match.stream.links[at + k] !== piece.link));
       // Deleted text is shown as it looked in the original. If its surroundings
       // changed (its paragraph's style, say) so that it would now look different,
       // state the original look on the run itself.
@@ -873,6 +878,8 @@ export function convertPart(xml: string, options: StaticRedlineStyleOptions = DE
   const root = document.documentElement as unknown as Element;
   // These two need the tracked changes still in place, so they come first.
   const numbers = original && original.isMain && options.showOldNumbers ? oldNumbers(root, original) : new Map<Element, string>();
+  // Words that only gained, lost or changed a link are shown once (same-words.ts); the shading follows below.
+  if (original?.linkTarget && options.markFormattingChanges) mergeRelinkedWords(root, original.linkTarget);
   if (original) stateLookOfJoinedText(root, original.styles);
   if (original && options.markFormattingChanges) markFormattingChanges(root, original);
   const converter = new PartConverter(options, numbers, original ? (paragraph) => original.styles.numPr(paragraph) : undefined);

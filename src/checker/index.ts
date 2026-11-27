@@ -274,7 +274,8 @@ export async function checkStaticRedline(input: StaticCheckInput): Promise<Check
 
   const checks: CheckResult[] = [
     guarded('static-new', () => verdict('static-new', compareStories(modifiedText().stories, newSide().stories, 'modified document') ?? compareLinks(modifiedText().links, newSide().links, 'modified document') ?? compareInks(modifiedText().inks, newSide().inks, 'modified document') ?? compareShapeTypes(modifiedText().missingShapeTypes, newSide().missingShapeTypes, 'modified document'), hadTrackedChanges(modified) ? ACCEPTED_READING.modified : undefined)),
-    guarded('static-old', () => verdict('static-old', compareStories(originalText().stories, oldSide().stories, 'original document') ?? compareLinks(originalText().links, oldSide().links, 'original document') ?? compareInks(originalText().inks, oldSide().inks, 'original document') ?? compareShapeTypes(originalText().missingShapeTypes, oldSide().missingShapeTypes, 'original document'), hadTrackedChanges(original) ? ACCEPTED_READING.original : undefined)),
+    // (The original's links are verified with the formatting marks: a kept word shows only the link it has now. See formatMarksFailure.)
+    guarded('static-old', () => verdict('static-old', compareStories(originalText().stories, oldSide().stories, 'original document') ?? compareInks(originalText().inks, oldSide().inks, 'original document') ?? compareShapeTypes(originalText().missingShapeTypes, oldSide().missingShapeTypes, 'original document'), hadTrackedChanges(original) ? ACCEPTED_READING.original : undefined)),
     guarded('no-tracked-changes', () => verdict('no-tracked-changes', firstOf(leftoverTrackedChanges(output)))),
     guarded('cover-page', () => {
       const counts = countStaticChanges(output, colours);

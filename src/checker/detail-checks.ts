@@ -7,7 +7,7 @@ import { NS } from '../common/namespaces';
 import { describeFormat, FORMAT, FORMAT_MASK, STANDARD_COLOURS, staticKindOf, type ChangeColours, type StaticKind } from './formatting';
 import type { DocxPackage } from './package';
 import type { CheckFailure } from './report';
-import { CHAR, FORM_READING, isStructureMark, STATIC_STYLE, type Para, type Story } from './stories';
+import { CHAR, FORM_READING, isStructureMark, linkAt, STATIC_STYLE, type Para, type Story } from './stories';
 import { attribute, child, descendants, is, type XmlElement } from './xml';
 
 const W = NS.w;
@@ -83,7 +83,13 @@ export function formattingFailure(modified: Story[], accepted: Story[], isStatic
  * Formatting changes are marked exactly where formatting changed: in the
  * static redline, a kept character is shaded if and only if its bold, italic,
  * underline, capitals or hidden-text setting differs from the original
- * document's; deleted and inserted text is never shaded.
+ * document's, or it links somewhere else than it did in the original (a link
+ * added, taken off or re-pointed); deleted and inserted text is never shaded.
+ *
+ * This is also where the original's links are verified in a static redline. The file shows each kept word
+ * once, in the link it has now, so the original's link on a shaded word cannot be read from it. What is
+ * verified instead: every word the original links is either in that same link still, or shaded; no word is
+ * shaded unless its formatting or its link really differs; and deleted text links where it did.
  */
 export function formatMarksFailure(original: Story[], staticRejected: Story[], staticAccepted: Story[]): CheckFailure | undefined {
   const fromOriginal = alongside(original, staticRejected, 'original document', (want, got, where) => {
@@ -92,13 +98,22 @@ export function formatMarksFailure(original: Story[], staticRejected: Story[], s
       const shaded = (gotCode & CHAR.shaded) !== 0;
       const isText = (gotCode & CHAR.isText) !== 0;
       const ignore = gotCode & CHAR.changed ? STRIKES : 0;
-      const differs = (want.meta.charCodeAt(i) & FORMAT_BITS & ~ignore) !== (gotCode & FORMAT_BITS & ~ignore);
+      const formatDiffers = (want.meta.charCodeAt(i) & FORMAT_BITS & ~ignore) !== (gotCode & FORMAT_BITS & ~ignore);
+      const [linkedBefore, linkedNow] = [linkAt(want, i), linkAt(got, i)];
+      const linkDiffers = linkedBefore !== linkedNow;
+      const differs = formatDiffers || linkDiffers;
+      const linkWas = `linked to${linkedBefore || ' nothing (no link)'}`;
+      const linkIs = `linked to${linkedNow || ' nothing (no link)'}`;
       if (gotCode & CHAR.changed) {
         if (shaded) return { message: 'Deleted text is marked as a formatting change.', where, found: excerptAt(got.text, i) };
-        if (differs && isText) {
+        if (linkDiffers) return { message: 'Deleted text does not link where it did in the original document.', where, expected: linkWas, found: `"${excerptAt(got.text, i)}" is ${linkIs}` };
+        if (formatDiffers && isText) {
           return { message: 'Deleted text does not have the formatting it had in the original document.', where, expected: describeFormat(want.meta.charCodeAt(i) & FORMAT_BITS), found: `"${excerptAt(got.text, i)}" is ${describeFormat(gotCode & FORMAT_BITS)}` };
         }
         continue;
+      }
+      if (linkDiffers && !shaded) {
+        return { message: 'Text whose link changed is not marked as a formatting change.', where, expected: `"${excerptAt(got.text, i)}" was ${linkWas} and is now ${linkIs}: it should be shaded`, found: 'not shaded' };
       }
       if (!isText) continue; // markers (tabs, objects) follow the text around them
       if (differs && !shaded) {

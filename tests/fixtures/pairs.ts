@@ -371,6 +371,25 @@ export const EXTRA_PAIR_SPECS: PairSpec[] = [
     },
     // The engine tracks a changed address as the old link's words deleted and the new link's words inserted.
     expected: { body: changes({ deletions: ['our website', 'reasonable'], insertions: ['our website', 'exceptional'] }) },
+    // The static redline shows the re-pointed words once, shaded (owner's decision, 2026-11-27): one formatting change.
+    staticCounts: { insertions: 1, deletions: 1, moves: 0, formattingChanges: 1 },
+  },
+  {
+    id: 'link-added-to-word',
+    description: 'A word that was plain text becomes a web link; no wording changes.',
+    original: { blocks: [p(PARTIES), p('The Client shall pay the Fees.'), p(GOVERNING_LAW)] },
+    modified: { blocks: [p(PARTIES), { kind: 'linked', text: '', before: 'The ', linkText: 'Client', url: 'https://example.com/client', after: ' shall pay the Fees.' }, p(GOVERNING_LAW)] },
+    // Word can record a new link only as the word removed and added again; the tracked-changes file keeps that form.
+    expected: { body: changes({ deletions: ['Client'], insertions: ['Client'] }) },
+    staticCounts: { insertions: 0, deletions: 0, moves: 0, formattingChanges: 1 },
+  },
+  {
+    id: 'link-removed-from-word',
+    description: 'A word that was a web link becomes plain text, and a word changes elsewhere in the sentence.',
+    original: { blocks: [p(PARTIES), { kind: 'linked', text: '', before: 'The ', linkText: 'Client', url: 'https://example.com/client', after: ' shall pay the Fees.' }, p(GOVERNING_LAW)] },
+    modified: { blocks: [p(PARTIES), p('The Client shall pay the Charges.'), p(GOVERNING_LAW)] },
+    expected: { body: changes({ deletions: ['Client', 'Fees'], insertions: ['Client', 'Charges'] }) },
+    staticCounts: { insertions: 1, deletions: 1, moves: 0, formattingChanges: 1 },
   },
   {
     id: 'formatting-only-change',

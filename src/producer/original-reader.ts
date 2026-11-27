@@ -141,20 +141,55 @@ export interface TextStream {
   text: string;
   /** Formatting bits, one per character of `text`. */
   bits: number[];
+  /** Where each character links to ('' when it is not part of a link): see linkKey. */
+  links: string[];
+}
+
+/** Looks up where a relationship of one part points. */
+export type LinkResolver = (relationshipId: string) => string | undefined;
+
+/** The targets of a part's relationships, from its .rels file. */
+export function relationshipTargets(relsXml: string | undefined): LinkResolver {
+  const targets = new Map<string, string>();
+  if (relsXml) {
+    for (const relationship of kids(parse(relsXml))) {
+      const id = relationship.getAttribute('Id');
+      if (id) targets.set(id, `${relationship.getAttribute('TargetMode') === 'External' ? 'outside' : 'inside'}:${relationship.getAttribute('Target') ?? ''}`);
+    }
+  }
+  return (id) => targets.get(id);
+}
+
+const RELATIONSHIPS_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+
+/** Where a link element (w:hyperlink) points: its bookmark and its address. */
+export function linkKeyOf(hyperlink: El, resolve: LinkResolver): string {
+  const id = hyperlink.getAttributeNS(RELATIONSHIPS_NS, 'id');
+  return `${hyperlink.getAttributeNS(W, 'anchor') ?? ''}|${(id && resolve(id)) || ''}`;
+}
+
+/** Where a run's text links to: the link it sits in, or '' when it sits in none. */
+export function linkKey(run: El, resolve: LinkResolver): string {
+  for (let n: Node | null = run.parentNode; n && !isWord(n, 'p'); n = n.parentNode) if (isWord(n, 'hyperlink')) return linkKeyOf(n, resolve);
+  return '';
 }
 
 /** Every character of Word text under `root`, in order, with its formatting. For a document without tracked changes. */
-export function plainStream(root: El, styles: StyleSheet): TextStream {
-  const stream: TextStream = { text: '', bits: [] };
+export function plainStream(root: El, styles: StyleSheet, resolve: LinkResolver = () => undefined): TextStream {
+  const stream: TextStream = { text: '', bits: [], links: [] };
   const runs = root.getElementsByTagNameNS(W, 'r');
   for (let i = 0; i < runs.length; i++) {
     const run = runs.item(i) as El;
     const bits = styles.bits(kid(run, 'rPr'), nearestParagraph(run));
+    const link = linkKey(run, resolve);
     for (const child of kids(run)) {
       if (!isWord(child, 't') && !isWord(child, 'delText')) continue;
       const text = shownText(child);
       stream.text += text;
-      for (let k = 0; k < text.length; k++) stream.bits.push(bits);
+      for (let k = 0; k < text.length; k++) {
+        stream.bits.push(bits);
+        stream.links.push(link);
+      }
     }
   }
   return stream;
@@ -300,12 +335,12 @@ export function unitsOf(root: El): El[] {
   return [root];
 }
 
-export function readOriginal(parts: { xml: string; isMain: boolean }[], stylesXml: string | undefined, numberingXml: string | undefined): OriginalInfo {
+export function readOriginal(parts: { xml: string; isMain: boolean; rels?: string }[], stylesXml: string | undefined, numberingXml: string | undefined): OriginalInfo {
   const styles = new StyleSheet(stylesXml);
   const info: OriginalInfo = { streams: [], bodyNumbers: [] };
   for (const part of parts) {
     const root = parse(part.xml);
-    for (const unit of unitsOf(root)) info.streams.push({ kind: root.localName!, stream: plainStream(unit, styles), used: false });
+    for (const unit of unitsOf(root)) info.streams.push({ kind: root.localName!, stream: plainStream(unit, styles, relationshipTargets(part.rels)), used: false });
     if (part.isMain) {
       const counter = new NumberCounter(numberingXml);
       // A text box is stored twice (a modern form and a legacy one, mc:Choice and mc:Fallback) and shown once: only

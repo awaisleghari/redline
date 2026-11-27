@@ -73,6 +73,21 @@ export interface Para {
   leader?: boolean;
   /** In a static redline: the kind of change the paragraph's own mark shows (its number or bullet is printed the same way). */
   markKind?: StaticKind;
+  /** The links in the paragraph: which characters of `text` each covers, and where it points. Absent when there are none. */
+  links?: LinkSpan[];
+}
+
+/** One link within a paragraph: characters `start` (included) to `end` (not included) point to `target`. */
+export interface LinkSpan {
+  start: number;
+  end: number;
+  target: string;
+}
+
+/** Where character `at` of a paragraph links to ('' when it is not part of a link). */
+export function linkAt(paragraph: Para, at: number): string {
+  for (const span of paragraph.links ?? []) if (at >= span.start && at < span.end) return span.target;
+  return '';
 }
 
 const marker = (text: string): Para => ({ text, meta: '', number: '', oldNumber: '', removed: false, listed: false, bullet: '' });
@@ -277,6 +292,8 @@ interface Context {
   meta: string;
   /** Code applied to characters being emitted now (formatting of the current run, and whether it is part of a change). */
   code: number;
+  /** Links met since the last paragraph was closed (positions are those of `meta`). */
+  spans: LinkSpan[];
   /** Style of the paragraph being read. */
   paragraphStyle: string | undefined;
   /** Old clause number met in the paragraph being read (static redline). */
@@ -316,7 +333,7 @@ interface Source {
 }
 
 function newContext(view: View, problems: string[], source: Source): Context {
-  return { view, paragraphs: [], pending: '', meta: '', code: 0, paragraphStyle: undefined, oldNumber: '', lastMarkRemoved: false, textBoxes: [], notes: [], sections: [], sectionEnds: [], problems, source };
+  return { view, paragraphs: [], pending: '', meta: '', code: 0, spans: [], paragraphStyle: undefined, oldNumber: '', lastMarkRemoved: false, textBoxes: [], notes: [], sections: [], sectionEnds: [], problems, source };
 }
 
 /** Record text being emitted, with the current character code, and hand it back. */
@@ -567,9 +584,14 @@ function inlineText(element: XmlElement, context: Context): string {
         case 'hyperlink': {
           // Where the link goes is part of what the document says.
           const anchor = attribute(node, W, 'anchor');
+          const start = context.meta.length;
           const covered = inlineText(node, context);
           // A link whose text is entirely removed in this view is not there to be followed.
-          if (covered !== '') context.source.links.push(`"${covered}" links to${anchor ? ` bookmark ${anchor}` : ''}${linkedContent(node, context) || (anchor ? '' : ' nothing')}`);
+          if (covered !== '') {
+            const target = `${anchor ? ` bookmark ${anchor}` : ''}${linkedContent(node, context) || (anchor ? '' : ' nothing')}`;
+            context.source.links.push(`"${covered}" links to${target}`);
+            if (context.meta.length > start) context.spans.push({ start, end: context.meta.length, target });
+          }
           text += covered;
           continue;
         }
@@ -688,6 +710,8 @@ function inlineText(element: XmlElement, context: Context): string {
 function closeParagraph(context: Context, number: string, removed: boolean, listed = false, bullet = '', markKind?: StaticKind): void {
   if (context.meta.length !== context.pending.length) throw new Error('internal error: character details are out of step with the text');
   context.paragraphs.push({ text: context.pending, meta: context.meta, number, oldNumber: context.oldNumber, removed, listed, bullet, markKind });
+  if (context.spans.length > 0) context.paragraphs[context.paragraphs.length - 1]!.links = context.spans;
+  context.spans = [];
   context.pending = '';
   context.meta = '';
   context.oldNumber = '';

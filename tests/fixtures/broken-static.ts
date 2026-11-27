@@ -343,6 +343,35 @@ export const BROKEN_STATIC_CASES: BrokenStaticCase[] = [
     damage: (f) => edit(f, 'word/styles.xml', (x) => swap(x, /<w:style\b[^>]*w:styleId="RedlineOldNumber"[^>]*>.*?<\/w:style>/s, '')),
     caughtBy: ['completeness'],
   },
+  // ----- links on unchanged words (shown by shading: owner's decision, 2026-11-27) -----
+  {
+    id: 'static-new-link-not-shaded',
+    description: 'A word that became a link is shown in its new link with no shading, so nothing tells the reader that it changed.',
+    pairId: 'link-added-to-word',
+    damage: (f) => edit(f, DOC, (x) => swap(x, `<w:rPr>${SHADE}</w:rPr><w:t>Client</w:t>`, '<w:t>Client</w:t>')),
+    caughtBy: ['format-marks', 'cover-page'],
+  },
+  {
+    id: 'static-lost-link-not-shaded',
+    description: 'A word that stopped being a link is shown as plain text with no shading.',
+    pairId: 'link-removed-from-word',
+    damage: (f) => edit(f, DOC, (x) => swap(x, `<w:rPr>${SHADE}</w:rPr><w:t>Client</w:t>`, '<w:t>Client</w:t>')),
+    caughtBy: ['format-marks', 'cover-page'],
+  },
+  {
+    id: 'static-deleted-text-given-a-link',
+    description: 'A deleted word is shown inside a link it never had in the original document.',
+    pairId: 'link-removed-from-word',
+    damage: (f) => edit(f, DOC, (x) => swap(x, /(<w:r><w:rPr><w:strike\/><w:color w:val="FF0000"\/><\/w:rPr><w:t[^>]*>Fees<\/w:t><\/w:r>)/, '<w:hyperlink w:anchor="_Elsewhere">$1</w:hyperlink>')),
+    caughtBy: ['format-marks'],
+  },
+  {
+    id: 'static-shading-beside-a-changed-link',
+    description: 'In a document where a link changed, other text that did not change at all is shaded too.',
+    pairId: 'link-removed-from-word',
+    damage: (f) => edit(f, DOC, (x) => swap(x, /<w:r><w:t xml:space="preserve">This Services Agreement/, `<w:r><w:rPr>${SHADE}</w:rPr><w:t xml:space="preserve">This Services Agreement`)),
+    caughtBy: ['format-marks', 'cover-page'],
+  },
   // ----- the package -----
   {
     id: 'static-broken-comment-anchor',
