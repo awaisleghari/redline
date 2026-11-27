@@ -15,7 +15,7 @@ import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
 import { NS } from '../common/namespaces';
 import { BIT, isWord, kid, kids, linkKey, paragraphsInCountingOrder, shownText, unitsOf, type LinkResolver, type OriginalInfo, type StyleSheet } from './original-reader';
 import { settleParagraphMarks } from './paragraph-marks';
-import { mergeRelinkedWords, noteLayoutChanges } from './same-words';
+import { LAYOUT_NOTE_STYLE, mergeRelinkedWords, noteLayoutChanges } from './same-words';
 
 const W = NS.w;
 
@@ -307,6 +307,8 @@ function markFormattingChanges(root: Element, original: OriginalContext): void {
     for (let i = 0; i < runs.length; i++) {
       const run = runs.item(i) as Element;
       if (insideWrapper(run, ['ins', 'moveTo'])) continue;
+      // A layout note is the redline's own: it is no part of the text that is lined up with the original (review finding).
+      if (kid(kid(nearestParagraph(run), 'pPr'), 'pStyle')?.getAttributeNS(W, 'val') === LAYOUT_NOTE_STYLE) continue;
       const kept = !insideWrapper(run, ['del', 'moveFrom']);
       let length = 0;
       for (const child of kids(run)) {

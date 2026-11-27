@@ -91,7 +91,8 @@ export function alignLayoutNotes(original: Story[], output: Story[]): Aligned | 
           found: wordsNow[i] ? excerpt(wordsNow[i]!.text) : '(no further paragraphs)',
         };
       }
-      const numbered = wordsBefore.find((entry) => entry.number !== '');
+      // (Every paragraph of the original's passage, the empty ones too: an empty numbered paragraph prints its number. Review finding.)
+      const numbered = was.find((entry) => isParagraph(entry) && entry.number !== '');
       if (numbered) return { message: 'A passage under a layout note had a clause number in the original document, which the redline does not show.', where, expected: numbered.number, found: excerpt(numbered.text) };
       outNow.push(...wordsNow);
       outBefore.push(...wordsBefore);

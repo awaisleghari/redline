@@ -273,7 +273,10 @@ export function noteLayoutChanges(root: El, fill: string, numberedBefore: (parag
           for (const paragraph of found) settle(paragraph, 'added');
           container.removeChild(table);
         } else {
-          // Plain paragraphs became a table: the table stays, the paragraphs go.
+          // Plain paragraphs became a table: the table stays, the paragraphs go. The table takes the place the
+          // paragraphs had, so that removed paragraphs around them stay in the original's order (review finding;
+          // only removed paragraphs stand between the two places, so the modified document reads as before).
+          container.insertBefore(table, found[0]!);
           noteParagraph(table, layoutNoteText('paragraphs', found.length), fill);
           for (const paragraph of whole.paragraphs) settle(paragraph, 'added');
           for (const row of kids(table)) {

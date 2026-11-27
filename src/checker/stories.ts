@@ -777,6 +777,9 @@ function readLayoutNote(paragraph: XmlElement, context: Context): void {
   if (context.pending !== '') problem('A layout note interrupts a paragraph.');
   if (!styles.defines(STATIC_STYLE.layoutNote)) problem("A layout note uses a style that the document's style sheet does not define.");
   const properties = child(paragraph, W, 'pPr');
+  // The note's paragraph may state its style and nothing else: no section break (which would go unread here: review
+  // finding), no numbering, no layout of its own.
+  if (properties?.children.some((c) => !w(c, 'pStyle'))) problem('A layout note carries settings of its own (a section break, numbering or layout), which a note may not.');
   const numId = styles.numberingOf(properties) && child(styles.numberingOf(properties)!, W, 'numId');
   if (numId && attribute(numId, W, 'val') !== '0') problem('A layout note carries a clause number.');
   if (staticKindOf(properties && child(properties, W, 'rPr'), context.source.colours)) problem('A layout note is marked as a change.');
@@ -790,6 +793,8 @@ function readLayoutNote(paragraph: XmlElement, context: Context): void {
     }
     const shading = rPr && child(rPr, W, 'shd');
     if (!shading || attribute(shading, W, 'fill')?.toUpperCase() !== STATIC_STYLE.shadeFill) problem('A layout note is not shaded.');
+    // Nothing but the shading: no colour or size of its own that could make the note unreadable (review finding).
+    if (rPr?.children.some((c) => c !== shading)) problem('A layout note is formatted in a way of its own (colour, size or the like), which a note may not be.');
     if (staticKindOf(rPr, context.source.colours)) problem('A layout note is marked as a change.');
     if (styles.formatOf(rPr, STATIC_STYLE.layoutNote) & (FORMAT.hidden | FORMAT.strike | FORMAT.doubleStrike)) problem('A layout note is hidden or struck through.');
     text += run.children.filter((c) => w(c, 't')).map(textOf).join('');

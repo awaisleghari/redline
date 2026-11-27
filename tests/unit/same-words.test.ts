@@ -218,3 +218,61 @@ describe('unchanged wording whose container changed', () => {
     });
   });
 });
+
+describe('findings of the independent review (2026-11-27)', () => {
+  const asTable: DocSpec = { blocks: [p(OPENING), table(PAYMENT_METHODS), p(CLOSING)] };
+  const asList: DocSpec = { blocks: [p(OPENING), ...ITEMS.map(p), p(CLOSING)] };
+  const NOTE_PPR = '<w:pPr><w:pStyle w:val="RedlineLayoutNote"/></w:pPr>';
+
+  it('a section break hidden in a layout note is refused', async () => {
+    const [original, modified] = [await buildDocx({ ...asTable, header: 'Head text' }), await buildDocx({ ...asList, header: 'Head text' })];
+    const { staticRedline, failed } = await compare(original, modified);
+    expect(failed).toEqual([]);
+    const forged = await editPart(staticRedline, 'word/document.xml', (xml) =>
+      xml.replace(NOTE_PPR, '<w:pPr><w:pStyle w:val="RedlineLayoutNote"/><w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr></w:pPr>'),
+    );
+    expect(await failedChecks(original, modified, forged)).toContain('completeness');
+  });
+
+  it('a layout note in tiny white type is refused', async () => {
+    const [original, modified] = [await buildDocx(asTable), await buildDocx(asList)];
+    const { staticRedline } = await compare(original, modified);
+    const forged = await editPart(staticRedline, 'word/document.xml', (xml) => xml.replace(/(<w:pStyle w:val="RedlineLayoutNote"\/><\/w:pPr><w:r><w:rPr>)/, '$1<w:color w:val="FFFFFF"/><w:sz w:val="2"/>'));
+    expect(await failedChecks(original, modified, forged)).toContain('completeness');
+  });
+
+  it('a clause number on an empty line of the original\'s table is not lost under a note', async () => {
+    const original0 = await buildDocx({ blocks: [p(OPENING), numbered('First numbered clause.'), table(PAYMENT_METHODS), p(CLOSING)] });
+    const modified = await buildDocx({ blocks: [p(OPENING), numbered('First numbered clause.'), ...ITEMS.map(p), p(CLOSING)] });
+    const { staticRedline, failed } = await compare(original0, modified);
+    expect(failed).toEqual([]);
+    expect(await partOf(staticRedline, 'word/document.xml')).toContain('RedlineLayoutNote');
+    // The same original with an empty numbered paragraph in a cell of the table: Word prints its number.
+    const numberedPPr = /<w:p><w:pPr>((?:(?!<\/w:pPr>).)*<w:numPr>.*?)<\/w:pPr>/s.exec(await partOf(original0, 'word/document.xml'))![1]!;
+    const original1 = await editPart(original0, 'word/document.xml', (xml) => xml.replace(/(<w:tc>(?:<w:tcPr>.*?<\/w:tcPr>)?)(<w:p>(?:(?!<\/w:p>).)*Credit card)/s, `$1<w:p><w:pPr>${numberedPPr}</w:pPr></w:p>$2`));
+    expect(await failedChecks(original1, modified, staticRedline)).toContain('static-old');
+    // And the Producer itself makes no note for that original.
+    const again = await compare(original1, modified);
+    expect(again.failed).toEqual([]);
+    expect(await partOf(again.staticRedline, 'word/document.xml')).not.toContain('RedlineLayoutNote');
+  });
+
+  it('a formatting change elsewhere in a document with a layout note is still shaded, and the redline passes', async () => {
+    const original = await buildDocx(asTable);
+    const modified = await editPart(await buildDocx(asList), 'word/document.xml', (xml) => xml.replace(`<w:r><w:t xml:space="preserve">${CLOSING}`, `<w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">${CLOSING}`));
+    const { counts, failed } = await compare(original, modified);
+    expect(failed).toEqual([]);
+    expect(counts).toEqual({ insertions: 0, deletions: 0, moves: 0, formattingChanges: 2 });
+  });
+
+  it('paragraphs put into a table while the paragraph before them is deleted: the deleted one stays in front, and the redline passes', async () => {
+    const original = await buildDocx({ blocks: [p(OPENING), p('Direct debit'), ...ITEMS.map(p), p('Standing order'), p(CLOSING)] });
+    const { staticRedline, counts, failed } = await compare(original, await buildDocx(asTable));
+    expect(failed).toEqual([]);
+    const xml = await partOf(staticRedline, 'word/document.xml');
+    expect(xml).toContain('RedlineLayoutNote');
+    expect(xml.indexOf('Direct debit')).toBeLessThan(xml.indexOf('Layout changed'));
+    expect(xml.indexOf('Standing order')).toBeGreaterThan(xml.indexOf(ITEMS[3]!));
+    expect(counts.deletions).toBe(2);
+  });
+});
