@@ -23,9 +23,9 @@ function settle(inner: string): { text: string; marks: string[]; xml: string } {
   settleParagraphMarks(document.documentElement as unknown as Element);
   const paragraphs = Array.from(document.getElementsByTagNameNS(W, 'p'));
   const marks = paragraphs.map((p) => {
-    const settings = Array.from(p.getElementsByTagNameNS(W, 'pPr')[0]?.getElementsByTagNameNS(W, 'rPr') ?? [])[0];
-    const flag = settings && Array.from(settings.childNodes).find((c) => ['ins', 'del'].includes((c as Element).localName ?? ''));
-    return `${(flag as Element | undefined)?.localName ?? 'both'}:${p.textContent}`;
+    const settings = p.getElementsByTagNameNS(W, 'pPr')[0]?.getElementsByTagNameNS(W, 'rPr')[0];
+    const flag = ['ins', 'del'].find((name) => settings && settings.getElementsByTagNameNS(W, name).length > 0);
+    return `${flag ?? 'both'}:${p.textContent}`;
   });
   return { text: document.documentElement!.textContent ?? '', marks, xml: new XMLSerializer().serializeToString(document) };
 }
