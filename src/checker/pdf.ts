@@ -27,6 +27,15 @@ export interface PdfChar {
   size: number;
   /** Set when the file marks the character as page furniture (a header, a footer, a repeated table heading), not document content. */
   artifact: boolean;
+  /** Set when the file's own structure says the character is part of a list label or a note's number (not of the text). */
+  label?: boolean;
+  /** Set when the file's own structure says the character is inside a footnote or endnote. */
+  note?: boolean;
+  /**
+   * Which table cell the file's own structure puts the character in: a number that is the same for every character
+   * of one cell on one page, and 0 for a character in no cell. Absent when the file does not describe its structure.
+   */
+  cell?: number;
 }
 
 /** A thin horizontal line or bar drawn on a page: an underline, a strikethrough, a border, a rule. */
@@ -44,6 +53,14 @@ export interface PdfReading {
   pages: number;
   chars: PdfChar[];
   rules: PdfRule[];
+}
+
+/** A node of a PDF's own description of its structure, as PDF.js hands it over. */
+interface StructNode {
+  type?: string;
+  role?: string;
+  id?: string;
+  children?: StructNode[];
 }
 
 type Matrix = [number, number, number, number, number, number];
@@ -84,6 +101,7 @@ export async function readPdf(bytes: Uint8Array): Promise<PdfReading> {
   const OPS = pdfjs.OPS;
   const chars: PdfChar[] = [];
   const rules: PdfRule[] = [];
+  let cells = 0;
   try {
     for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber++) {
       const page = await document.getPage(pageNumber);
@@ -96,6 +114,10 @@ export async function readPdf(bytes: Uint8Array): Promise<PdfReading> {
       /** How deep the drawing is inside content marked as page furniture (0: document content). */
       let artifact = 0;
       const marks: boolean[] = [];
+      /** The piece of marked content being drawn (its number on this page), and the piece each character of the page belongs to. */
+      const pieces: (number | undefined)[] = [];
+      const pieceOf: (number | undefined)[] = [];
+      const pageStart = chars.length;
       const moveText = (dx: number, dy: number): void => {
         x = lineX += dx;
         y = lineY += dy;
@@ -115,8 +137,10 @@ export async function readPdf(bytes: Uint8Array): Promise<PdfReading> {
           const tag = typeof args[0] === 'string' ? args[0] : (args[0] as { name?: unknown } | null)?.name;
           marks.push(tag === 'Artifact');
           if (tag === 'Artifact') artifact++;
+          pieces.push(fn === OPS.beginMarkedContentProps && typeof args[1] === 'number' ? args[1] : pieces[pieces.length - 1]);
         } else if (fn === OPS.endMarkedContent) {
           if (marks.pop()) artifact--;
+          pieces.pop();
         } else if (fn === OPS.setFillRGBColor) state.colour = colourOf(args);
         else if (fn === OPS.setFillGray || fn === OPS.setFillCMYKColor || fn === OPS.setFillColor || fn === OPS.setFillColorN) state.colour = colourOf(args);
         else if (fn === OPS.setStrokeRGBColor || fn === OPS.setStrokeGray || fn === OPS.setStrokeCMYKColor || fn === OPS.setStrokeColor || fn === OPS.setStrokeColorN) state.stroke = colourOf(args);
@@ -163,7 +187,10 @@ export async function readPdf(bytes: Uint8Array): Promise<PdfReading> {
               // Ligatures and compatibility forms are spelled out, so "ﬁ" compares equal to "fi".
               const spelled = [...unicode.normalize('NFKC')].filter((c) => !isBlank(c));
               const each = (((typeof width === 'number' ? width : 0) * state.fontSize * state.widthUnit) / Math.max(1, spelled.length)) * stretch;
-              spelled.forEach((c, n) => chars.push({ c, color: state.colour, page: pageNumber, x: px + n * each, y: py, width: each, size, artifact: artifact > 0 }));
+              spelled.forEach((c, n) => {
+                chars.push({ c, color: state.colour, page: pageNumber, x: px + n * each, y: py, width: each, size, artifact: artifact > 0 });
+                pieceOf.push(pieces[pieces.length - 1]);
+              });
             }
             x += advance * state.scale;
           }
@@ -180,6 +207,74 @@ export async function readPdf(bytes: Uint8Array): Promise<PdfReading> {
           const thickness = Math.abs(by - ay) + (stroked ? state.lineWidth * Math.hypot(state.ctm[2], state.ctm[3]) : 0);
           if (Math.abs(bx - ax) >= 1 && thickness <= 3) rules.push({ page: pageNumber, x1: Math.min(ax, bx), x2: Math.max(ax, bx), y: (ay + by) / 2, thickness, color: filled ? state.colour : state.stroke });
         }
+      }
+      // The order a reader takes the page in. A PDF draws its text in whatever order suits the program that made
+      // it (a table carried over from the page before may be drawn last although it stands at the top). A file
+      // that describes its own structure says in which order its pieces are read; where it does, the page's
+      // characters are put in that order: the page furniture above the text, the text, the furniture below it.
+      // This only decides the order in which the characters are compared. Every character is still compared.
+      let tree: StructNode | null = null;
+      try {
+        tree = (await page.getStructTree()) as StructNode | null;
+      } catch {
+        tree = null;
+      }
+      const order: { piece: number; label: boolean; note: boolean; cell: number }[] = [];
+      const walk = (node: StructNode, label: boolean, note: boolean, cell: number): void => {
+        if (node.type === 'content') {
+          const piece = /_mc(\d+)$/.exec(node.id ?? '');
+          if (piece) order.push({ piece: Number(piece[1]), label, note, cell });
+          return;
+        }
+        const inside = node.role === 'TD' || node.role === 'TH' ? ++cells : cell;
+        for (const inner of node.children ?? []) walk(inner, label || node.role === 'Lbl', note || node.role === 'Note', inside);
+      };
+      if (tree) walk(tree, false, false, 0);
+      if (order.length > 0) {
+        const mine = chars.splice(pageStart);
+        const byPiece = new Map<number, PdfChar[]>();
+        const furniture: PdfChar[] = [];
+        const loose: PdfChar[] = [];
+        /** Furniture drawn in the middle of the text (the dots of a tab leader): kept behind the character it was drawn after. */
+        const drawnAfter = new Map<PdfChar, PdfChar[]>();
+        let previous: PdfChar | undefined;
+        mine.forEach((char, n) => {
+          const piece = pieceOf[n];
+          if (char.artifact) {
+            furniture.push(char);
+            if (previous) drawnAfter.set(previous, [...(drawnAfter.get(previous) ?? []), char]);
+          } else if (piece === undefined) loose.push(char);
+          else byPiece.set(piece, [...(byPiece.get(piece) ?? []), char]);
+          if (!char.artifact) previous = char;
+        });
+        const text: PdfChar[] = [];
+        for (const { piece, label, note, cell } of order) {
+          for (const char of byPiece.get(piece) ?? []) {
+            if (label) char.label = true;
+            if (note) char.note = true;
+            char.cell = cell;
+            text.push(char);
+          }
+          byPiece.delete(piece);
+        }
+        // (Content the structure does not mention is kept, after the rest: it will have to be accounted for like everything else.)
+        for (const rest of byPiece.values()) text.push(...rest);
+        text.push(...loose);
+        const heights = text.map((char) => char.y);
+        const [top, bottom] = heights.length > 0 ? [Math.max(...heights), Math.min(...heights)] : [page.view[3]! / 2, page.view[3]! / 2];
+        const within = (char: PdfChar): boolean => char.y <= top && char.y >= bottom;
+        const placed = new Set<PdfChar>();
+        const body: PdfChar[] = [];
+        for (const char of text) {
+          body.push(char);
+          for (const dots of drawnAfter.get(char) ?? []) {
+            if (!within(dots)) continue;
+            body.push(dots);
+            placed.add(dots);
+          }
+        }
+        // (Furniture within the text that was drawn before any of the page's text, a table's repeated heading row for one, comes first.)
+        chars.push(...furniture.filter((char) => char.y > top), ...furniture.filter((char) => within(char) && !placed.has(char)), ...body, ...furniture.filter((char) => char.y < bottom));
       }
       page.cleanup();
     }

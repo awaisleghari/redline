@@ -72,7 +72,7 @@ export const CHECK_TITLES: Record<CheckId, string> = {
   completeness: 'Every part of the documents that holds text was checked',
   structure: 'The Word file is structurally sound',
   'pdf-text': "The PDF's text matches the static redline, complete and in order",
-  'pdf-colours': 'Inserted, deleted and moved text is in the right colours in the PDF',
+  'pdf-colours': 'Inserted, deleted and moved text is in the right colours, struck through or underlined, in the PDF',
 };
 
 /** Render a report as the short text file a user can keep with the redline. */

@@ -57,6 +57,11 @@ interface Expected {
   paragraph: number;
   /** Which table the character is in (0 when it is in none). */
   table: number;
+  /** Which row of an outermost table the character is in (0 when it is in none), and which cell (the innermost). */
+  row: number;
+  cell: number;
+  /** Which cell of that row, counting only the row's own cells (not those of tables inside it); 0 outside tables. */
+  column: number;
   /** Which section of the document the character is in (main text only). */
   section: number;
   /** What a page prints immediately before this character. */
@@ -158,10 +163,28 @@ function expectedChars(story: Story, counters: NoteCounters, layout: Layout): { 
   let depth = 0;
   let tables = 0;
   let section = 0;
+  let rows = 0;
+  let cells = 0;
+  let row = 0;
+  let cell = 0;
+  let column = 0;
+  const outerCells: number[] = [];
   for (const [index, paragraph] of story.details.entries()) {
     while (story.key === 'body' && section < layout.sections.length - 1 && index >= layout.sections[section]!.end) section++;
-    if (paragraph.text === MARK.table && depth++ === 0) tables++;
-    if (paragraph.text === MARK.tableEnd) depth = Math.max(0, depth - 1);
+    if (paragraph.text === MARK.table) {
+      if (depth++ === 0) tables++;
+      outerCells.push(cell);
+    }
+    if (paragraph.text === MARK.row && depth === 1) row = ++rows;
+    if (paragraph.text === MARK.cell) {
+      cell = ++cells;
+      if (depth === 1) column = cell;
+    }
+    if (paragraph.text === MARK.tableEnd) {
+      depth = Math.max(0, depth - 1);
+      cell = outerCells.pop() ?? 0;
+      if (depth === 0) row = column = 0;
+    }
     if (isStructureMark(paragraph.text)) continue;
     const table = depth > 0 ? tables : 0;
     paragraphNumber++;
@@ -208,7 +231,7 @@ function expectedChars(story: Story, counters: NoteCounters, layout: Layout): { 
         } else {
           if (field && !field.inResult) field.code += text[i];
           else if (text[i] === '\t' && paragraph.leader) pending.push({ t: 'tab' });
-          else if (text[i] === '‑' && !(code & FORMAT.hidden)) out.push({ c: '-', fold: false, kind: kindOfCode(code), toParagraphEnd: 0, paragraph: paragraphNumber, table, section, before: pending.splice(0), after: [] });
+          else if (text[i] === '‑' && !(code & FORMAT.hidden)) out.push({ c: '-', fold: false, kind: kindOfCode(code), toParagraphEnd: 0, paragraph: paragraphNumber, table, row, cell, column, section, before: pending.splice(0), after: [] });
           i++;
         }
         continue;
@@ -222,7 +245,7 @@ function expectedChars(story: Story, counters: NoteCounters, layout: Layout): { 
       for (const raw of text[i - 1]!.normalize('NFKC')) {
         if (isBlank(raw)) continue;
         const c = canon(raw);
-        out.push({ c: fold ? c.toLowerCase() : c, fold, kind: kindOfCode(code), toParagraphEnd: 0, paragraph: paragraphNumber, table, section, before: pending.splice(0), after: [] });
+        out.push({ c: fold ? c.toLowerCase() : c, fold, kind: kindOfCode(code), toParagraphEnd: 0, paragraph: paragraphNumber, table, row, cell, column, section, before: pending.splice(0), after: [] });
       }
     }
     for (let k = start; k < out.length; k++) out[k]!.toParagraphEnd = out.length - 1 - k;
@@ -259,8 +282,23 @@ const SCAN = 20000;
  * where several characters in a row agree, so that a stray character elsewhere
  * on the page is not mistaken for the next character of the text.
  */
-function find(stream: Expected[], source: Source, as: 'body' | 'other'): Match {
-  const { chars, owner } = source;
+function find(stream: Expected[], source: Source, as: 'body' | 'other', from = 0, inCell?: boolean): Match {
+  const { chars } = source;
+  // Where the PDF describes its own structure, text outside tables is not looked for inside a table cell, and the
+  // text of one cell is taken, on any one page, from one cell only. (Cells of a row often hold the same words; and
+  // where a row runs over a page, a cell's text carries on in the next page's cell, not in its neighbour.) This
+  // only narrows where text may be found: everything in the PDF must still be accounted for.
+  const cellOnPage = new Map<number, number>();
+  const barred = (j: number): boolean => {
+    const cell = chars[j]!.cell;
+    if (inCell === undefined || cell === undefined) return false;
+    if (inCell !== cell > 0) return true;
+    const taken = cellOnPage.get(chars[j]!.page);
+    return taken !== undefined && taken !== cell;
+  };
+  const { owner } = source;
+  /** Not available to this text: accounted for already, or in a place where this text cannot be. */
+  const busy = (j: number): boolean => owner[j] !== undefined || barred(j);
   const at: number[] = [];
   let wrongColour: Match['wrongColour'];
   let inRun = false;
@@ -271,7 +309,7 @@ function find(stream: Expected[], source: Source, as: 'body' | 'other'): Match {
     const need = Math.min(RUN, runway[from]!);
     let j = position;
     for (let t = 0; t < need; t++) {
-      while (j < chars.length && owner[j]) j++;
+      while (j < chars.length && busy(j)) j++;
       if (j >= chars.length || !same(chars[j]!.c, stream[from + t]!)) return false;
       j++;
     }
@@ -283,19 +321,19 @@ function find(stream: Expected[], source: Source, as: 'body' | 'other'): Match {
     let length = 0;
     let last = position;
     for (; length < cap; length++) {
-      while (j < chars.length && owner[j]) j++;
+      while (j < chars.length && busy(j)) j++;
       if (j >= chars.length || !same(chars[j]!.c, stream[from + length]!)) break;
       last = j++;
     }
-    while (j < chars.length && owner[j]) j++;
+    while (j < chars.length && busy(j)) j++;
     return { length, last, next: j };
   };
   const nearest = (from: number, start: number, end: number): number => {
-    for (let j = start; j < end; j++) if (!owner[j] && agreesAhead(from, j)) return j;
+    for (let j = start; j < end; j++) if (!busy(j) && agreesAhead(from, j)) return j;
     return -1;
   };
-  for (let j = 0; j < chars.length && at.length < stream.length; j++) {
-    if (owner[j]) continue;
+  for (let j = from; j < chars.length && at.length < stream.length; j++) {
+    if (busy(j)) continue;
     const k = at.length;
     const expected = stream[k]!;
     if (same(chars[j]!.c, expected) && (inRun || agreesAhead(k, j))) {
@@ -307,7 +345,7 @@ function find(stream: Expected[], source: Source, as: 'body' | 'other'): Match {
         const here = agreement(k, j, cap);
         if (here.length < cap && here.next < chars.length && chars[here.next]!.page === chars[here.last]!.page) {
           let better = false;
-          for (let later = j + 1, end = Math.min(chars.length, j + 1 + SCAN); later < end && !better; later++) better = !owner[later] && same(chars[later]!.c, expected) && agreement(k, later, cap).length > here.length;
+          for (let later = j + 1, end = Math.min(chars.length, j + 1 + SCAN); later < end && !better; later++) better = !busy(later) && same(chars[later]!.c, expected) && agreement(k, later, cap).length > here.length;
           if (better) continue;
         }
       }
@@ -317,7 +355,7 @@ function find(stream: Expected[], source: Source, as: 'body' | 'other'): Match {
         // character is something else's (the first letter of a note, say) and the text resumes further on.
         // It is the second only if the text, from this character, is found further on before its continuation is.
         let next = j + 1;
-        while (next < chars.length && owner[next]) next++;
+        while (next < chars.length && busy(next)) next++;
         if (next >= chars.length || !same(chars[next]!.c, stream[k + 1]!)) {
           const end = Math.min(chars.length, j + 1 + SCAN);
           const resumes = nearest(k, j + 1, end);
@@ -329,12 +367,45 @@ function find(stream: Expected[], source: Source, as: 'body' | 'other'): Match {
       }
       if (expected.kind && chars[j]!.color !== COLOUR[expected.kind] && !wrongColour) wrongColour = { expected, found: chars[j]!.color };
       at.push(j);
+      if (inCell && chars[j]!.cell !== undefined) cellOnPage.set(chars[j]!.page, chars[j]!.cell!);
       inRun = true;
     } else {
       inRun = false;
     }
   }
-  if (at.length === stream.length) for (const j of at) owner[j] = as;
+  if (at.length === stream.length) for (const j of at) source.owner[j] = as;
+  return { at, wrongColour };
+}
+
+/**
+ * Find the main text. Outside tables it runs on in one line, each stretch after the one before. A table row is
+ * different: where a row runs over the foot of a page, the page ends with the first part of each of its cells and
+ * the next page begins with their second parts, so the text of one cell is not in one piece. Each cell of a row is
+ * therefore found by itself, complete and in order, anywhere from where its row begins; the next row (or the text
+ * after the table) begins after everything that row holds.
+ */
+function findMainText(stream: Expected[], source: Source): Match {
+  const at: number[] = [];
+  let wrongColour: Match['wrongColour'];
+  let cursor = 0;
+  for (let start = 0; start < stream.length; ) {
+    // One row (every cell and table inside it), or one stretch of text outside tables.
+    let end = start;
+    while (end < stream.length && stream[end]!.row === stream[start]!.row) end++;
+    let furthest = cursor - 1;
+    for (let from = start; from < end; ) {
+      let to = from;
+      while (to < end && stream[to]!.cell === stream[from]!.cell) to++;
+      const match = find(stream.slice(from, to), source, 'body', cursor, stream[from]!.cell !== 0);
+      for (const position of match.at) at.push(position);
+      wrongColour ??= match.wrongColour;
+      if (match.at.length < to - from) return { at, wrongColour };
+      for (const position of match.at) furthest = Math.max(furthest, position);
+      from = to;
+    }
+    cursor = furthest + 1;
+    start = end;
+  }
   return { at, wrongColour };
 }
 
@@ -426,12 +497,22 @@ export function comparePdf(reading: StoryReading, pdf: PdfReading): PdfCheckResu
   const noteColour = (story: Story, match: Match): void => {
     if (match.wrongColour) wrongColour(story, match.wrongColour.expected, match.wrongColour.found);
   };
+  /** Where the words that should come next are in the PDF, if anywhere: tells a passage printed out of place from one not printed at all. */
+  const whereabouts = (stream: Expected[], from: number): string => {
+    const next = stream.slice(from, from + 14).map((x) => x.c.toLowerCase()).join('');
+    if (next.length < 6) return '';
+    lowered ??= chars.map((x) => x.c.toLowerCase()).join('');
+    const pages = new Set<number>();
+    for (let hit = lowered.indexOf(next); hit >= 0 && pages.size < 4; hit = lowered.indexOf(next, hit + 1)) pages.add(chars[hit]!.page);
+    return pages.size === 0 ? '; the words expected next are nowhere in the PDF' : `; the words expected next are printed on page ${[...pages].join(', ')}`;
+  };
+  let lowered: string | undefined;
   const missing = (story: Story, stream: Expected[], match: Match): PdfCheckResult => ({
     text: {
       message: `The PDF does not contain the ${story.label} of the redline, complete and in order.`,
       where: `${story.label}, paragraph ${stream[match.at.length]?.paragraph ?? '?'}`,
       expected: `…${excerpt(stream, match.at.length - 15, 65)}…`,
-      found: `…${excerpt(chars, (match.at[match.at.length - 1] ?? 0) - 14, 65)}… (white space is not compared)`,
+      found: `…${excerpt(chars, (match.at[match.at.length - 1] ?? 0) - 14, 65)}… (page ${chars[match.at[match.at.length - 1] ?? 0]?.page ?? '?'}; white space is not compared${whereabouts(stream, match.at.length)})`,
     },
     note,
   });
@@ -509,8 +590,8 @@ export function comparePdf(reading: StoryReading, pdf: PdfReading): PdfCheckResu
         }
       }
     }
-    let provisional = find(bodyStream, scratch, 'body');
-    if (provisional.at.length < bodyStream.length) provisional = find(bodyStream, { chars, owner: new Array<Owner>(chars.length).fill(undefined) }, 'body');
+    let provisional = findMainText(bodyStream, scratch);
+    if (provisional.at.length < bodyStream.length) provisional = findMainText(bodyStream, { chars, owner: new Array<Owner>(chars.length).fill(undefined) });
     if (provisional.at.length < bodyStream.length) return missing(body, bodyStream, provisional);
     // A section begins on the page its first few characters are on (the later page, should the very first
     // character have been mistaken for one at the foot of the page before).
@@ -568,8 +649,11 @@ export function comparePdf(reading: StoryReading, pdf: PdfReading): PdfCheckResu
       const j = found.lits[n++]!;
       owner[j] = 'other';
       if (piece.lit.kind && chars[j]!.color !== COLOUR[piece.lit.kind]) wrongColour(repeat.story, piece.lit, chars[j]!.color);
+      furnitureInk.push({ story: repeat.story, lit: piece.lit, j });
     }
   };
+  /** Every character of a header or footer as found, for the check of strikes and underlines. */
+  const furnitureInk: { story: Story; lit: Expected; j: number }[] = [];
   const unprinted: { page: number; repeat: Repeating }[] = [];
   for (let page = 1; page <= pdf.pages; page++) {
     if (pageStart[page] === undefined) continue;
@@ -611,7 +695,7 @@ export function comparePdf(reading: StoryReading, pdf: PdfReading): PdfCheckResu
   const found: Found[] = [];
   let bodyFound: Found | undefined;
   if (body) {
-    const match = find(bodyStream, source, 'body');
+    const match = findMainText(bodyStream, source);
     if (match.at.length < bodyStream.length) return missing(body, bodyStream, match);
     noteColour(body, match);
     bodyFound = { story: body, stream: bodyStream, match };
@@ -656,21 +740,81 @@ export function comparePdf(reading: StoryReading, pdf: PdfReading): PdfCheckResu
     };
   }
 
-  // On a page, the notes are printed below the main text. Main text that comes after a note on the same
-  // page has been printed in the wrong place (down among the notes).
+  // On a page, the notes are printed below the main text. Main text that stands lower on the page than the top
+  // of the page's first note has been printed in the wrong place (down among the notes).
   if (bodyFound) {
-    const firstNoteOnPage = new Map<number, number>();
+    const noteTop = new Map<number, number>();
     for (const { story, match } of found) {
       if (!isNote(story)) continue;
-      for (const j of match.at) {
-        const page = chars[j]!.page;
-        if (!firstNoteOnPage.has(page) || j < firstNoteOnPage.get(page)!) firstNoteOnPage.set(page, j);
-      }
+      for (const j of match.at) noteTop.set(chars[j]!.page, Math.max(noteTop.get(chars[j]!.page) ?? -Infinity, chars[j]!.y));
     }
     for (const j of bodyFound.match.at) {
-      const note = firstNoteOnPage.get(chars[j]!.page);
-      if (note !== undefined && j > note) return extra(j, 'main text is printed among the footnotes', 'the main text above the notes');
+      const top = noteTop.get(chars[j]!.page);
+      if (top !== undefined && chars[j]!.y < top - 1) return extra(j, 'main text is printed among the footnotes', 'the main text above the notes');
     }
+  }
+
+  // A table is read across and down. The cells of a row stand side by side in their order, none reaching into
+  // the next; and each row begins lower on the page than the row before it. (This is judged from where the
+  // characters are drawn: text put into the wrong cell is in the wrong place on the page, whatever order the file
+  // lists it in.)
+  if (bodyFound) {
+    const { stream, match } = bodyFound;
+    const cellSpan = new Map<string, { left: number; right: number; row: number; column: number; page: number; at: number }>();
+    const rowTop = new Map<string, { top: number; row: number; table: number; page: number; at: number }>();
+    stream.forEach((expected, i) => {
+      if (expected.row === 0) return;
+      const char = chars[match.at[i]!]!;
+      const cellKey = `${expected.column}/${char.page}`;
+      const span = cellSpan.get(cellKey);
+      if (!span) cellSpan.set(cellKey, { left: char.x, right: char.x + char.width, row: expected.row, column: expected.column, page: char.page, at: match.at[i]! });
+      else [span.left, span.right] = [Math.min(span.left, char.x), Math.max(span.right, char.x + char.width)];
+      const rowKey = `${expected.row}/${char.page}`;
+      const top = rowTop.get(rowKey);
+      if (!top) rowTop.set(rowKey, { top: char.y, row: expected.row, table: expected.table, page: char.page, at: match.at[i]! });
+      else top.top = Math.max(top.top, char.y);
+    });
+    const spans = [...cellSpan.values()].sort((a, b) => a.page - b.page || a.row - b.row || a.column - b.column);
+    for (let k = 1; k < spans.length; k++) {
+      const [left, right] = [spans[k - 1]!, spans[k]!];
+      if (left.page === right.page && left.row === right.row && right.left < left.right - 2) return extra(right.at, 'the text of a table cell is not printed to the right of the cell before it', 'each cell of a row beside the one before it');
+    }
+    const tops = [...rowTop.values()].sort((a, b) => a.page - b.page || a.row - b.row);
+    for (let k = 1; k < tops.length; k++) {
+      const [above, below] = [tops[k - 1]!, tops[k]!];
+      if (above.page === below.page && above.table === below.table && below.top > above.top - 1) return extra(below.at, 'a table row is not printed below the row before it', 'each row of a table below the one before it');
+    }
+  }
+
+  // Every character of a change carries the change's mark: deleted text a line through it, moved-from text two,
+  // inserted and moved-to text two lines under it. A PDF draws these as thin lines; each is looked for at the
+  // character itself, in the change's colour.
+  if (!colours) {
+    const rulesOnPage = new Map<number, typeof pdf.rules>();
+    for (const rule of pdf.rules) rulesOnPage.set(rule.page, [...(rulesOnPage.get(rule.page) ?? []), rule]);
+    const marked = (story: Story, expected: Expected, j: number): void => {
+      if (!expected.kind || colours) return;
+      const char = chars[j]!;
+      const middle = char.x + char.width / 2;
+      let [through, under] = [0, 0];
+      for (const rule of rulesOnPage.get(char.page) ?? []) {
+        if (rule.color !== COLOUR[expected.kind] || rule.x1 > middle + 0.5 || rule.x2 < middle - 0.5) continue;
+        const height = (rule.y - char.y) / Math.max(char.size, 1);
+        if (height > 0.05 && height < 0.6) through++;
+        else if (height < 0 && height > -0.45) under++;
+      }
+      const struck = expected.kind === 'deleted' || expected.kind === 'movedFrom';
+      const [need, have] = struck ? [expected.kind === 'movedFrom' ? 2 : 1, through] : [2, under];
+      if (have >= need) return;
+      colours = {
+        message: `Text that is ${KIND_NAME[expected.kind]} in the redline is not ${struck ? (need === 2 ? 'struck through twice' : 'struck through') : 'underlined twice'} in the PDF.`,
+        where: `${story.label}, paragraph ${expected.paragraph}`,
+        expected: struck ? `${need} line${need === 1 ? '' : 's'} through the text, in colour ${COLOUR[expected.kind]}` : `2 lines under the text, in colour ${COLOUR[expected.kind]}`,
+        found: `${have} such line${have === 1 ? '' : 's'} at "${excerpt(chars, j, 20)}"`,
+      };
+    };
+    for (const { story, stream, match } of [...(bodyFound ? [bodyFound] : []), ...found]) stream.forEach((expected, i) => marked(story, expected, match.at[i]!));
+    for (const { story, lit, j } of furnitureInk) marked(story, lit, j);
   }
 
   // ---- 4. Everything else in the PDF must be exactly what a page adds, exactly where it adds it. ----
@@ -695,6 +839,11 @@ export function comparePdf(reading: StoryReading, pdf: PdfReading): PdfCheckResu
     for (const j of free.slice(-length)) {
       const colour = chars[j]!.color;
       if (last.kind ? colour === COLOUR[last.kind] : !CHANGE_COLOURS.has(colour)) continue;
+      // A paragraph split off from the one before it has an added mark in front of unchanged words. The converter
+      // prints the number of some such paragraphs like the words, not like the mark (seen on real contracts; why it
+      // does so for some and not others is not known). The number then agrees with the text it stands in front of,
+      // and is accepted: a number in no change's colour, in front of text that is no change.
+      if (last.kind && next.kind === undefined && !CHANGE_COLOURS.has(colour)) continue;
       colours ??= {
         message: last.kind ? `The number or bullet of a paragraph that is ${KIND_NAME[last.kind]} in the redline is not printed in its colour in the PDF.` : 'The number or bullet of an unchanged paragraph is printed in the colour of a change in the PDF.',
         where: `${story.label}, paragraph ${next.paragraph}`,
@@ -745,30 +894,59 @@ export function comparePdf(reading: StoryReading, pdf: PdfReading): PdfCheckResu
     }
   }
 
-  // 4b. Along the main text: between each character and the next, and before the first and after the last.
-  // Where a table runs onto a new page, its heading rows are printed again at the top of that page.
+  // 4b. Along the main text. What a page adds (a clause number, a bullet, a note's mark, a tab's dots) stands
+  // immediately in front of the character it belongs to (or, at the very end, immediately behind the last one).
+  // It is taken from there, exactly; anything else left near it is dealt with below, and fails.
   const rows = printed.repeatRows.map(spelled).filter((row) => row !== '');
-  const repeatedRows = rows.map((row) => `(?:${escape(row)})?`).join('');
+  const repeatedRows = whole(`(?:${rows.map(escape).join('|') || '(?!)'})+`);
   if (bodyFound) {
     const { story, stream, match } = bodyFound;
-    for (let i = 0; i <= stream.length; i++) {
-      const from = i === 0 ? -1 : match.at[i - 1]!;
-      const to = i === stream.length ? chars.length : match.at[i]!;
-      const free = between(from, to);
-      const after = i > 0 ? stream[i - 1]!.after : [];
-      const before = i < stream.length ? stream[i]!.before : [];
-      const where = whereOf(i < stream.length ? to : from);
-      const turnOfPage = i > 0 && i < stream.length && chars[from]!.page !== chars[to]!.page;
-      const text = textOf(free);
-      // A heading row is repeated only where the page turns inside its table.
-      const insideTable = turnOfPage && stream[i]!.table !== 0 && stream[i - 1]!.table === stream[i]!.table;
-      const ok = turnOfPage ? whole(after.map((t) => pattern(t, whereOf(from))).join('') + (insideTable ? repeatedRows : '') + before.map((t) => pattern(t, where)).join('')).test(text) : fits(text, [...after, ...before], where);
-      if (!ok) {
-        const place = turnOfPage ? 'at the turn of a page' : i === 0 ? 'before the text begins' : i === stream.length ? 'after the text ends' : before.length > 0 ? 'in front of a paragraph' : 'in the middle of the text';
-        return extra(free[0] ?? Math.min(to, chars.length - 1), place, describe([...after, ...before]));
+    for (let i = 0; i < stream.length; i++) {
+      const tokens = stream[i]!.before;
+      if (tokens.length === 0) continue;
+      const to = match.at[i]!;
+      const most = tokens.reduce((sum, token) => sum + longest(token), 0);
+      const lead: number[] = [];
+      for (let j = to - 1; j >= 0 && owner[j] === undefined && lead.length < most; j--) lead.unshift(j);
+      let taken = false;
+      for (let from = 0; from <= lead.length && !taken; from++) {
+        if (!fits(textOf(lead.slice(from)), tokens, whereOf(to))) continue;
+        checkLabelColour(story, lead.slice(from), tokens, stream[i]);
+        accept(lead.slice(from));
+        taken = true;
       }
-      checkLabelColour(story, free, [...after, ...before], stream[i]);
-      accept(free);
+      if (!taken) return extra(lead[0] ?? to, stream[i]!.toParagraphEnd > 0 && i > 0 && stream[i - 1]!.paragraph === stream[i]!.paragraph ? 'in the middle of the text' : 'in front of a paragraph', describe(tokens));
+    }
+    const lastTokens = stream.length > 0 ? stream[stream.length - 1]!.after : [];
+    if (lastTokens.length > 0) {
+      const end = match.at[match.at.length - 1]!;
+      const trail: number[] = [];
+      for (let j = end + 1; j < chars.length && owner[j] === undefined && trail.length < 8; j++) trail.push(j);
+      for (let to = trail.length; to >= 0; to--) {
+        if (!fits(textOf(trail.slice(0, to)), lastTokens, whereOf(end))) continue;
+        accept(trail.slice(0, to));
+        break;
+      }
+    }
+    // Where a table runs onto a new page, its heading rows are printed again at the top of that page: before the
+    // first of the page's main text, and only if that text carries on a table begun on an earlier page.
+    const firstOnPage = new Map<number, number>();
+    const tablePages = new Map<number, number>();
+    match.at.forEach((position, i) => {
+      const page = chars[position]!.page;
+      if (!firstOnPage.has(page) || position < match.at[firstOnPage.get(page)!]!) firstOnPage.set(page, i);
+      const table = stream[i]!.table;
+      if (table !== 0 && (!tablePages.has(table) || page < tablePages.get(table)!)) tablePages.set(table, page);
+    });
+    for (const [page, i] of firstOnPage) {
+      const table = stream[i]!.table;
+      if (table === 0 || tablePages.get(table)! >= page) continue;
+      const free: number[] = [];
+      // (Stepping back over what was taken just above: the first paragraph's own number or bullet.)
+      let j = match.at[i]! - 1;
+      while (j >= pageStart[page]! && owner[j] === 'accepted') j--;
+      for (; j >= pageStart[page]! && owner[j] === undefined; j--) free.unshift(j);
+      if (free.length > 0 && repeatedRows.test(textOf(free))) accept(free);
     }
   }
   // 5. Nothing may be left over.
