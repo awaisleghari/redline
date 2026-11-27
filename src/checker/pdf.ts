@@ -89,6 +89,63 @@ function colourOf(args: unknown[]): string {
 /** Characters that take no ink: spaces of every kind and invisible joiners. */
 export const isBlank = (c: string): boolean => /[\s ­​-‍⁠﻿]/.test(c);
 
+/** A paragraph or a heading. */
+const PARAGRAPH = /^(P|H\d*)$/;
+/** Structure that only groups other structure (not a piece of text itself). */
+const GROUPING = new Set(['Document', 'Root', 'Part', 'Art', 'Sect', 'Div', 'NonStruct', 'DocumentFragment']);
+
+/**
+ * A page's pieces in the order a reader takes them. The file's structure lists them in reading order, except
+ * what floats: a heading set in a frame beside the text, a text box. The file lists a floating piece where the
+ * program keeps it (often before everything else on the page), not where it stands. A reader meets it where it
+ * stands. So: the blocks whose tops run down the page in the listed order are the flow of the text; a block
+ * that breaks that run is taken as floating and is read where its top stands among the flow.
+ *
+ * Only a page that is mostly flow is treated so. Where much of a page breaks the run (text in columns, say), the
+ * listed order is kept as it is.
+ */
+function inReadingOrder<T extends { piece: number; block: number }>(order: T[], charsOf: (piece: number) => PdfChar[]): T[] {
+  const blocks: { id: number; entries: T[]; top: number; size: number }[] = [];
+  for (const entry of order) {
+    let block = blocks[blocks.length - 1];
+    if (!block || block.id !== entry.block) blocks.push((block = { id: entry.block, entries: [], top: -Infinity, size: 0 }));
+    block.entries.push(entry);
+    for (const char of charsOf(entry.piece)) {
+      block.top = Math.max(block.top, char.y);
+      block.size++;
+    }
+  }
+  const drawn = blocks.filter((block) => block.size > 0);
+  if (drawn.length < 2) return order;
+  // The longest run of blocks, in the listed order, each beginning no higher than the one before it (heaviest by text).
+  const best: number[] = drawn.map((block) => block.size);
+  const from: number[] = drawn.map(() => -1);
+  for (let i = 0; i < drawn.length; i++) {
+    for (let j = 0; j < i; j++) {
+      if (drawn[j]!.top >= drawn[i]!.top - 0.5 && best[j]! + drawn[i]!.size > best[i]!) {
+        best[i] = best[j]! + drawn[i]!.size;
+        from[i] = j;
+      }
+    }
+  }
+  let end = 0;
+  for (let i = 1; i < drawn.length; i++) if (best[i]! >= best[end]!) end = i;
+  const flow = new Set<number>();
+  for (let i = end; i >= 0; i = from[i]!) flow.add(i);
+  const total = drawn.reduce((sum, block) => sum + block.size, 0);
+  if (flow.size === drawn.length || best[end]! < 0.7 * total) return order;
+  const result = drawn.filter((_, i) => flow.has(i));
+  drawn.forEach((block, i) => {
+    if (flow.has(i)) return;
+    // Before the first piece of the flow that begins lower than it (after any floating piece already put there).
+    let at = result.findIndex((other) => other.top < block.top - 0.5);
+    if (at < 0) at = result.length;
+    result.splice(at, 0, block);
+  });
+  const undrawn = blocks.filter((block) => block.size === 0);
+  return [...result, ...undrawn].flatMap((block) => block.entries);
+}
+
 export async function readPdf(bytes: Uint8Array): Promise<PdfReading> {
   if (!(bytes.length > 4 && bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46)) throw new PdfError('The file is not a PDF.');
   const task = pdfjs.getDocument({ data: bytes.slice(), disableFontFace: true, useSystemFonts: false, verbosity: 0 });
@@ -219,17 +276,25 @@ export async function readPdf(bytes: Uint8Array): Promise<PdfReading> {
       } catch {
         tree = null;
       }
-      const order: { piece: number; label: boolean; note: boolean; cell: number }[] = [];
-      const walk = (node: StructNode, label: boolean, note: boolean, cell: number): void => {
+      const order: { piece: number; label: boolean; note: boolean; cell: number; block: number }[] = [];
+      /** Blocks: the pieces the page's text is made of at its outermost level (a paragraph, a heading, a whole table, a list). */
+      let blocks = 0;
+      const paragraphs = new Set<number>();
+      const walk = (node: StructNode, label: boolean, note: boolean, cell: number, block: number): void => {
         if (node.type === 'content') {
           const piece = /_mc(\d+)$/.exec(node.id ?? '');
-          if (piece) order.push({ piece: Number(piece[1]), label, note, cell });
+          if (piece) order.push({ piece: Number(piece[1]), label, note, cell, block: block || ++blocks });
           return;
         }
         const inside = node.role === 'TD' || node.role === 'TH' ? ++cells : cell;
-        for (const inner of node.children ?? []) walk(inner, label || node.role === 'Lbl', note || node.role === 'Note', inside);
+        // Something anchored to a paragraph (a frame, a table set beside the text) is listed inside that paragraph:
+        // outside tables it is a block of its own, since it stands somewhere else on the page.
+        const anchored = block !== 0 && cell === 0 && inside === 0 && paragraphs.has(block) && (node.role === 'Div' || node.role === 'Table' || node.role === 'Sect');
+        const within = anchored ? ++blocks : block || (GROUPING.has(node.role ?? '') ? 0 : ++blocks);
+        if (within !== block && PARAGRAPH.test(node.role ?? '')) paragraphs.add(within);
+        for (const inner of node.children ?? []) walk(inner, label || node.role === 'Lbl', note || node.role === 'Note', inside, within);
       };
-      if (tree) walk(tree, false, false, 0);
+      if (tree) walk(tree, false, false, 0, 0);
       if (order.length > 0) {
         const mine = chars.splice(pageStart);
         const byPiece = new Map<number, PdfChar[]>();
@@ -248,7 +313,7 @@ export async function readPdf(bytes: Uint8Array): Promise<PdfReading> {
           if (!char.artifact) previous = char;
         });
         const text: PdfChar[] = [];
-        for (const { piece, label, note, cell } of order) {
+        for (const { piece, label, note, cell } of inReadingOrder(order, (piece) => byPiece.get(piece) ?? [])) {
           for (const char of byPiece.get(piece) ?? []) {
             if (label) char.label = true;
             if (note) char.note = true;

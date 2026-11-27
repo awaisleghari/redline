@@ -14,12 +14,14 @@ import {
   Header,
   LeaderType,
   LevelFormat,
+  OverlapType,
   Packer,
   PageNumber,
   Paragraph,
   SectionType,
   SymbolRun,
   Table,
+  TableAnchorType,
   TableCell,
   TableRow,
   TabStopType,
@@ -238,6 +240,28 @@ export const PDF_DOCUMENT_PAIRS: PdfDocumentPair[] = [
       ],
     }),
   ),
+  custom('heading-below-a-table-set-beside-the-text', 'Clauses kept in tables that are set beside the text (as real contract forms do), each anchored to the heading that follows it: the PDF lists such a table inside that heading, though it stands above it on the page.', (changed) => {
+    const beside = (first: string, second: string): Table =>
+      new Table({
+        width: { size: 9026, type: WidthType.DXA },
+        float: { horizontalAnchor: TableAnchorType.TEXT, verticalAnchor: TableAnchorType.TEXT, absoluteVerticalPosition: 1, leftFromText: 180, rightFromText: 180, overlap: OverlapType.NEVER },
+        rows: [new TableRow({ children: [new TableCell({ children: [text('1')] }), new TableCell({ children: [text(first)] })] }), new TableRow({ children: [new TableCell({ children: [text('2')] }), new TableCell({ children: [text(second)] })] })],
+      });
+    return new Document({
+      sections: [
+        {
+          children: [
+            text('TRANSFERS'),
+            beside(`The Consultant may assign a benefit only with ${word(changed)} consent.`, 'The Consultant is responsible for its sub-consultants.'),
+            text('SITE'),
+            beside('The Client shall supply details of land ownership.', 'The Client does not guarantee access.'),
+            text('PAYMENT'),
+            text('The fee is GBP 1.'),
+          ],
+        },
+      ],
+    });
+  }),
   custom('first-page-and-default-headers', 'A first-page header and footer, and a different header on the other pages; the document begins with the words of that other header.', (changed) =>
     new Document({
       sections: [
