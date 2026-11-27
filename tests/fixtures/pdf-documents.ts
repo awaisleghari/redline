@@ -230,6 +230,14 @@ export const PDF_DOCUMENT_PAIRS: PdfDocumentPair[] = [
       ],
     }),
   ),
+  custom('two-sections-with-different-footers', 'An agreement and a schedule, each a section with a footer of its own wording.', (changed) =>
+    new Document({
+      sections: [
+        { footers: { default: new Footer({ children: [new Paragraph({ children: [new TextRun('Agreement, page '), new TextRun({ children: [PageNumber.CURRENT] })] })] }) }, children: [sentence(changed), text('The fee is GBP 1')] },
+        { properties: { type: SectionType.NEXT_PAGE }, footers: { default: new Footer({ children: [new Paragraph({ children: [new TextRun('Schedule, page '), new TextRun({ children: [PageNumber.CURRENT] })] })] }) }, children: [text('Schedule 1'), text('Number of Shares: 2')] },
+      ],
+    }),
+  ),
   custom('first-page-and-default-headers', 'A first-page header and footer, and a different header on the other pages; the document begins with the words of that other header.', (changed) =>
     new Document({
       sections: [

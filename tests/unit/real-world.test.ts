@@ -384,6 +384,29 @@ describe('numbered clauses at the end of a table cell', () => {
     }
   });
 
+  it('a removed clause dressed as the one that stays is refused, in a cell and in the main text (review finding)', async () => {
+    const base = (await buildPair(pairById('numbered-clause-deleted'))).original;
+    for (const inCell of [true, false]) {
+      const original = inCell ? await withNumberedClausesInCell(base) : base;
+      const modified = inCell ? await withNumberedClausesInCell(base, 'last deleted') : (await buildPair(pairById('numbered-clause-deleted'))).modified;
+      const { staticRedline } = await bothPass(original, modified);
+      // The removed clause is the paragraph that shows an old number; the clause before it stays.
+      const xml = decoder.decode((await unzip(staticRedline)).get('word/document.xml')!);
+      const paragraphs = xml.match(/<w:p[ >].*?<\/w:p>/gs)!;
+      const at = paragraphs.findIndex((paragraph) => paragraph.includes('RedlineOldNumber'));
+      const [stays, went] = [paragraphs[at - 1]!, paragraphs[at]!];
+      const liveNumber = /<w:numPr>.*?<\/w:numPr>/s.exec(stays)![0];
+      const oldNumberRun = /<w:r><w:rPr><w:rStyle w:val="RedlineOldNumber"\/>.*?<\/w:r>/s.exec(went)![0];
+      const deletedMark = '<w:rPr><w:strike/><w:color w:val="FF0000"/></w:rPr>';
+      // Forged: the clause that stays loses its number, gets a deleted mark and an old number; the removed clause gets the live number and a plain mark.
+      const forgedStays = stays.replace(liveNumber, '<w:numPr><w:numId w:val="0"/></w:numPr>').replace('</w:pPr>', `${deletedMark}</w:pPr>${oldNumberRun}`);
+      const forgedWent = went.replace(oldNumberRun, '').replace(/<w:numPr>.*?<\/w:numPr>/s, liveNumber).replace(/(<w:pPr>(?:(?!<\/w:pPr>).)*)<w:rPr>(?:(?!<\/w:rPr>).)*<\/w:rPr><\/w:pPr>/s, '$1</w:pPr>');
+      expect(forgedWent).not.toBe(went);
+      const forged = await editPart(staticRedline, /^word\/document\.xml$/, (doc) => doc.replace(stays + went, forgedStays + forgedWent));
+      expect(await failed(checkStaticRedline({ original, modified, output: forged, ...COVER })), inCell ? 'in a cell' : 'in the main text').not.toEqual([]);
+    }
+  });
+
   it('the last two clauses run together, and a clause added at the end: both Word files pass', async () => {
     for (const id of ['numbered-clause-deleted', 'numbered-clause-moved']) {
       const base = (await buildPair(pairById(id))).original;
@@ -980,7 +1003,7 @@ describe('the one line of a cell replaced, written as a removed paragraph and an
     ['old line removed, new line added', removed(OLD), added(NEW), OLD, NEW],
     ['new line added, old line removed', added(NEW), removed(OLD), OLD, NEW],
   ] as const) {
-    it(`the static redline passes and shows one paragraph: ${name}`, async () => {
+    it(`the static redline passes and shows the two lines as what they are, one removed and one added: ${name}`, async () => {
       const pair = await buildPair(pairById('one-word-change'));
       const original = await withParagraphsAtCellEnd(pair.original, [before]);
       const modified = await withParagraphsAtCellEnd(pair.original, [after]);
@@ -991,9 +1014,14 @@ describe('the one line of a cell replaced, written as a removed paragraph and an
       expect(report.checks.filter((c) => !c.passed)).toEqual([]);
       const xml = decoder.decode((await unzip(made.docx)).get('word/document.xml')!);
       const cell = /<w:tc>.*?<\/w:tc>/s.exec(xml)![0];
-      expect(cell.match(/<w:p[ >]/g)).toHaveLength(2); // the cell's first paragraph, and the replaced line as one
-      expect(cell.indexOf(OLD)).toBeGreaterThan(-1);
-      expect(cell.indexOf(NEW)).toBeGreaterThan(-1);
+      // The cell's first paragraph, the removed line and the added line: each line's mark says what happened to
+      // that line (one model of paragraph marks, 2026-11-27; before, the two were run together into one paragraph).
+      const lines = cell.match(/<w:p[ >].*?<\/w:p>/gs)!;
+      expect(lines).toHaveLength(3);
+      const [oldLine, newLine] = [lines.find((line) => line.includes(OLD))!, lines.find((line) => line.includes(NEW))!];
+      expect(oldLine).not.toBe(newLine);
+      expect(oldLine.match(/<w:strike\/>/g)).toHaveLength(2); // its words and its mark
+      expect(newLine.match(/<w:u w:val="double"\/>/g)).toHaveLength(2);
     });
   }
 });
@@ -1033,7 +1061,7 @@ describe('a cell that gains a typed paragraph and a moved-in paragraph at its en
  * empty paragraph added with the cell's last mark. A rule added in the third batch wrongly left this case out.
  */
 describe('the one line of a cell replaced by an empty line', () => {
-  for (const mirrored of [false, true]) it(`the static redline passes and the cell holds one paragraph${mirrored ? ' (an empty line replaced by a line of text)' : ''}`, async () => {
+  for (const mirrored of [false, true]) it(`the static redline passes and the cell shows the line that went and the line that came${mirrored ? ' (an empty line replaced by a line of text)' : ''}`, async () => {
     const OLD = 'Applicant entry goes on this line';
     const change = (tag: string, id: number): string => `<w:${tag} w:id="${9500 + id}" w:author="Redline" w:date="2026-11-26T00:00:00Z"`;
     const cellOf = (paragraphs: string): string => `<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="9000" w:type="dxa"/></w:tcPr>${paragraphs}</w:tc></w:tr></w:tbl>`;
@@ -1053,7 +1081,10 @@ describe('the one line of a cell replaced by an empty line', () => {
     const made = await makeStaticRedline(tracked, original, COVER);
     expect((await checkStaticRedline({ original, modified, output: made.docx, ...COVER })).checks.filter((c) => !c.passed)).toEqual([]);
     const cell = /<w:tc>.*?<\/w:tc>/s.exec(decoder.decode((await unzip(made.docx)).get('word/document.xml')!))![0];
-    expect(cell.match(/<w:p[ >]/g)).toHaveLength(1);
+    // Two lines, one removed and one added (before the one model of paragraph marks they were run together into one).
+    expect(cell.match(/<w:p[ >]/g)).toHaveLength(2);
+    expect(cell.match(/<w:strike\/>/g)).toHaveLength(mirrored ? 1 : 2);
+    expect(cell.match(/<w:u w:val="double"\/>/g)).toHaveLength(mirrored ? 2 : 1);
   });
 });
 
@@ -1077,7 +1108,7 @@ describe('the one line of a cell replaced by several paragraphs', () => {
     ['the line is all the cell held', ''],
     ['another line stands above it', P('Payment terms')],
   ] as const) {
-    it(`the static redline passes and the old line shares a paragraph with the first new one: ${name}`, async () => {
+    it(`the static redline passes and the old line stands, removed, above the new ones: ${name}`, async () => {
       const base = (await buildPair(pairById('one-word-change'))).original;
       const withCell = (paragraphs: string): Promise<Uint8Array> => editPart(base, /^word\/document\.xml$/, (xml) => xml.replace(/<w:p>.*?<\/w:p>/s, (first) => first + cellOf(lead + paragraphs)));
       const original = await withCell(P(OLD));
@@ -1088,9 +1119,11 @@ describe('the one line of a cell replaced by several paragraphs', () => {
       const report = await checkStaticRedline({ original, modified, output: made.docx, ...COVER });
       expect(report.checks.filter((c) => !c.passed)).toEqual([]);
       const cell = /<w:tc>.*?<\/w:tc>/s.exec(decoder.decode((await unzip(made.docx)).get('word/document.xml')!))![0];
-      expect(cell.match(/<w:p[ >]/g)).toHaveLength(NEW.length + (lead === '' ? 0 : 1));
-      const joined = cell.split(/<w:p[ >]/).find((p) => p.includes(OLD))!;
-      expect(joined.indexOf(OLD)).toBeLessThan(joined.indexOf(NEW[0]!));
+      // The removed line is a line of its own (before the one model of paragraph marks it was run into the first new one).
+      expect(cell.match(/<w:p[ >]/g)).toHaveLength(NEW.length + 1 + (lead === '' ? 0 : 1));
+      const oldLine = cell.split(/<w:p[ >]/).find((p) => p.includes(OLD))!;
+      expect(oldLine).not.toContain(NEW[0]!);
+      expect(cell.indexOf(OLD)).toBeLessThan(cell.indexOf(NEW[0]!));
     });
   }
 });
@@ -1121,7 +1154,7 @@ describe('the one line of a cell replaced by paragraphs, the last holding a smar
 
 /** Review finding on the third batch: the replaced line and the new paragraphs numbered. The joined paragraph stays, so it shows no old number. */
 describe('the one numbered line of a cell replaced by several numbered paragraphs', () => {
-  it('the static redline passes, and the joined paragraph carries no old clause number', async () => {
+  it('the static redline passes: the removed line shows its old clause number, and no other line shows one', async () => {
     const base = (await buildPair(pairById('numbered-clause-deleted'))).original;
     const numPr = /<w:numPr>.*?<\/w:numPr>/s.exec(decoder.decode((await unzip(base)).get('word/document.xml')!))![0];
     const OLD = 'The scope of requirements is defined elsewhere';
@@ -1140,7 +1173,11 @@ describe('the one numbered line of a cell replaced by several numbered paragraph
     const made = await makeStaticRedline(tracked, original, COVER);
     expect((await checkStaticRedline({ original, modified, output: made.docx, ...COVER })).checks.filter((c) => !c.passed)).toEqual([]);
     const cell = /<w:tc>.*?<\/w:tc>/s.exec(decoder.decode((await unzip(made.docx)).get('word/document.xml')!))![0];
-    expect(cell).not.toContain('RedlineOldNumber');
+    // The numbered line that went is a removed clause like any other (before the one model of paragraph marks it
+    // was run into the first new line, a paragraph that stays, and so could show no old number).
+    const lines = cell.match(/<w:p[ >].*?<\/w:p>/gs)!;
+    expect(lines.map((line) => line.includes('RedlineOldNumber'))).toEqual([true, false, false, false]);
+    expect(lines[0]).toContain(OLD);
   });
 });
 

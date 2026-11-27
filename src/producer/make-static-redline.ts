@@ -9,7 +9,7 @@ import { unzip, zip } from '../common/zip';
 import { acceptTrackedChanges, hasTrackedChanges } from './accept-changes';
 import { dropUnusedHeadersAndFooters } from './drop-unused-headers';
 import { coverPageXml, coverStylesXml, type CoverPageContent } from './cover-page';
-import { readOriginal, StyleSheet } from './original-reader';
+import { readOriginal, relationshipTargets, StyleSheet } from './original-reader';
 import { convertPart, DEFAULT_STYLE_OPTIONS, DELETED_COLOR, INSERTED_COLOR, PROPERTY_CHANGE_RECORDS, usesDeletionLook, usesInsertionLook, type ChangeCounts, type StaticRedlineStyleOptions } from './static-redline';
 
 const W = NS.w;
@@ -196,8 +196,10 @@ export async function makeStaticRedline(trackedChanges: Uint8Array, original: Ui
   if (!originalTypes) throw new Error('the original document has no content types');
   const originalParts = partsOfTypes(decoder.decode(originalTypes), originalFiles, TEXT_PART_TYPES);
   const text = (files: Map<string, Uint8Array>, name: string | undefined): string | undefined => (name && files.has(name) ? decoder.decode(files.get(name)!) : undefined);
+  /** The file that lists what a part links to. */
+  const relsOf = (part: string): string => `${part.slice(0, part.lastIndexOf('/') + 1)}_rels/${part.slice(part.lastIndexOf('/') + 1)}.rels`;
   const info = readOriginal(
-    originalParts.textParts.map((name) => ({ xml: text(originalFiles, name)!, isMain: name === originalParts.main })),
+    originalParts.textParts.map((name) => ({ xml: text(originalFiles, name)!, isMain: name === originalParts.main, rels: text(originalFiles, relsOf(name)) })),
     text(originalFiles, originalParts.styles),
     text(originalFiles, originalParts.numbering),
   );
@@ -222,7 +224,7 @@ export async function makeStaticRedline(trackedChanges: Uint8Array, original: Ui
   const converted = new Map<string, string>();
   const trackedStyles = new StyleSheet(text(files, styles));
   for (const part of textParts) {
-    const result = convertPart(decoder.decode(files.get(part)!), { ...DEFAULT_STYLE_OPTIONS, insertedColor, deletedColor, ...options.style }, { info, styles: trackedStyles, isMain: part === main });
+    const result = convertPart(decoder.decode(files.get(part)!), { ...DEFAULT_STYLE_OPTIONS, insertedColor, deletedColor, ...options.style }, { info, styles: trackedStyles, isMain: part === main, linkTarget: relationshipTargets(text(files, relsOf(part))) });
     converted.set(part, result.xml);
     counts.insertions += result.counts.inserted;
     counts.deletions += result.counts.deleted;

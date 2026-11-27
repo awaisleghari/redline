@@ -67,12 +67,12 @@ export const CHECK_TITLES: Record<CheckId, string> = {
   'no-tracked-changes': 'No tracked changes are left in the static redline',
   'cover-page': 'The cover page names the right files and time, and its counts match the redline',
   formatting: "The text has the modified document's bold, italic, underline, capitals and hidden-text settings",
-  'format-marks': 'Formatting changes are shaded exactly where formatting changed, and nowhere else',
+  'format-marks': 'Formatting and link changes are shaded exactly where they happened, and nowhere else',
   numbering: 'Clause numbers match the modified document',
   completeness: 'Every part of the documents that holds text was checked',
   structure: 'The Word file is structurally sound',
   'pdf-text': "The PDF's text matches the static redline, complete and in order",
-  'pdf-colours': 'Inserted, deleted and moved text is in the right colours in the PDF',
+  'pdf-colours': 'Inserted, deleted and moved text is in the right colours, struck through or underlined, in the PDF',
 };
 
 /** Render a report as the short text file a user can keep with the redline. */

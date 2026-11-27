@@ -73,12 +73,38 @@ export interface Para {
   leader?: boolean;
   /** In a static redline: the kind of change the paragraph's own mark shows (its number or bullet is printed the same way). */
   markKind?: StaticKind;
+  /** The links in the paragraph: which characters of `text` each covers, and where it points. Absent when there are none. */
+  links?: LinkSpan[];
+}
+
+/** One link within a paragraph: characters `start` (included) to `end` (not included) point to `target`. */
+export interface LinkSpan {
+  start: number;
+  end: number;
+  target: string;
+}
+
+/** Where character `at` of a paragraph links to ('' when it is not part of a link). */
+export function linkAt(paragraph: Para, at: number): string {
+  for (const span of paragraph.links ?? []) if (at >= span.start && at < span.end) return span.target;
+  return '';
 }
 
 const marker = (text: string): Para => ({ text, meta: '', number: '', oldNumber: '', removed: false, listed: false, bullet: '' });
 
 /** Style ids the static redline uses for its own additions. The Checker recognises them by name. */
-export const STATIC_STYLE = { coverPrefix: 'RedlineCover', oldNumber: 'RedlineOldNumber', shadeFill: 'FFF2CC' } as const;
+export const STATIC_STYLE = { coverPrefix: 'RedlineCover', oldNumber: 'RedlineOldNumber', layoutNote: 'RedlineLayoutNote', shadeFill: 'FFF2CC' } as const;
+
+/**
+ * In a static redline: a note of the redline's own, saying that the wording after it is unchanged and only its
+ * layout changed (see layout-notes.ts). `at` is the place in the story's entries where the noted wording begins.
+ * Either the next `count` paragraphs were a table in the original, or the table that follows was `count` paragraphs.
+ */
+export interface LayoutNote {
+  at: number;
+  was: 'table' | 'paragraphs';
+  count: number;
+}
 
 export type StoryKind = 'body' | 'header' | 'footer' | 'footnote' | 'endnote' | 'text box';
 
@@ -93,6 +119,8 @@ export interface Story {
   details: Para[];
   /** A header or footer the section does not name itself but carries over from the section before. */
   carriedOver?: boolean;
+  /** In a static redline: the layout notes met in this story, in order. */
+  layoutNotes?: LayoutNote[];
 }
 
 export interface StoryReading {
@@ -277,14 +305,17 @@ interface Context {
   meta: string;
   /** Code applied to characters being emitted now (formatting of the current run, and whether it is part of a change). */
   code: number;
+  /** Links met since the last paragraph was closed (positions are those of `meta`). */
+  spans: LinkSpan[];
+  /** Layout notes met (static redline). They may stand only directly in the main text, a header or a footer: `topLevel`. */
+  layoutNotes: LayoutNote[];
+  topLevel: boolean;
   /** Style of the paragraph being read. */
   paragraphStyle: string | undefined;
   /** Old clause number met in the paragraph being read (static redline). */
   oldNumber: string;
   /** Whether the last paragraph read had its mark removed in this view. */
   lastMarkRemoved: boolean;
-  /** In a static redline: paragraphs whose mark is to be read differently from how it is formatted (see readCell). */
-  markAt?: Map<XmlElement, StaticKind | undefined>;
   /** Paragraphs of text boxes met while reading this story. */
   textBoxes: Para[];
   notes: NoteRef[];
@@ -316,7 +347,7 @@ interface Source {
 }
 
 function newContext(view: View, problems: string[], source: Source): Context {
-  return { view, paragraphs: [], pending: '', meta: '', code: 0, paragraphStyle: undefined, oldNumber: '', lastMarkRemoved: false, textBoxes: [], notes: [], sections: [], sectionEnds: [], problems, source };
+  return { view, paragraphs: [], pending: '', meta: '', code: 0, spans: [], layoutNotes: [], topLevel: false, paragraphStyle: undefined, oldNumber: '', lastMarkRemoved: false, textBoxes: [], notes: [], sections: [], sectionEnds: [], problems, source };
 }
 
 /** Record text being emitted, with the current character code, and hand it back. */
@@ -567,9 +598,14 @@ function inlineText(element: XmlElement, context: Context): string {
         case 'hyperlink': {
           // Where the link goes is part of what the document says.
           const anchor = attribute(node, W, 'anchor');
+          const start = context.meta.length;
           const covered = inlineText(node, context);
           // A link whose text is entirely removed in this view is not there to be followed.
-          if (covered !== '') context.source.links.push(`"${covered}" links to${anchor ? ` bookmark ${anchor}` : ''}${linkedContent(node, context) || (anchor ? '' : ' nothing')}`);
+          if (covered !== '') {
+            const target = `${anchor ? ` bookmark ${anchor}` : ''}${linkedContent(node, context) || (anchor ? '' : ' nothing')}`;
+            context.source.links.push(`"${covered}" links to${target}`);
+            if (context.meta.length > start) context.spans.push({ start, end: context.meta.length, target });
+          }
           text += covered;
           continue;
         }
@@ -688,6 +724,8 @@ function inlineText(element: XmlElement, context: Context): string {
 function closeParagraph(context: Context, number: string, removed: boolean, listed = false, bullet = '', markKind?: StaticKind): void {
   if (context.meta.length !== context.pending.length) throw new Error('internal error: character details are out of step with the text');
   context.paragraphs.push({ text: context.pending, meta: context.meta, number, oldNumber: context.oldNumber, removed, listed, bullet, markKind });
+  if (context.spans.length > 0) context.paragraphs[context.paragraphs.length - 1]!.links = context.spans;
+  context.spans = [];
   context.pending = '';
   context.meta = '';
   context.oldNumber = '';
@@ -719,9 +757,65 @@ function survivingParagraph(paragraph: XmlElement, siblings: XmlElement[], index
   return current;
 }
 
+/** What a layout note may say, and what it then means. */
+const LAYOUT_NOTE_WORDING: [RegExp, LayoutNote['was']][] = [
+  [/^Layout changed: the next (paragraph) was previously in a table\.$/, 'table'],
+  [/^Layout changed: the next ([1-9]\d*) paragraphs were previously in a table\.$/, 'table'],
+  [/^Layout changed: the table below was previously a (single) paragraph\.$/, 'paragraphs'],
+  [/^Layout changed: the table below was previously ([1-9]\d*) separate paragraphs\.$/, 'paragraphs'],
+];
+
+/**
+ * A layout note in a static redline. It is the redline's own addition (like the cover page), so it is not part
+ * of either document's text; it is recorded, and what it claims is verified against the original (layout-notes.ts).
+ * It must look like what it is: shaded, visible, not dressed as a change, and worded exactly.
+ */
+function readLayoutNote(paragraph: XmlElement, context: Context): void {
+  const { styles } = context.source;
+  const problem = (text: string): void => void context.problems.push(text);
+  if (!context.topLevel) problem('A layout note stands where none may (inside a table, a note or a text box).');
+  if (context.pending !== '') problem('A layout note interrupts a paragraph.');
+  if (!styles.defines(STATIC_STYLE.layoutNote)) problem("A layout note uses a style that the document's style sheet does not define.");
+  const properties = child(paragraph, W, 'pPr');
+  // The note's paragraph may state its style and nothing else: no section break (which would go unread here: review
+  // finding), no numbering, no layout of its own.
+  if (properties?.children.some((c) => !w(c, 'pStyle'))) problem('A layout note carries settings of its own (a section break, numbering or layout), which a note may not.');
+  const numId = styles.numberingOf(properties) && child(styles.numberingOf(properties)!, W, 'numId');
+  if (numId && attribute(numId, W, 'val') !== '0') problem('A layout note carries a clause number.');
+  if (staticKindOf(properties && child(properties, W, 'rPr'), context.source.colours)) problem('A layout note is marked as a change.');
+  let text = '';
+  for (const run of paragraph.children) {
+    if (run === properties) continue;
+    const rPr = child(run, W, 'rPr');
+    if (!w(run, 'r') || run.children.some((c) => c !== rPr && !w(c, 't'))) {
+      problem('A layout note holds something other than its own words.');
+      continue;
+    }
+    const shading = rPr && child(rPr, W, 'shd');
+    if (!shading || attribute(shading, W, 'fill')?.toUpperCase() !== STATIC_STYLE.shadeFill) problem('A layout note is not shaded.');
+    // Nothing but the shading: no colour or size of its own that could make the note unreadable (review finding).
+    if (rPr?.children.some((c) => c !== shading)) problem('A layout note is formatted in a way of its own (colour, size or the like), which a note may not be.');
+    if (staticKindOf(rPr, context.source.colours)) problem('A layout note is marked as a change.');
+    if (styles.formatOf(rPr, STATIC_STYLE.layoutNote) & (FORMAT.hidden | FORMAT.strike | FORMAT.doubleStrike)) problem('A layout note is hidden or struck through.');
+    text += run.children.filter((c) => w(c, 't')).map(textOf).join('');
+  }
+  for (const [wording, was] of LAYOUT_NOTE_WORDING) {
+    const match = wording.exec(text);
+    if (!match) continue;
+    context.layoutNotes.push({ at: context.paragraphs.length, was, count: /^\d+$/.test(match[1]!) ? Number(match[1]) : 1 });
+    return;
+  }
+  problem('A layout note does not say what it should.');
+}
+
 function readParagraph(paragraph: XmlElement, context: Context, siblings: XmlElement[] = [], index = 0): void {
   const properties = child(paragraph, W, 'pPr');
   const { markup, styles, numbering } = context.source;
+  const ownStyle = properties && child(properties, W, 'pStyle');
+  if (markup === 'static' && context.view !== 'all' && ownStyle && attribute(ownStyle, W, 'val') === STATIC_STYLE.layoutNote) {
+    readLayoutNote(paragraph, context);
+    return;
+  }
   const survivingProperties = child(survivingParagraph(paragraph, siblings, index, context), W, 'pPr');
   const survivingStyle = survivingProperties && child(survivingProperties, W, 'pStyle');
   context.paragraphStyle = survivingStyle && attribute(survivingStyle, W, 'val');
@@ -732,7 +826,7 @@ function readParagraph(paragraph: XmlElement, context: Context, siblings: XmlEle
   context.paragraphStyle = undefined;
 
   const markProperties = properties && child(properties, W, 'rPr');
-  const markKind = markup !== 'static' ? undefined : context.markAt?.has(paragraph) ? context.markAt.get(paragraph) : staticKindOf(markProperties, context.source.colours);
+  const markKind = markup !== 'static' ? undefined : staticKindOf(markProperties, context.source.colours);
   const markRemoved =
     markup === 'static' ? staticDropped(markKind, context.view) : removedIn(markProperties, context.view, ['ins', 'moveTo'], ['del', 'moveFrom']);
   // Is the paragraph itself removed by the changes (whatever this view shows)?
@@ -746,6 +840,14 @@ function readParagraph(paragraph: XmlElement, context: Context, siblings: XmlEle
   const numIdElement = numPr && child(numPr, W, 'numId');
   const listed = !!numIdElement && !['0', undefined].includes(attribute(numIdElement, W, 'val'));
 
+  // In a static redline every line is printed, and a reader takes a paragraph's number (and whether it is a
+  // removed clause) from the line the paragraph ends on. So a paragraph must end on a line that holds some of
+  // its own text: otherwise the number would stand in front of text that is not the paragraph's (a removed
+  // clause dressed as the one that stays: review finding). The Producer writes every run of paragraphs that way.
+  if (markup === 'static' && context.view !== 'all' && !markRemoved && text === '' && context.pending !== '') {
+    const problem = 'A paragraph ends on a line that holds none of its text, so its clause number or its mark would be printed on the wrong line.';
+    if (!context.problems.includes(problem)) context.problems.push(problem);
+  }
   context.pending += text;
   context.lastMarkRemoved = markRemoved;
   if (markRemoved) return; // this paragraph joins the next one in this view
@@ -867,61 +969,12 @@ function readRow(row: XmlElement, context: Context): void {
   }
 }
 
-/**
- * The end of a cell in a static redline. A cell always keeps its last paragraph mark, so when the cell's last
- * paragraph is added or removed whole, the change can only be shown on the mark of the paragraph before it.
- * Read as formatted, that would make the paragraph before the one that was removed or added. So where the mark
- * before the last paragraph shows a change and everything in the last paragraph shows the same change, the
- * change belongs to the last paragraph: that is the clause that came or went, and the one before it is untouched.
- */
-function cellEndMarks(cell: XmlElement, colours: ChangeColours): Map<XmlElement, StaticKind | undefined> | undefined {
-  const blocks = cell.children.filter((c) => w(c, 'p') || w(c, 'tbl'));
-  const last = blocks[blocks.length - 1];
-  const before = blocks[blocks.length - 2];
-  if (!last || !before || !w(last, 'p') || !w(before, 'p')) return undefined;
-  const markOf = (paragraph: XmlElement): StaticKind | undefined => {
-    const properties = child(paragraph, W, 'pPr');
-    return staticKindOf(properties && child(properties, W, 'rPr'), colours);
-  };
-  const kind = markOf(before);
-  if (!kind || markOf(last)) return undefined;
-  const styleOf = (run: XmlElement): string | undefined => {
-    const style = child(run, W, 'rPr') && child(child(run, W, 'rPr')!, W, 'rStyle');
-    return style ? attribute(style, W, 'val') : undefined;
-  };
-  /** What a paragraph holds, leaving out the old clause number typed in front of a removed paragraph (the redline's own addition). */
-  const contentOf = (paragraph: XmlElement): XmlElement[] => {
-    const runs: XmlElement[] = [];
-    const collect = (element: XmlElement): void => {
-      for (const c of element.children) {
-        if (w(c, 'r')) {
-          if (c.children.some((x) => !w(x, 'rPr'))) runs.push(c);
-        } else if (!w(c, 'pPr')) collect(c);
-      }
-    };
-    collect(paragraph);
-    return runs.filter((run) => styleOf(run) !== STATIC_STYLE.oldNumber);
-  };
-  const whollyChanged = (paragraph: XmlElement): boolean => contentOf(paragraph).every((run) => staticKindOf(child(run, W, 'rPr'), colours) === kind);
-  const content = contentOf(last);
-  if (content.length === 0 || !whollyChanged(last)) return undefined;
-  // Several paragraphs in a row may have come or gone at the end of the cell. Their marks then show the change
-  // from one paragraph further up, all the way: the first mark of that run is the one that is really untouched.
-  // That holds only while the paragraphs below came or went whole. A paragraph of which something remains
-  // (found on a real contract: "or" between two removed alternatives) was not removed, so the mark above it
-  // shows a change of its own, and the run stops there.
-  let first = before;
-  for (let i = blocks.length - 3; i >= 0 && w(blocks[i]!, 'p') && markOf(blocks[i]!) === kind && whollyChanged(blocks[i + 1]!); i--) first = blocks[i]!;
-  return new Map<XmlElement, StaticKind | undefined>([[first, undefined], [last, kind]]);
-}
-
 /** Read one cell. Returns undefined when the cell does not exist in this view. */
 function readCell(cell: XmlElement, context: Context): Context | undefined {
   if (context.source.markup === 'tracked' && removedIn(child(cell, W, 'tcPr'), context.view, ['cellIns'], ['cellDel'])) return undefined;
   // A cell is its own scope for joining paragraphs: text never leaks out of a cell.
   const inner = newContext(context.view, context.problems, context.source);
   inner.code = context.code & CHAR.changed;
-  if (context.source.markup === 'static') inner.markAt = cellEndMarks(cell, context.source.colours);
   readBlocks(cell, inner);
   // In a static redline there are no flags on rows and cells: a cell is gone
   // in this view exactly when its last paragraph's mark is (Word never lets a
@@ -956,8 +1009,11 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
   const coverLooks: string[] = [];
   const repeatRows: string[] = [];
   const layout: Layout = { sections: [], evenAndOdd: false, noteFormat: { footnote: 'decimal', endnote: 'lowerRoman' } };
-  const add = (key: string, kind: StoryKind, label: string, details: Para[]): void => {
+  const add = (key: string, kind: StoryKind, label: string, details: Para[], layoutNotes: LayoutNote[] = []): void => {
     if (!isBlank(details)) stories.push(storyOf(key, kind, label, details));
+    // (A note in a story with no text at all has nothing to stand over.)
+    if (layoutNotes.length > 0 && isBlank(details)) problems.push('A layout note stands in a part of the document that holds no text.');
+    if (layoutNotes.length > 0 && !isBlank(details)) stories[stories.length - 1]!.layoutNotes = layoutNotes;
   };
 
   const main = pkg.mainDocumentPart();
@@ -1010,9 +1066,10 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
   }
 
   const bodyContext = newContext(view, problems, { ...shared, part: main });
+  bodyContext.topLevel = true;
   readBlocks(body, bodyContext);
   // (The cover page's own section ended inside the paragraphs set aside above, so it is not in the list of sections.)
-  add('body', 'body', 'main text', bodyContext.paragraphs);
+  add('body', 'body', 'main text', bodyContext.paragraphs, bodyContext.layoutNotes);
   add('body/text boxes', 'text box', 'text boxes in the main text', bodyContext.textBoxes);
 
   const notes: NoteRef[] = [...bodyContext.notes];
@@ -1062,10 +1119,11 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
       const firstReading = !partsRead.has(partName);
       partsRead.add(partName);
       const context = newContext(view, problems, { ...shared, part: partName });
+      context.topLevel = true;
       readBlocks(pkg.xml(partName), context);
       const key = `${kind}/${sectionIndex + 1}/${type}`;
       const before = stories.length;
-      add(key, kind, label, context.paragraphs);
+      add(key, kind, label, context.paragraphs, context.layoutNotes);
       add(`${key}/text boxes`, 'text box', `text boxes in the ${label}`, context.textBoxes);
       if (!named.has(slot)) for (const story of stories.slice(before)) story.carriedOver = true;
       if (firstReading) notes.push(...context.notes);
