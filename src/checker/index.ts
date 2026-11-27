@@ -13,11 +13,12 @@ import { NS } from '../common/namespaces';
 import type { XmlElement } from './xml';
 import { DELETED_COLOUR, INSERTED_COLOUR, usesDeletionLook, usesInsertionLook, type ChangeColours } from './formatting';
 import { DELETED_LEGEND, INSERTED_LEGEND, countStaticChanges, coverPageFailure, formatMarksFailure, formattingFailure, leftoverTrackedChanges, numberingFailure, oldNumberFailure, otherFormsFailure } from './detail-checks';
+import { alignLayoutNotes, type Aligned } from './layout-notes';
 import { DocxPackage, PackageError } from './package';
 import { PdfError, readPdf } from './pdf';
 import { comparePdf, type PdfCheckResult } from './pdf-check';
 import { CHECK_TITLES, CHECKS_FOR, type CheckFailure, type CheckId, type CheckReport, type CheckResult, type OutputKind } from './report';
-import { readStories, type StoryReading } from './stories';
+import { readStories, type Story, type StoryReading } from './stories';
 import { structureProblems } from './structure';
 
 export type { CheckFailure, CheckId, CheckReport, CheckResult, OutputKind } from './report';
@@ -271,11 +272,18 @@ export async function checkStaticRedline(input: StaticCheckInput): Promise<Check
   };
   const newSide = (): StoryReading => reading('new', () => readStories(output, 'accepted', 'static', colours));
   const oldSide = (): StoryReading => reading('old', () => readStories(output, 'rejected', 'static', colours));
+  // The original and the redline's old side, lined up where a layout note stands (layout-notes.ts). Where a note's
+  // claim does not hold, every check that reads the old side fails with that finding.
+  let lined: Aligned | CheckFailure | undefined;
+  const onOldSide = (check: (original: Story[], old: Story[]) => CheckFailure | undefined): CheckFailure | undefined => {
+    lined ??= alignLayoutNotes(originalText().stories, oldSide().stories);
+    return 'message' in lined ? lined : check(lined.original, lined.output);
+  };
 
   const checks: CheckResult[] = [
     guarded('static-new', () => verdict('static-new', compareStories(modifiedText().stories, newSide().stories, 'modified document') ?? compareLinks(modifiedText().links, newSide().links, 'modified document') ?? compareInks(modifiedText().inks, newSide().inks, 'modified document') ?? compareShapeTypes(modifiedText().missingShapeTypes, newSide().missingShapeTypes, 'modified document'), hadTrackedChanges(modified) ? ACCEPTED_READING.modified : undefined)),
     // (The original's links are verified with the formatting marks: a kept word shows only the link it has now. See formatMarksFailure.)
-    guarded('static-old', () => verdict('static-old', compareStories(originalText().stories, oldSide().stories, 'original document') ?? compareInks(originalText().inks, oldSide().inks, 'original document') ?? compareShapeTypes(originalText().missingShapeTypes, oldSide().missingShapeTypes, 'original document'), hadTrackedChanges(original) ? ACCEPTED_READING.original : undefined)),
+    guarded('static-old', () => verdict('static-old', onOldSide((before, old) => compareStories(before, old, 'original document')) ?? compareInks(originalText().inks, oldSide().inks, 'original document') ?? compareShapeTypes(originalText().missingShapeTypes, oldSide().missingShapeTypes, 'original document'), hadTrackedChanges(original) ? ACCEPTED_READING.original : undefined)),
     guarded('no-tracked-changes', () => verdict('no-tracked-changes', firstOf(leftoverTrackedChanges(output)))),
     guarded('cover-page', () => {
       const counts = countStaticChanges(output, colours);
@@ -288,8 +296,8 @@ export async function checkStaticRedline(input: StaticCheckInput): Promise<Check
       return verdict('cover-page', coverPageFailure(newSide().cover, newSide().coverLooks, expectation, counts), note);
     }),
     guarded('formatting', () => verdict('formatting', formattingFailure(modifiedText().stories, newSide().stories, true))),
-    guarded('format-marks', () => verdict('format-marks', formatMarksFailure(originalText().stories, oldSide().stories, newSide().stories))),
-    guarded('numbering', () => verdict('numbering', numberingFailure(modifiedText().stories, newSide().stories) ?? otherFormsFailure(modifiedText().otherForms, newSide().otherForms) ?? otherFormsFailure(originalText().otherForms, oldSide().otherForms, 'original') ?? oldNumberFailure(originalText().stories, oldSide().stories))),
+    guarded('format-marks', () => verdict('format-marks', onOldSide((before, old) => formatMarksFailure(before, old, newSide().stories)))),
+    guarded('numbering', () => verdict('numbering', numberingFailure(modifiedText().stories, newSide().stories) ?? otherFormsFailure(modifiedText().otherForms, newSide().otherForms) ?? otherFormsFailure(originalText().otherForms, oldSide().otherForms, 'original') ?? onOldSide((before, old) => oldNumberFailure(before, old)))),
     guarded('completeness', () => {
       const problems = [
         ...unreadText(original, [originalText()], 'original document', deletedSide(original), true),

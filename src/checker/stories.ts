@@ -93,7 +93,18 @@ export function linkAt(paragraph: Para, at: number): string {
 const marker = (text: string): Para => ({ text, meta: '', number: '', oldNumber: '', removed: false, listed: false, bullet: '' });
 
 /** Style ids the static redline uses for its own additions. The Checker recognises them by name. */
-export const STATIC_STYLE = { coverPrefix: 'RedlineCover', oldNumber: 'RedlineOldNumber', shadeFill: 'FFF2CC' } as const;
+export const STATIC_STYLE = { coverPrefix: 'RedlineCover', oldNumber: 'RedlineOldNumber', layoutNote: 'RedlineLayoutNote', shadeFill: 'FFF2CC' } as const;
+
+/**
+ * In a static redline: a note of the redline's own, saying that the wording after it is unchanged and only its
+ * layout changed (see layout-notes.ts). `at` is the place in the story's entries where the noted wording begins.
+ * Either the next `count` paragraphs were a table in the original, or the table that follows was `count` paragraphs.
+ */
+export interface LayoutNote {
+  at: number;
+  was: 'table' | 'paragraphs';
+  count: number;
+}
 
 export type StoryKind = 'body' | 'header' | 'footer' | 'footnote' | 'endnote' | 'text box';
 
@@ -108,6 +119,8 @@ export interface Story {
   details: Para[];
   /** A header or footer the section does not name itself but carries over from the section before. */
   carriedOver?: boolean;
+  /** In a static redline: the layout notes met in this story, in order. */
+  layoutNotes?: LayoutNote[];
 }
 
 export interface StoryReading {
@@ -294,6 +307,9 @@ interface Context {
   code: number;
   /** Links met since the last paragraph was closed (positions are those of `meta`). */
   spans: LinkSpan[];
+  /** Layout notes met (static redline). They may stand only directly in the main text, a header or a footer: `topLevel`. */
+  layoutNotes: LayoutNote[];
+  topLevel: boolean;
   /** Style of the paragraph being read. */
   paragraphStyle: string | undefined;
   /** Old clause number met in the paragraph being read (static redline). */
@@ -333,7 +349,7 @@ interface Source {
 }
 
 function newContext(view: View, problems: string[], source: Source): Context {
-  return { view, paragraphs: [], pending: '', meta: '', code: 0, spans: [], paragraphStyle: undefined, oldNumber: '', lastMarkRemoved: false, textBoxes: [], notes: [], sections: [], sectionEnds: [], problems, source };
+  return { view, paragraphs: [], pending: '', meta: '', code: 0, spans: [], layoutNotes: [], topLevel: false, paragraphStyle: undefined, oldNumber: '', lastMarkRemoved: false, textBoxes: [], notes: [], sections: [], sectionEnds: [], problems, source };
 }
 
 /** Record text being emitted, with the current character code, and hand it back. */
@@ -743,9 +759,60 @@ function survivingParagraph(paragraph: XmlElement, siblings: XmlElement[], index
   return current;
 }
 
+/** What a layout note may say, and what it then means. */
+const LAYOUT_NOTE_WORDING: [RegExp, LayoutNote['was']][] = [
+  [/^Layout changed: the next (paragraph) was previously in a table\.$/, 'table'],
+  [/^Layout changed: the next ([1-9]\d*) paragraphs were previously in a table\.$/, 'table'],
+  [/^Layout changed: the table below was previously a (single) paragraph\.$/, 'paragraphs'],
+  [/^Layout changed: the table below was previously ([1-9]\d*) separate paragraphs\.$/, 'paragraphs'],
+];
+
+/**
+ * A layout note in a static redline. It is the redline's own addition (like the cover page), so it is not part
+ * of either document's text; it is recorded, and what it claims is verified against the original (layout-notes.ts).
+ * It must look like what it is: shaded, visible, not dressed as a change, and worded exactly.
+ */
+function readLayoutNote(paragraph: XmlElement, context: Context): void {
+  const { styles } = context.source;
+  const problem = (text: string): void => void context.problems.push(text);
+  if (!context.topLevel) problem('A layout note stands where none may (inside a table, a note or a text box).');
+  if (context.pending !== '') problem('A layout note interrupts a paragraph.');
+  if (!styles.defines(STATIC_STYLE.layoutNote)) problem("A layout note uses a style that the document's style sheet does not define.");
+  const properties = child(paragraph, W, 'pPr');
+  const numId = styles.numberingOf(properties) && child(styles.numberingOf(properties)!, W, 'numId');
+  if (numId && attribute(numId, W, 'val') !== '0') problem('A layout note carries a clause number.');
+  if (staticKindOf(properties && child(properties, W, 'rPr'), context.source.colours)) problem('A layout note is marked as a change.');
+  let text = '';
+  for (const run of paragraph.children) {
+    if (run === properties) continue;
+    const rPr = child(run, W, 'rPr');
+    if (!w(run, 'r') || run.children.some((c) => c !== rPr && !w(c, 't'))) {
+      problem('A layout note holds something other than its own words.');
+      continue;
+    }
+    const shading = rPr && child(rPr, W, 'shd');
+    if (!shading || attribute(shading, W, 'fill')?.toUpperCase() !== STATIC_STYLE.shadeFill) problem('A layout note is not shaded.');
+    if (staticKindOf(rPr, context.source.colours)) problem('A layout note is marked as a change.');
+    if (styles.formatOf(rPr, STATIC_STYLE.layoutNote) & (FORMAT.hidden | FORMAT.strike | FORMAT.doubleStrike)) problem('A layout note is hidden or struck through.');
+    text += run.children.filter((c) => w(c, 't')).map(textOf).join('');
+  }
+  for (const [wording, was] of LAYOUT_NOTE_WORDING) {
+    const match = wording.exec(text);
+    if (!match) continue;
+    context.layoutNotes.push({ at: context.paragraphs.length, was, count: /^\d+$/.test(match[1]!) ? Number(match[1]) : 1 });
+    return;
+  }
+  problem('A layout note does not say what it should.');
+}
+
 function readParagraph(paragraph: XmlElement, context: Context, siblings: XmlElement[] = [], index = 0): void {
   const properties = child(paragraph, W, 'pPr');
   const { markup, styles, numbering } = context.source;
+  const ownStyle = properties && child(properties, W, 'pStyle');
+  if (markup === 'static' && context.view !== 'all' && ownStyle && attribute(ownStyle, W, 'val') === STATIC_STYLE.layoutNote) {
+    readLayoutNote(paragraph, context);
+    return;
+  }
   const survivingProperties = child(survivingParagraph(paragraph, siblings, index, context), W, 'pPr');
   const survivingStyle = survivingProperties && child(survivingProperties, W, 'pStyle');
   context.paragraphStyle = survivingStyle && attribute(survivingStyle, W, 'val');
@@ -980,8 +1047,11 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
   const coverLooks: string[] = [];
   const repeatRows: string[] = [];
   const layout: Layout = { sections: [], evenAndOdd: false, noteFormat: { footnote: 'decimal', endnote: 'lowerRoman' } };
-  const add = (key: string, kind: StoryKind, label: string, details: Para[]): void => {
+  const add = (key: string, kind: StoryKind, label: string, details: Para[], layoutNotes: LayoutNote[] = []): void => {
     if (!isBlank(details)) stories.push(storyOf(key, kind, label, details));
+    // (A note in a story with no text at all has nothing to stand over.)
+    if (layoutNotes.length > 0 && isBlank(details)) problems.push('A layout note stands in a part of the document that holds no text.');
+    if (layoutNotes.length > 0 && !isBlank(details)) stories[stories.length - 1]!.layoutNotes = layoutNotes;
   };
 
   const main = pkg.mainDocumentPart();
@@ -1034,9 +1104,10 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
   }
 
   const bodyContext = newContext(view, problems, { ...shared, part: main });
+  bodyContext.topLevel = true;
   readBlocks(body, bodyContext);
   // (The cover page's own section ended inside the paragraphs set aside above, so it is not in the list of sections.)
-  add('body', 'body', 'main text', bodyContext.paragraphs);
+  add('body', 'body', 'main text', bodyContext.paragraphs, bodyContext.layoutNotes);
   add('body/text boxes', 'text box', 'text boxes in the main text', bodyContext.textBoxes);
 
   const notes: NoteRef[] = [...bodyContext.notes];
@@ -1086,10 +1157,11 @@ export function readStories(pkg: DocxPackage, view: View, markup: Markup = 'trac
       const firstReading = !partsRead.has(partName);
       partsRead.add(partName);
       const context = newContext(view, problems, { ...shared, part: partName });
+      context.topLevel = true;
       readBlocks(pkg.xml(partName), context);
       const key = `${kind}/${sectionIndex + 1}/${type}`;
       const before = stories.length;
-      add(key, kind, label, context.paragraphs);
+      add(key, kind, label, context.paragraphs, context.layoutNotes);
       add(`${key}/text boxes`, 'text box', `text boxes in the ${label}`, context.textBoxes);
       if (!named.has(slot)) for (const story of stories.slice(before)) story.carriedOver = true;
       if (firstReading) notes.push(...context.notes);

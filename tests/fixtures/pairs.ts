@@ -124,6 +124,12 @@ const CONFIDENTIALITY =
   'Each party shall keep the Confidential Information of the other party secret and shall not disclose it to any third person.';
 const GOVERNING_LAW = 'This Agreement is governed by the laws of England and Wales.';
 
+/** A short list, as the rows of a two-column table. */
+export const PAYMENT_METHODS = [
+  ['Bank transfer', 'Credit card'],
+  ['Cheque payable to the Supplier', 'Cash on delivery'],
+];
+
 const BASE: Block[] = [p(PARTIES), p(SERVICES), p(PAYMENT), p(LIABILITY), p(TERMINATION), p(GOVERNING_LAW)];
 
 const none = (): ExpectedChanges => ({
@@ -373,6 +379,34 @@ export const EXTRA_PAIR_SPECS: PairSpec[] = [
     expected: { body: changes({ deletions: ['our website', 'reasonable'], insertions: ['our website', 'exceptional'] }) },
     // The static redline shows the re-pointed words once, shaded (owner's decision, 2026-11-27): one formatting change.
     staticCounts: { insertions: 1, deletions: 1, moves: 0, formattingChanges: 1 },
+  },
+  {
+    id: 'table-became-list',
+    description: 'A list of payment methods is taken out of a table and set as plain paragraphs, word for word; one word changes elsewhere.',
+    original: { blocks: [p(PARTIES), p(SERVICES), { kind: 'table', rows: PAYMENT_METHODS }, p(GOVERNING_LAW)] },
+    modified: { blocks: [p(PARTIES), p('The Supplier shall provide the Services with exceptional skill and care.'), ...PAYMENT_METHODS.flat().map(p), p(GOVERNING_LAW)] },
+    // Word can record this only as the table removed and the paragraphs added; the tracked-changes file keeps that form.
+    expected: {
+      body: changes({
+        deletions: ['reasonable', ...PAYMENT_METHODS.flat()],
+        insertions: ['exceptional', ...PAYMENT_METHODS.flat()],
+        insertedParagraphMarks: 4,
+        deletedParagraphMarks: 4,
+        deletedRows: 2,
+      }),
+    },
+    // The static redline shows the list once, unmarked, under one shaded note (owner's decision, 2026-11-27).
+    staticCounts: { insertions: 1, deletions: 1, moves: 0, formattingChanges: 1 },
+  },
+  {
+    id: 'list-became-table',
+    description: 'Plain paragraphs are set out as a table, word for word; nothing else changes.',
+    original: { blocks: [p(PARTIES), ...PAYMENT_METHODS.flat().map(p), p(GOVERNING_LAW)] },
+    modified: { blocks: [p(PARTIES), { kind: 'table', rows: PAYMENT_METHODS }, p(GOVERNING_LAW)] },
+    expected: {
+      body: changes({ deletions: PAYMENT_METHODS.flat(), insertions: PAYMENT_METHODS.flat(), insertedParagraphMarks: 4, deletedParagraphMarks: 4, insertedRows: 2 }),
+    },
+    staticCounts: { insertions: 0, deletions: 0, moves: 0, formattingChanges: 1 },
   },
   {
     id: 'link-added-to-word',

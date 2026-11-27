@@ -14,7 +14,7 @@
 import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
 import { NS } from '../common/namespaces';
 import { BIT, isWord, kid, kids, linkKey, paragraphsInCountingOrder, shownText, unitsOf, type LinkResolver, type OriginalInfo, type StyleSheet } from './original-reader';
-import { mergeRelinkedWords } from './same-words';
+import { mergeRelinkedWords, noteLayoutChanges } from './same-words';
 
 const W = NS.w;
 
@@ -878,6 +878,16 @@ export function convertPart(xml: string, options: StaticRedlineStyleOptions = DE
   const root = document.documentElement as unknown as Element;
   // These two need the tracked changes still in place, so they come first.
   const numbers = original && original.isMain && options.showOldNumbers ? oldNumbers(root, original) : new Map<Element, string>();
+  // Unchanged wording whose container changed (a list taken out of a table) is shown once, under a shaded note (same-words.ts).
+  if (original && options.markFormattingChanges) {
+    noteLayoutChanges(root, FORMAT_CHANGE_FILL, (paragraph) => {
+      const label = numbers.get(paragraph);
+      if (label !== undefined) return label !== '';
+      // Not known (outside the main text, or the paragraphs could not be lined up with the original's): any list item counts.
+      const numId = kid(original.styles.numPr(paragraph), 'numId')?.getAttributeNS(W, 'val');
+      return numId !== undefined && numId !== null && numId !== '0';
+    });
+  }
   // Words that only gained, lost or changed a link are shown once (same-words.ts); the shading follows below.
   if (original?.linkTarget && options.markFormattingChanges) mergeRelinkedWords(root, original.linkTarget);
   if (original) stateLookOfJoinedText(root, original.styles);

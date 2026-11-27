@@ -372,6 +372,63 @@ export const BROKEN_STATIC_CASES: BrokenStaticCase[] = [
     damage: (f) => edit(f, DOC, (x) => swap(x, /<w:r><w:t xml:space="preserve">This Services Agreement/, `<w:r><w:rPr>${SHADE}</w:rPr><w:t xml:space="preserve">This Services Agreement`)),
     caughtBy: ['format-marks', 'cover-page'],
   },
+  // ----- layout notes: unchanged wording whose container changed (owner's decision, 2026-11-27) -----
+  {
+    id: 'static-layout-note-covers-too-little',
+    description: 'A layout note claims fewer paragraphs than the table it replaces held.',
+    pairId: 'table-became-list',
+    damage: (f) => edit(f, DOC, (x) => swap(x, 'the next 4 paragraphs were', 'the next 3 paragraphs were')),
+    caughtBy: ['static-old'],
+  },
+  {
+    id: 'static-layout-note-wrong-count-of-old-paragraphs',
+    description: 'A layout note says the table was five paragraphs before; the original has four there.',
+    pairId: 'list-became-table',
+    damage: (f) => edit(f, DOC, (x) => swap(x, 'previously 4 separate paragraphs', 'previously 5 separate paragraphs')),
+    caughtBy: ['static-old'],
+  },
+  {
+    id: 'static-layout-note-missing',
+    description: 'The list is shown unmarked where the original had a table, with no note at all.',
+    pairId: 'table-became-list',
+    damage: (f) => edit(f, DOC, (x) => swap(x, /<w:p><w:pPr><w:pStyle w:val="RedlineLayoutNote"\/><\/w:pPr>.*?<\/w:p>/, '')),
+    caughtBy: ['static-old', 'cover-page'],
+  },
+  {
+    id: 'static-layout-note-not-shaded',
+    description: 'A layout note is printed as ordinary text, so it reads as part of the contract.',
+    pairId: 'table-became-list',
+    damage: (f) => edit(f, DOC, (x) => swap(x, `<w:rPr>${SHADE}</w:rPr><w:t xml:space="preserve">Layout changed`, '<w:t xml:space="preserve">Layout changed')),
+    caughtBy: ['completeness', 'cover-page'],
+  },
+  {
+    id: 'static-layout-note-hidden',
+    description: 'A layout note is formatted as hidden text, so the reader is never told.',
+    pairId: 'table-became-list',
+    damage: (f) => edit(f, DOC, (x) => swap(x, `<w:rPr>${SHADE}</w:rPr><w:t xml:space="preserve">Layout changed`, `<w:rPr><w:vanish/>${SHADE}</w:rPr><w:t xml:space="preserve">Layout changed`)),
+    caughtBy: ['completeness'],
+  },
+  {
+    id: 'static-layout-note-reworded',
+    description: 'A layout note no longer says how much it covers.',
+    pairId: 'table-became-list',
+    damage: (f) => edit(f, DOC, (x) => swap(x, 'Layout changed: the next 4 paragraphs were previously in a table.', 'Layout changed.')),
+    caughtBy: ['completeness', 'static-old'],
+  },
+  {
+    id: 'static-layout-note-style-undefined',
+    description: 'The style of the layout notes is not in the document\'s style sheet.',
+    pairId: 'table-became-list',
+    damage: (f) => edit(f, 'word/styles.xml', (x) => swap(x, /<w:style\b[^>]*w:styleId="RedlineLayoutNote"[^>]*>.*?<\/w:style>/s, '')),
+    caughtBy: ['completeness'],
+  },
+  {
+    id: 'static-layout-note-over-marked-text',
+    description: 'A line under a layout note (which says only the layout changed) is marked as inserted.',
+    pairId: 'table-became-list',
+    damage: (f) => edit(f, DOC, (x) => swap(x, /<w:r><w:t xml:space="preserve">Credit card<\/w:t><\/w:r>/, `<w:r>${INS}<w:t xml:space="preserve">Credit card</w:t></w:r>`)),
+    caughtBy: ['static-old', 'cover-page'],
+  },
   // ----- the package -----
   {
     id: 'static-broken-comment-anchor',

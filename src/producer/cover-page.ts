@@ -7,6 +7,7 @@
  * document's headers, footers and page numbering are untouched by it.
  */
 import { CHANGE_STYLE, DELETED_COLOR, FORMAT_CHANGE_FILL, INSERTED_COLOR, OLD_NUMBER_STYLE, type ChangeKind } from './static-redline';
+import { LAYOUT_NOTE_STYLE } from './same-words';
 
 
 export interface CoverPageContent {
@@ -110,8 +111,11 @@ export function coverStylesXml(basedOn: string | undefined): string {
     `<w:b w:val="${bold ? 1 : 0}"/><w:i w:val="0"/><w:caps w:val="0"/><w:smallCaps w:val="0"/><w:strike w:val="0"/><w:dstrike w:val="0"/><w:vanish w:val="0"/><w:color w:val="000000"/>${size ? `<w:sz w:val="${size}"/><w:szCs w:val="${size}"/>` : ''}<w:u w:val="none"/>`;
   // The old clause number shown on a removed paragraph: a character style that changes nothing by itself.
   const oldNumber = `<w:style w:type="character" w:customStyle="1" w:styleId="${OLD_NUMBER_STYLE}"><w:name w:val="Redline Old Number"/><w:semiHidden/></w:style>`;
+  // The note over wording whose layout changed (same-words.ts): small, kept with what follows, never numbered.
+  const layoutNote = style(LAYOUT_NOTE_STYLE, 'Redline Layout Note', pPr(60, 60).replace('<w:keepNext w:val="0"/>', '<w:keepNext/>'), rPr(false, 18));
   return (
     oldNumber +
+    layoutNote +
     style(COVER_STYLE.title, 'Redline Cover Title', pPr(0, 360), rPr(true, 36)) +
     style(COVER_STYLE.heading, 'Redline Cover Heading', pPr(360, 120), rPr(true)) +
     style(COVER_STYLE.text, 'Redline Cover Text', pPr(0, 80), rPr(false))
