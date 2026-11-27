@@ -148,11 +148,34 @@ function settleRun(run: El[], closed: boolean): void {
     // What follows the last mark this reading has: a paragraph of its own if it holds anything (and nothing can follow it).
     if (start < run.length && closed) paragraph(start, undefined);
   }
-  if (after.some((mark) => !mark.old && !mark.new)) return; // cannot happen; if it did, the run is left as the engine wrote it
+  // A line left with a mark in neither reading ends no paragraph at all (an added clause followed by the empty
+  // line the original's paragraph used to end on, say). A paragraph in a file always has a mark, so such a line
+  // cannot stand: what it holds goes to the front of the next line, where both readings find it exactly as before.
+  const spare = after.map((mark) => !mark.old && !mark.new);
+  for (let i = 0; i < run.length; i++) {
+    if (!spare[i]) continue;
+    const empty = !content[i]!.old && !content[i]!.new;
+    const last = i === run.length - 1;
+    // Left as the engine wrote it: a section break cannot move, and what stands last has no line to go to unless it is empty.
+    if (child(child(run[i]!, 'pPr'), 'sectPr') || (last && (!empty || i === 0))) return;
+  }
   for (const [to, from] of settingsFrom) takeSettings(run[to]!, run[from]!);
   run.forEach((paragraph, i) => {
+    if (spare[i]) return;
     if (settingsFrom.has(i) || after[i]!.old !== before[i]!.old || after[i]!.new !== before[i]!.new) setMark(paragraph, after[i]!, before[i]!.flag);
   });
+  // (Forwards, so that what several spare lines in a row hold arrives in order.)
+  for (let i = 0; i < run.length; i++) {
+    if (!spare[i]) continue;
+    const line = run[i]!;
+    const held = kids(line).filter((c) => !is(c, 'pPr'));
+    if (i < run.length - 1) {
+      const next = run[i + 1]!;
+      const first = kids(next).find((c) => !is(c, 'pPr')) ?? null;
+      for (const piece of held) next.insertBefore(piece, first);
+    } else for (const piece of held) run[i - 1]!.appendChild(piece);
+    line.parentNode!.removeChild(line);
+  }
 }
 
 /** Put every run of paragraphs under `root` (one part of the tracked-changes file) into the one form. */
