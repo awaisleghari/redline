@@ -14,6 +14,7 @@
 import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
 import { NS } from '../common/namespaces';
 import { BIT, isWord, kid, kids, linkKey, paragraphsInCountingOrder, shownText, unitsOf, type LinkResolver, type OriginalInfo, type StyleSheet } from './original-reader';
+import { settleParagraphMarks } from './paragraph-marks';
 import { mergeRelinkedWords, noteLayoutChanges } from './same-words';
 
 const W = NS.w;
@@ -441,16 +442,10 @@ class PartConverter {
   readonly tokens: Token[] = [];
   /** Rows and cells that were themselves inserted or deleted. */
   private readonly cellChange = new Map<Element, ChangeKind>();
-  /** Where each paragraph's mark sits in `tokens`. */
-  private readonly markToken = new Map<Element, number>();
-  /** Last paragraphs of cells that were removed whole, where the engine put the removal on the mark before. */
-  private readonly removedAtCellEnd = new Map<Element, ChangeKind>();
 
   constructor(
     private readonly options: StaticRedlineStyleOptions,
     private readonly oldNumberOf: Map<Element, string> = new Map(),
-    /** Looks up a paragraph's numbering (its own, or its style's) in the tracked-changes file. */
-    private readonly numberingOf: (paragraph: Element) => Element | undefined = (paragraph) => childW(childW(paragraph, 'pPr') ?? paragraph, 'numPr'),
   ) {}
 
   /** Type the old clause number, struck through like the paragraph it belongs to, at the start of a removed paragraph. */
@@ -513,60 +508,6 @@ class PartConverter {
 
   private inlineContent(paragraph: Element): Element[] {
     return elementChildren(paragraph).filter((c) => isW(c) && (c.localName === 'r' || c.localName! in WRAPPER_KIND || c.localName === 'hyperlink' || c.localName === 'sdt' || c.localName === 'smartTag'));
-  }
-
-  /**
-   * Clauses removed at the end of a cell that stays, written with the removal on the marks above: this paragraph
-   * and every one after it up to the one before the cell's last carry the same removal on their marks, every
-   * paragraph after this one is removed whole, and the cell's last mark is not flagged. The clauses that went are
-   * the ones after the first of that run; the first is the paragraph that stays. Returns the cell's last
-   * paragraph, and whether this paragraph is the first of the run and whether it is the one before the last.
-   */
-  private removedRunToCellEnd(paragraph: Element, markKind: ChangeKind): { last: Element; first: boolean; beforeLast: boolean } | undefined {
-    const cell = paragraph.parentNode as Element;
-    if (!isWord(cell, 'tc')) return undefined;
-    const blocks = kids(cell).filter((c) => isWord(c, 'p') || isWord(c, 'tbl'));
-    const last = blocks[blocks.length - 1]!;
-    const at = blocks.indexOf(paragraph);
-    if (at < 0 || at > blocks.length - 2 || !isWord(last, 'p') || blocks[blocks.length - 2]!.nextSibling !== last) return undefined;
-    let row = cell.parentNode as Element | null;
-    while (row && isWord(row) && ['sdt', 'sdtContent', 'customXml'].includes(row.localName!)) row = row.parentNode as Element | null;
-    if (this.cellChange.has(cell) || (row && this.cellChange.has(row))) return undefined;
-    const lastPPr = childW(last, 'pPr');
-    const lastMark = lastPPr && childW(lastPPr, 'rPr');
-    if (lastMark && elementChildren(lastMark).some((flag) => isW(flag) && flag.localName! in WRAPPER_KIND)) return undefined;
-    const wrapper = markKind === 'deleted' ? 'del' : 'moveFrom';
-    const contentOf = (p: Element): Element[] =>
-      elementChildren(p).filter((c) => !/^(pPr|bookmark|moveFromRange|moveToRange|proofErr|permStart|permEnd)/.test(c.namespaceURI === W ? c.localName! : ''));
-    const removedWhole = (p: Element): boolean => contentOf(p).every((c) => isW(c, wrapper));
-    if (contentOf(last).length === 0 || !removedWhole(last)) return undefined;
-    for (let i = at + 1; i < blocks.length - 1; i++) {
-      if (!isWord(blocks[i]!, 'p') || this.statedMarkKind(blocks[i]!) !== markKind || !removedWhole(blocks[i]!)) return undefined;
-    }
-    const above = blocks[at - 1];
-    // (The paragraph above has been converted already, so what its mark showed is read from the record of it.)
-    const first = !(above && isWord(above, 'p') && removedWhole(paragraph) && this.markToken.has(above) && this.tokens[this.markToken.get(above)!] === markKind);
-    return { last, first, beforeLast: at === blocks.length - 2 };
-  }
-
-  /** Give `to` the numbering that `from` states for itself (list and level), in place of its own. */
-  private takeNumberingFrom(from: Element, to: Element): void {
-    // Its own numbering, or its style's; if it has none, the paragraph that takes over has none either.
-    const stated = this.numberingOf(from);
-    if (!stated) {
-      this.removeNumbering(to);
-      return;
-    }
-    const prefix = to.prefix ?? 'w';
-    let pPr = childW(to, 'pPr');
-    if (!pPr) {
-      pPr = to.ownerDocument!.createElementNS(W, `${prefix}:pPr`);
-      to.insertBefore(pPr, to.firstChild);
-    }
-    const existing = childW(pPr, 'numPr');
-    if (existing) pPr.removeChild(existing);
-    const before = elementChildren(pPr).find((c) => !(isW(c) && PPR_BEFORE_NUMPR.has(c.localName!)));
-    pPr.insertBefore(stated.cloneNode(true), before ?? null);
   }
 
   private removeNumbering(paragraph: Element): void {
@@ -680,173 +621,32 @@ class PartConverter {
   }
 
   private visitParagraph(paragraph: Element, kind: ChangeKind | undefined): void {
-    // Which change, if any, applies to the paragraph mark itself?
+    // Which change, if any, applies to the paragraph mark itself? The marks have been put into one form
+    // beforehand (paragraph-marks.ts), so a mark says what it means wherever the paragraph stands.
     const pPr = childW(paragraph, 'pPr');
     let markKind = this.statedMarkKind(paragraph, kind);
-    const content = this.inlineContent(paragraph);
 
-    // A table cell always keeps its last paragraph mark for as long as the cell
-    // exists. So the last mark in a cell is changed only if the cell itself (or
-    // its row) was inserted or deleted, whatever the paragraph's own flag says.
-    let numberLostAtCellEnd: ChangeKind | undefined;
-    let keepsNumber = false;
-    let joinWith: Element | undefined;
-    let joinInto: Element | undefined;
+    // A table cell exists for exactly as long as its last paragraph mark does. So the last mark of a cell that
+    // came or went (itself, or with its row) shows that change, whatever the paragraph's own flag says.
     const cell = paragraph.parentNode as Element;
-    if (!kind && isWord(cell, 'tc') && kids(cell).filter((c) => isWord(c, 'p') || isWord(c, 'tbl')).pop() === paragraph) {
+    if (!kind && isWord(cell, 'tc') && markKind !== 'movedFrom' && markKind !== 'movedTo' && kids(cell).filter((c) => isWord(c, 'p') || isWord(c, 'tbl')).pop() === paragraph) {
       // The cell's row: its parent, or further up when the cell sits in a content control (a tick-box cell) or custom XML wrapper.
       let row = cell.parentNode as Element | null;
       while (row && isWord(row) && ['sdt', 'sdtContent', 'customXml'].includes(row.localName!)) row = row.parentNode as Element | null;
-      const cellKind = this.cellChange.get(cell) ?? (row ? this.cellChange.get(row) : undefined);
-      if (!cellKind && markKind) {
-        // The cell stays but its last paragraph was added or removed. Since the
-        // cell's final mark cannot change, the join or split really happens at
-        // the mark of the paragraph before: that is the mark to show as changed.
-        const before = kids(cell).filter((c) => isWord(c, 'p') || isWord(c, 'tbl'));
-        // The paragraph before may carry the opposite change on its mark (found on a real contract, on a draft
-        // that already carried tracked changes: a cell's one line replaced, written as the old line removed with
-        // its mark and the new line added with the cell's last mark). The cell has one paragraph in each version,
-        // and two marks cannot say so: whichever is shown changed, one version reads as two paragraphs. The two
-        // are therefore shown as the one paragraph they are in both versions (joined below).
-        // The new line may also be several (found on a real contract: one line replaced by twenty paragraphs,
-        // every mark of them added). The old line is then joined to the first of those in the same way.
-        // This holds only where the last paragraph came or went whole: if part of it stays, its mark is one
-        // that both versions have, and the mark above shows a plain join or split.
-        const removes = (k: string | undefined): boolean => k === 'deleted' || k === 'movedFrom';
-        const adds = (k: string | undefined): boolean => k === 'inserted' || k === 'movedTo';
-        const tokenOf = (block: Element | undefined): Token | undefined => (block && isWord(block, 'p') && this.markToken.has(block) ? this.tokens[this.markToken.get(block)!] : undefined);
-        const wrappers = removes(markKind) ? ['del', 'moveFrom'] : ['ins', 'moveTo'];
-        // (An empty last paragraph came or went whole too: found on real contracts, a form field's line replaced by an empty one.)
-        // (A wrapper such as a smart tag or a link counts when everything inside it came or went: found on a real
-        // contract, a moved-in line with a smart tag in the middle of it.)
-        // (Markers that hold no text, such as bookmarks and spelling marks, are passed over, inside a wrapper as
-        // beside it; a wrapper holding nothing at all has nothing that stays. Review finding.)
-        const wholeIn = (names: string[]) => {
-          const whole = (c: Element): boolean => {
-            if (names.some((name) => isW(c, name))) return true;
-            if (isW(c, 'r')) return false;
-            return elementChildren(c)
-              .filter((x) => !(isW(x) && /Pr$|^(bookmarkStart|bookmarkEnd|proofErr|permStart|permEnd)$/.test(x.localName!)))
-              .every(whole);
-          };
-          return whole;
-        };
-        const lastWhole = content.every(wholeIn(wrappers));
-        const neighbour = before[before.length - 2];
-        if (lastWhole && ((removes(tokenOf(neighbour)) && adds(markKind)) || (adds(tokenOf(neighbour)) && removes(markKind)))) {
-          joinWith = neighbour;
-        } else if (lastWhole && adds(markKind)) {
-          // The run of added paragraphs above this one, each added whole, and the removed paragraph above the run.
-          let top = before.length - 1;
-          const addedWhole = (block: Element): boolean => {
-            const end = this.markToken.get(block)!;
-            const start = this.markToken.get(before[before.indexOf(block) - 1]!);
-            return start !== undefined && this.tokens.slice(start + 1, end).every((t) => adds(t));
-          };
-          while (top >= 2 && adds(tokenOf(before[top - 1])) && tokenOf(before[top - 2]) !== undefined && addedWhole(before[top - 1]!)) top--;
-          if (top < before.length - 1 && removes(tokenOf(before[top - 1]))) {
-            joinWith = before[top - 1];
-            joinInto = before[top]!;
-          }
-        }
-        // Several paragraphs in a row may have been added or removed at the end of the cell (found on a real
-        // contract: twelve added after the one that was there). The marks before the last already show the
-        // change, so the whole run moves up by one: the mark to show as changed is the one before the run.
-        let at = before.length - 2;
-        // (Added paragraphs may be a mix of typed and moved-in ones: found on real contracts, a line typed and a
-        // line moved in after the one that was there. They are one run of additions all the same.)
-        const inRun = (token: Token | undefined): boolean => token === markKind || (adds(markKind) && adds(token));
-        while (at >= 0 && isWord(before[at]!, 'p') && this.markToken.has(before[at]!) && inRun(this.tokens[this.markToken.get(before[at]!)!])) at--;
-        const single = at === before.length - 2;
-        const removal = markKind === 'deleted' || markKind === 'movedFrom';
-        const whollyRemoved = removal && content.length > 0 && content.every(wholeIn([markKind === 'deleted' ? 'del' : 'moveFrom']));
-        const previous = before[at];
-        // The block before may instead be a table that came or went whole, with this paragraph the empty one
-        // that must follow a table in a cell (found on real contracts: a table within a table, replaced). There
-        // is then no paragraph mark next to it to show the change on, and the cell's last mark in the other
-        // version is a different paragraph's. So the change is shown on this empty paragraph's own mark.
-        const tableBefore = before[before.length - 2];
-        const rowsBefore = tableBefore && isWord(tableBefore, 'tbl') ? kids(tableBefore).filter((c) => isWord(c, 'tr')) : [];
-        // (The paragraph may also have had text that went, or came, with the table: review finding.)
-        const whollyAdded = !removal && content.length > 0 && content.every(wholeIn([markKind === 'inserted' ? 'ins' : 'moveTo']));
-        const followsChangedTable = (content.length === 0 || whollyRemoved || whollyAdded) && rowsBefore.length > 0 && rowsBefore.every((r) => this.cellChange.get(r) === (removal ? 'deleted' : 'inserted'));
-        const index = previous && isWord(previous, 'p') ? this.markToken.get(previous) : undefined;
-        // (A run of removed paragraphs ending in one of which part remains is left as it is: which clause number
-        // the remaining part should carry cannot be told here, and the Checker judges the result.)
-        if (!joinWith && previous && index !== undefined && this.tokens[index] === 'unchanged' && (single || !removal || whollyRemoved || content.length === 0)) {
-          // The mark before the run shows the first of the run's own kind of change (its paragraph is the one that begins there).
-          const firstOfRun = single ? undefined : tokenOf(before[at + 1]);
-          const shown: ChangeKind = firstOfRun && firstOfRun !== 'unchanged' && firstOfRun !== 'boundary' ? firstOfRun : markKind;
-          applyChangeStyle(markProperties(previous), shown, this.options);
-          this.tokens[index] = shown;
-          // Numbering must follow (found on real contracts: otherwise two paragraphs keep a number where the
-          // modified document has one clause, and every later clause is numbered one too high).
-          if (removal) {
-            if (whollyRemoved || (!single && content.length === 0)) {
-              // Nothing of this paragraph remains: it is the clause that was removed, so it is the one that gives up
-              // its number (below), and the paragraph before keeps its own.
-              numberLostAtCellEnd = markKind;
-            } else {
-              // Part of this paragraph remains: it is now the tail of the clause before it, which, as with any
-              // removed mark, gives up its number to the paragraph it joins. The engine gave the paragraph before
-              // the modified document's numbering, so that numbering moves here.
-              this.takeNumberingFrom(previous, paragraph);
-              const label = this.oldNumberOf.get(previous);
-              if (this.options.showOldNumbers && label) this.addOldNumber(previous, label, markKind);
-              if (this.options.unnumberRemovedParagraphs) this.removeNumbering(previous);
-            }
-          }
-        }
-        if (!followsChangedTable) markKind = undefined;
-      } else if (markKind === 'movedFrom' || markKind === 'movedTo') markKind = cellKind ? markKind : undefined;
-      else {
-        if (!cellKind) numberLostAtCellEnd = this.removedAtCellEnd.get(paragraph);
-        markKind = cellKind;
-      }
-    } else if (!kind && (markKind === 'deleted' || markKind === 'movedFrom')) {
-      // The same situation as above, written the other way round (found on real contracts): the engine has already
-      // put the removal on the marks above the cell's last paragraph, and what follows them is removed whole. The
-      // clauses that went are the ones below, so they give up their numbers and the first of the run keeps its own
-      // (found on a real contract: a whole cell of clauses removed; the first showed an old number it never lost).
-      const run = this.removedRunToCellEnd(paragraph, markKind);
-      if (run?.beforeLast) this.removedAtCellEnd.set(run.last, markKind);
-      if (run?.first) {
-        keepsNumber = true;
-        // The number it keeps is the one the joined paragraph has in the modified document, and the engine states
-        // that on the paragraph whose mark stays, the last one (found on real contracts: this paragraph still had
-        // the properties of an unnumbered line that was replaced, and the clause lost its number).
-        this.takeNumberingFrom(run.last, paragraph);
-      }
+      markKind = this.cellChange.get(cell) ?? (row ? this.cellChange.get(row) : undefined) ?? markKind;
     }
 
     if (pPr) this.convert(pPr, kind);
     if (this.options.deletionBeforeInsertion) this.putDeletionsFirst(paragraph);
     for (const child of elementChildren(paragraph)) if (!isW(child, 'pPr')) this.visit(child, kind);
-    if (joinWith) {
-      // The removed paragraph, already converted, gives its content to the paragraph it is joined to (this one,
-      // or the first of the run of added paragraphs above it) and goes; so does its mark.
-      const into = joinInto ?? paragraph;
-      const firstOwn = kids(into).find((c) => !isWord(c, 'pPr')) ?? null;
-      // (The old clause number typed in front of the removed line goes too: the joined paragraph is one that stays,
-      // with a live number of its own where the new line is numbered. Review finding.)
-      const isOldNumber = (c: Element): boolean =>
-        isWord(c, 'r') && kids(c).some((x) => isWord(x, 'rPr') && kids(x).some((y) => isWord(y, 'rStyle') && y.getAttributeNS(W, 'val') === OLD_NUMBER_STYLE));
-      for (const child of kids(joinWith)) if (!isWord(child, 'pPr') && !isOldNumber(child)) into.insertBefore(child, firstOwn);
-      const gone = this.markToken.get(joinWith)!;
-      this.tokens.splice(gone, 1);
-      this.markToken.delete(joinWith);
-      for (const [block, index] of this.markToken) if (index > gone) this.markToken.set(block, index - 1);
-      cell.removeChild(joinWith);
-    }
 
     if (markKind) applyChangeStyle(markProperties(paragraph), markKind, this.options);
-    const numberLost = keepsNumber ? undefined : markKind === 'deleted' || markKind === 'movedFrom' ? markKind : numberLostAtCellEnd;
-    if (numberLost) {
+    // A removed paragraph gives up its automatic number, and shows the number it had.
+    if (markKind === 'deleted' || markKind === 'movedFrom') {
       const label = this.oldNumberOf.get(paragraph);
-      if (this.options.showOldNumbers && label) this.addOldNumber(paragraph, label, numberLost);
+      if (this.options.showOldNumbers && label) this.addOldNumber(paragraph, label, markKind);
       if (this.options.unnumberRemovedParagraphs) this.removeNumbering(paragraph);
     }
-    this.markToken.set(paragraph, this.tokens.length);
     this.tokens.push(markKind ?? 'unchanged');
   }
 }
@@ -876,7 +676,9 @@ export interface ConvertedPart {
 export function convertPart(xml: string, options: StaticRedlineStyleOptions = DEFAULT_STYLE_OPTIONS, original?: OriginalContext): ConvertedPart {
   const document = new DOMParser().parseFromString(xml, 'application/xml');
   const root = document.documentElement as unknown as Element;
-  // These two need the tracked changes still in place, so they come first.
+  // Everything up to the conversion needs the tracked changes still in place.
+  // First the paragraph marks are put into one form (paragraph-marks.ts): every later step reads them that way.
+  settleParagraphMarks(root);
   const numbers = original && original.isMain && options.showOldNumbers ? oldNumbers(root, original) : new Map<Element, string>();
   // Unchanged wording whose container changed (a list taken out of a table) is shown once, under a shaded note (same-words.ts).
   if (original && options.markFormattingChanges) {
@@ -892,7 +694,7 @@ export function convertPart(xml: string, options: StaticRedlineStyleOptions = DE
   if (original?.linkTarget && options.markFormattingChanges) mergeRelinkedWords(root, original.linkTarget);
   if (original) stateLookOfJoinedText(root, original.styles);
   if (original && options.markFormattingChanges) markFormattingChanges(root, original);
-  const converter = new PartConverter(options, numbers, original ? (paragraph) => original.styles.numPr(paragraph) : undefined);
+  const converter = new PartConverter(options, numbers);
   converter.convert(root, undefined);
   return { xml: new XMLSerializer().serializeToString(document), counts: countTokens(converter.tokens), formattingChanges: countShadedStretches(root) };
 }

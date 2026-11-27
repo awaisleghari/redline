@@ -316,8 +316,6 @@ interface Context {
   oldNumber: string;
   /** Whether the last paragraph read had its mark removed in this view. */
   lastMarkRemoved: boolean;
-  /** In a static redline: paragraphs whose mark is to be read differently from how it is formatted (see readCell). */
-  markAt?: Map<XmlElement, StaticKind | undefined>;
   /** Paragraphs of text boxes met while reading this story. */
   textBoxes: Para[];
   notes: NoteRef[];
@@ -823,7 +821,7 @@ function readParagraph(paragraph: XmlElement, context: Context, siblings: XmlEle
   context.paragraphStyle = undefined;
 
   const markProperties = properties && child(properties, W, 'rPr');
-  const markKind = markup !== 'static' ? undefined : context.markAt?.has(paragraph) ? context.markAt.get(paragraph) : staticKindOf(markProperties, context.source.colours);
+  const markKind = markup !== 'static' ? undefined : staticKindOf(markProperties, context.source.colours);
   const markRemoved =
     markup === 'static' ? staticDropped(markKind, context.view) : removedIn(markProperties, context.view, ['ins', 'moveTo'], ['del', 'moveFrom']);
   // Is the paragraph itself removed by the changes (whatever this view shows)?
@@ -958,61 +956,12 @@ function readRow(row: XmlElement, context: Context): void {
   }
 }
 
-/**
- * The end of a cell in a static redline. A cell always keeps its last paragraph mark, so when the cell's last
- * paragraph is added or removed whole, the change can only be shown on the mark of the paragraph before it.
- * Read as formatted, that would make the paragraph before the one that was removed or added. So where the mark
- * before the last paragraph shows a change and everything in the last paragraph shows the same change, the
- * change belongs to the last paragraph: that is the clause that came or went, and the one before it is untouched.
- */
-function cellEndMarks(cell: XmlElement, colours: ChangeColours): Map<XmlElement, StaticKind | undefined> | undefined {
-  const blocks = cell.children.filter((c) => w(c, 'p') || w(c, 'tbl'));
-  const last = blocks[blocks.length - 1];
-  const before = blocks[blocks.length - 2];
-  if (!last || !before || !w(last, 'p') || !w(before, 'p')) return undefined;
-  const markOf = (paragraph: XmlElement): StaticKind | undefined => {
-    const properties = child(paragraph, W, 'pPr');
-    return staticKindOf(properties && child(properties, W, 'rPr'), colours);
-  };
-  const kind = markOf(before);
-  if (!kind || markOf(last)) return undefined;
-  const styleOf = (run: XmlElement): string | undefined => {
-    const style = child(run, W, 'rPr') && child(child(run, W, 'rPr')!, W, 'rStyle');
-    return style ? attribute(style, W, 'val') : undefined;
-  };
-  /** What a paragraph holds, leaving out the old clause number typed in front of a removed paragraph (the redline's own addition). */
-  const contentOf = (paragraph: XmlElement): XmlElement[] => {
-    const runs: XmlElement[] = [];
-    const collect = (element: XmlElement): void => {
-      for (const c of element.children) {
-        if (w(c, 'r')) {
-          if (c.children.some((x) => !w(x, 'rPr'))) runs.push(c);
-        } else if (!w(c, 'pPr')) collect(c);
-      }
-    };
-    collect(paragraph);
-    return runs.filter((run) => styleOf(run) !== STATIC_STYLE.oldNumber);
-  };
-  const whollyChanged = (paragraph: XmlElement): boolean => contentOf(paragraph).every((run) => staticKindOf(child(run, W, 'rPr'), colours) === kind);
-  const content = contentOf(last);
-  if (content.length === 0 || !whollyChanged(last)) return undefined;
-  // Several paragraphs in a row may have come or gone at the end of the cell. Their marks then show the change
-  // from one paragraph further up, all the way: the first mark of that run is the one that is really untouched.
-  // That holds only while the paragraphs below came or went whole. A paragraph of which something remains
-  // (found on a real contract: "or" between two removed alternatives) was not removed, so the mark above it
-  // shows a change of its own, and the run stops there.
-  let first = before;
-  for (let i = blocks.length - 3; i >= 0 && w(blocks[i]!, 'p') && markOf(blocks[i]!) === kind && whollyChanged(blocks[i + 1]!); i--) first = blocks[i]!;
-  return new Map<XmlElement, StaticKind | undefined>([[first, undefined], [last, kind]]);
-}
-
 /** Read one cell. Returns undefined when the cell does not exist in this view. */
 function readCell(cell: XmlElement, context: Context): Context | undefined {
   if (context.source.markup === 'tracked' && removedIn(child(cell, W, 'tcPr'), context.view, ['cellIns'], ['cellDel'])) return undefined;
   // A cell is its own scope for joining paragraphs: text never leaks out of a cell.
   const inner = newContext(context.view, context.problems, context.source);
   inner.code = context.code & CHAR.changed;
-  if (context.source.markup === 'static') inner.markAt = cellEndMarks(cell, context.source.colours);
   readBlocks(cell, inner);
   // In a static redline there are no flags on rows and cells: a cell is gone
   // in this view exactly when its last paragraph's mark is (Word never lets a
