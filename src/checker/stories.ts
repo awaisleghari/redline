@@ -840,6 +840,14 @@ function readParagraph(paragraph: XmlElement, context: Context, siblings: XmlEle
   const numIdElement = numPr && child(numPr, W, 'numId');
   const listed = !!numIdElement && !['0', undefined].includes(attribute(numIdElement, W, 'val'));
 
+  // In a static redline every line is printed, and a reader takes a paragraph's number (and whether it is a
+  // removed clause) from the line the paragraph ends on. So a paragraph must end on a line that holds some of
+  // its own text: otherwise the number would stand in front of text that is not the paragraph's (a removed
+  // clause dressed as the one that stays: review finding). The Producer writes every run of paragraphs that way.
+  if (markup === 'static' && context.view !== 'all' && !markRemoved && text === '' && context.pending !== '') {
+    const problem = 'A paragraph ends on a line that holds none of its text, so its clause number or its mark would be printed on the wrong line.';
+    if (!context.problems.includes(problem)) context.problems.push(problem);
+  }
   context.pending += text;
   context.lastMarkRemoved = markRemoved;
   if (markRemoved) return; // this paragraph joins the next one in this view

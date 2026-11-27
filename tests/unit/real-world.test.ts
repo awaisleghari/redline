@@ -384,6 +384,29 @@ describe('numbered clauses at the end of a table cell', () => {
     }
   });
 
+  it('a removed clause dressed as the one that stays is refused, in a cell and in the main text (review finding)', async () => {
+    const base = (await buildPair(pairById('numbered-clause-deleted'))).original;
+    for (const inCell of [true, false]) {
+      const original = inCell ? await withNumberedClausesInCell(base) : base;
+      const modified = inCell ? await withNumberedClausesInCell(base, 'last deleted') : (await buildPair(pairById('numbered-clause-deleted'))).modified;
+      const { staticRedline } = await bothPass(original, modified);
+      // The removed clause is the paragraph that shows an old number; the clause before it stays.
+      const xml = decoder.decode((await unzip(staticRedline)).get('word/document.xml')!);
+      const paragraphs = xml.match(/<w:p[ >].*?<\/w:p>/gs)!;
+      const at = paragraphs.findIndex((paragraph) => paragraph.includes('RedlineOldNumber'));
+      const [stays, went] = [paragraphs[at - 1]!, paragraphs[at]!];
+      const liveNumber = /<w:numPr>.*?<\/w:numPr>/s.exec(stays)![0];
+      const oldNumberRun = /<w:r><w:rPr><w:rStyle w:val="RedlineOldNumber"\/>.*?<\/w:r>/s.exec(went)![0];
+      const deletedMark = '<w:rPr><w:strike/><w:color w:val="FF0000"/></w:rPr>';
+      // Forged: the clause that stays loses its number, gets a deleted mark and an old number; the removed clause gets the live number and a plain mark.
+      const forgedStays = stays.replace(liveNumber, '<w:numPr><w:numId w:val="0"/></w:numPr>').replace('</w:pPr>', `${deletedMark}</w:pPr>${oldNumberRun}`);
+      const forgedWent = went.replace(oldNumberRun, '').replace(/<w:numPr>.*?<\/w:numPr>/s, liveNumber).replace(/(<w:pPr>(?:(?!<\/w:pPr>).)*)<w:rPr>(?:(?!<\/w:rPr>).)*<\/w:rPr><\/w:pPr>/s, '$1</w:pPr>');
+      expect(forgedWent).not.toBe(went);
+      const forged = await editPart(staticRedline, /^word\/document\.xml$/, (doc) => doc.replace(stays + went, forgedStays + forgedWent));
+      expect(await failed(checkStaticRedline({ original, modified, output: forged, ...COVER })), inCell ? 'in a cell' : 'in the main text').not.toEqual([]);
+    }
+  });
+
   it('the last two clauses run together, and a clause added at the end: both Word files pass', async () => {
     for (const id of ['numbered-clause-deleted', 'numbered-clause-moved']) {
       const base = (await buildPair(pairById(id))).original;

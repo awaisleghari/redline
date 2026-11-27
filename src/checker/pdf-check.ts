@@ -62,6 +62,11 @@ interface Expected {
   cell: number;
   /** Which cell of that row, counting only the row's own cells (not those of tables inside it); 0 outside tables. */
   column: number;
+  /** The innermost table the character is in, and the row of that table (0 outside tables). */
+  innerTable: number;
+  innerRow: number;
+  /** The document itself strikes this character through (its own formatting, not the mark of a change). */
+  struck: boolean;
   /** Which section of the document the character is in (main text only). */
   section: number;
   /** What a page prints immediately before this character. */
@@ -168,14 +173,22 @@ function expectedChars(story: Story, counters: NoteCounters, layout: Layout): { 
   let row = 0;
   let cell = 0;
   let column = 0;
+  let innerTables = 0;
+  let innerRows = 0;
+  let innerTable = 0;
+  let innerRow = 0;
+  const outerTables: [number, number][] = [];
   const outerCells: number[] = [];
   for (const [index, paragraph] of story.details.entries()) {
     while (story.key === 'body' && section < layout.sections.length - 1 && index >= layout.sections[section]!.end) section++;
     if (paragraph.text === MARK.table) {
       if (depth++ === 0) tables++;
       outerCells.push(cell);
+      outerTables.push([innerTable, innerRow]);
+      innerTable = ++innerTables;
     }
     if (paragraph.text === MARK.row && depth === 1) row = ++rows;
+    if (paragraph.text === MARK.row) innerRow = ++innerRows;
     if (paragraph.text === MARK.cell) {
       cell = ++cells;
       if (depth === 1) column = cell;
@@ -183,6 +196,7 @@ function expectedChars(story: Story, counters: NoteCounters, layout: Layout): { 
     if (paragraph.text === MARK.tableEnd) {
       depth = Math.max(0, depth - 1);
       cell = outerCells.pop() ?? 0;
+      [innerTable, innerRow] = outerTables.pop() ?? [0, 0];
       if (depth === 0) row = column = 0;
     }
     if (isStructureMark(paragraph.text)) continue;
@@ -231,7 +245,7 @@ function expectedChars(story: Story, counters: NoteCounters, layout: Layout): { 
         } else {
           if (field && !field.inResult) field.code += text[i];
           else if (text[i] === '\t' && paragraph.leader) pending.push({ t: 'tab' });
-          else if (text[i] === '‑' && !(code & FORMAT.hidden)) out.push({ c: '-', fold: false, kind: kindOfCode(code), toParagraphEnd: 0, paragraph: paragraphNumber, table, row, cell, column, section, before: pending.splice(0), after: [] });
+          else if (text[i] === '‑' && !(code & FORMAT.hidden)) out.push({ c: '-', fold: false, kind: kindOfCode(code), toParagraphEnd: 0, paragraph: paragraphNumber, table, row, cell, column, innerTable, innerRow, struck: (code & (FORMAT.strike | FORMAT.doubleStrike)) !== 0, section, before: pending.splice(0), after: [] });
           i++;
         }
         continue;
@@ -245,7 +259,7 @@ function expectedChars(story: Story, counters: NoteCounters, layout: Layout): { 
       for (const raw of text[i - 1]!.normalize('NFKC')) {
         if (isBlank(raw)) continue;
         const c = canon(raw);
-        out.push({ c: fold ? c.toLowerCase() : c, fold, kind: kindOfCode(code), toParagraphEnd: 0, paragraph: paragraphNumber, table, row, cell, column, section, before: pending.splice(0), after: [] });
+        out.push({ c: fold ? c.toLowerCase() : c, fold, kind: kindOfCode(code), toParagraphEnd: 0, paragraph: paragraphNumber, table, row, cell, column, innerTable, innerRow, struck: (code & (FORMAT.strike | FORMAT.doubleStrike)) !== 0, section, before: pending.splice(0), after: [] });
       }
     }
     for (let k = start; k < out.length; k++) out[k]!.toParagraphEnd = out.length - 1 - k;
@@ -765,13 +779,13 @@ export function comparePdf(reading: StoryReading, pdf: PdfReading): PdfCheckResu
     stream.forEach((expected, i) => {
       if (expected.row === 0) return;
       const char = chars[match.at[i]!]!;
-      const cellKey = `${expected.column}/${char.page}`;
+      const cellKey = `${expected.cell}/${char.page}`;
       const span = cellSpan.get(cellKey);
-      if (!span) cellSpan.set(cellKey, { left: char.x, right: char.x + char.width, row: expected.row, column: expected.column, page: char.page, at: match.at[i]! });
+      if (!span) cellSpan.set(cellKey, { left: char.x, right: char.x + char.width, row: expected.innerRow, column: expected.cell, page: char.page, at: match.at[i]! });
       else [span.left, span.right] = [Math.min(span.left, char.x), Math.max(span.right, char.x + char.width)];
-      const rowKey = `${expected.row}/${char.page}`;
+      const rowKey = `${expected.innerRow}/${char.page}`;
       const top = rowTop.get(rowKey);
-      if (!top) rowTop.set(rowKey, { top: char.y, row: expected.row, table: expected.table, page: char.page, at: match.at[i]! });
+      if (!top) rowTop.set(rowKey, { top: char.y, row: expected.innerRow, table: expected.innerTable, page: char.page, at: match.at[i]! });
       else top.top = Math.max(top.top, char.y);
     });
     const spans = [...cellSpan.values()].sort((a, b) => a.page - b.page || a.row - b.row || a.column - b.column);
@@ -786,6 +800,44 @@ export function comparePdf(reading: StoryReading, pdf: PdfReading): PdfCheckResu
     }
   }
 
+  // Text is read from left to right and from top to bottom. Within one stretch of text (the text outside tables,
+  // or what one cell holds), each character stands on the line of the one before it and further right, or lower
+  // on the page, or (where the text is set in columns) at the top of a column further right. A paragraph drawn
+  // above the one it follows is in the wrong place, whatever order the file lists it in.
+  if (bodyFound) {
+    const { stream, match } = bodyFound;
+    let lineLeft = 0;
+    for (let i = 1; i < stream.length; i++) {
+      const [before, now] = [chars[match.at[i - 1]!]!, chars[match.at[i]!]!];
+      if (before.page !== now.page || stream[i - 1]!.cell !== stream[i]!.cell || match.at[i]! < match.at[i - 1]!) {
+        lineLeft = now.x;
+        continue;
+      }
+      const size = Math.max(before.size, now.size, 4);
+      const sameLine = Math.abs(now.y - before.y) < 0.75 * size;
+      if (!sameLine) {
+        const lower = now.y < before.y;
+        const nextColumn = now.x > lineLeft + 3 * size;
+        if (!lower && !nextColumn) return extra(match.at[i]!, 'text is printed above the text it follows', 'each line below the one before it');
+        lineLeft = now.x;
+      } else if (now.x < before.x - 1.5 * size) return extra(match.at[i]!, 'text is printed to the left of the text it follows on the same line', 'each character to the right of the one before it');
+      else lineLeft = Math.min(lineLeft, now.x);
+    }
+    // A header stands above everything else on its page, a footer below.
+    const highest = new Map<number, number>();
+    const lowest = new Map<number, number>();
+    for (const j of [...match.at, ...found.flatMap((other) => other.match.at)]) {
+      const { page, y } = chars[j]!;
+      highest.set(page, Math.max(highest.get(page) ?? -Infinity, y));
+      lowest.set(page, Math.min(lowest.get(page) ?? Infinity, y));
+    }
+    for (const { story, j } of furnitureInk) {
+      if (story.kind !== 'header' && story.kind !== 'footer') continue;
+      const { page, y } = chars[j]!;
+      if (story.kind === 'header' ? y < (highest.get(page) ?? -Infinity) : y > (lowest.get(page) ?? Infinity)) return extra(j, `a ${story.kind} is not printed ${story.kind === 'header' ? 'above' : 'below'} the text of its page`, story.kind === 'header' ? 'the header at the top of the page' : 'the footer at the foot of the page');
+    }
+  }
+
   // Every character of a change carries the change's mark: deleted text a line through it, moved-from text two,
   // inserted and moved-to text two lines under it. A PDF draws these as thin lines; each is looked for at the
   // character itself, in the change's colour.
@@ -793,25 +845,41 @@ export function comparePdf(reading: StoryReading, pdf: PdfReading): PdfCheckResu
     const rulesOnPage = new Map<number, typeof pdf.rules>();
     for (const rule of pdf.rules) rulesOnPage.set(rule.page, [...(rulesOnPage.get(rule.page) ?? []), rule]);
     const marked = (story: Story, expected: Expected, j: number): void => {
-      if (!expected.kind || colours) return;
+      if (colours) return;
       const char = chars[j]!;
       const middle = char.x + char.width / 2;
-      let [through, under] = [0, 0];
+      const size = Math.max(char.size, 1);
+      // Lines in the colour of a change that cross this character: through it, or under it.
+      const through: Partial<Record<string, number>> = {};
+      const under: Partial<Record<string, number>> = {};
       for (const rule of rulesOnPage.get(char.page) ?? []) {
-        if (rule.color !== COLOUR[expected.kind] || rule.x1 > middle + 0.5 || rule.x2 < middle - 0.5) continue;
-        const height = (rule.y - char.y) / Math.max(char.size, 1);
-        if (height > 0.05 && height < 0.6) through++;
-        else if (height < 0 && height > -0.45) under++;
+        if (!CHANGE_COLOURS.has(rule.color) || rule.x1 > middle + 0.5 || rule.x2 < middle - 0.5 || rule.thickness > 0.15 * size) continue;
+        const height = (rule.y - char.y) / size;
+        if (height > 0.05 && height < 0.6) through[rule.color] = (through[rule.color] ?? 0) + 1;
+        else if (height < 0 && height > -0.45) under[rule.color] = (under[rule.color] ?? 0) + 1;
       }
+      const where = `${story.label}, paragraph ${expected.paragraph}`;
+      if (!expected.kind) {
+        // Unchanged text carries no mark of a change. (Its own underline or strikethrough is drawn in its own colour.)
+        const stray = [...Object.keys(through), ...Object.keys(under)].find((colour) => colour !== char.color);
+        if (stray) colours = { message: 'Text that is unchanged in the redline is struck through or underlined in the colour of a change in the PDF.', where, expected: 'no line in the colour of a change', found: `a line in colour ${stray} at "${excerpt(chars, j, 20)}"` };
+        return;
+      }
+      const colour = COLOUR[expected.kind];
       const struck = expected.kind === 'deleted' || expected.kind === 'movedFrom';
-      const [need, have] = struck ? [expected.kind === 'movedFrom' ? 2 : 1, through] : [2, under];
-      if (have >= need) return;
-      colours = {
-        message: `Text that is ${KIND_NAME[expected.kind]} in the redline is not ${struck ? (need === 2 ? 'struck through twice' : 'struck through') : 'underlined twice'} in the PDF.`,
-        where: `${story.label}, paragraph ${expected.paragraph}`,
-        expected: struck ? `${need} line${need === 1 ? '' : 's'} through the text, in colour ${COLOUR[expected.kind]}` : `2 lines under the text, in colour ${COLOUR[expected.kind]}`,
-        found: `${have} such line${have === 1 ? '' : 's'} at "${excerpt(chars, j, 20)}"`,
-      };
+      const [need, have] = struck ? [expected.kind === 'movedFrom' ? 2 : 1, through[colour] ?? 0] : [2, under[colour] ?? 0];
+      if (have < need) {
+        colours = {
+          message: `Text that is ${KIND_NAME[expected.kind]} in the redline is not ${struck ? (need === 2 ? 'struck through twice' : 'struck through') : 'underlined twice'} in the PDF.`,
+          where,
+          expected: struck ? `${need} line${need === 1 ? '' : 's'} through the text, in colour ${colour}` : `2 lines under the text, in colour ${colour}`,
+          found: `${have} such line${have === 1 ? '' : 's'} at "${excerpt(chars, j, 20)}"`,
+        };
+        return;
+      }
+      // Inserted and moved-to text is not struck through (unless the document itself strikes it); deleted text is struck once, not twice.
+      const tooMany = struck ? expected.kind === 'deleted' && !expected.struck && have > 1 : !expected.struck && (through[colour] ?? 0) > 0;
+      if (tooMany) colours = { message: `Text that is ${KIND_NAME[expected.kind]} in the redline carries the mark of another kind of change in the PDF.`, where, expected: struck ? 'one line through the text' : 'no line through the text', found: `"${excerpt(chars, j, 20)}" is struck through${struck ? ' more than once' : ''}` };
     };
     for (const { story, stream, match } of [...(bodyFound ? [bodyFound] : []), ...found]) stream.forEach((expected, i) => marked(story, expected, match.at[i]!));
     for (const { story, lit, j } of furnitureInk) marked(story, lit, j);
@@ -898,7 +966,8 @@ export function comparePdf(reading: StoryReading, pdf: PdfReading): PdfCheckResu
   // immediately in front of the character it belongs to (or, at the very end, immediately behind the last one).
   // It is taken from there, exactly; anything else left near it is dealt with below, and fails.
   const rows = printed.repeatRows.map(spelled).filter((row) => row !== '');
-  const repeatedRows = whole(`(?:${rows.map(escape).join('|') || '(?!)'})+`);
+  // (Each heading row at most once, in the document's order.)
+  const repeatedRows = whole(rows.map((row) => `(?:${escape(row)})?`).join(''));
   if (bodyFound) {
     const { story, stream, match } = bodyFound;
     for (let i = 0; i < stream.length; i++) {
