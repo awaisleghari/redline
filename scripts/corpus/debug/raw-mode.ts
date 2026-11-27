@@ -1,0 +1,12 @@
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { basename } from 'node:path';
+import { initialize } from 'docxodus/core';
+import { acceptTrackedChanges } from '../../../src/producer/accept-changes';
+import { mutate } from '../mutate';
+const [path, out] = process.argv.slice(2);
+await initialize();
+const file = basename(path!);
+const seed = [...file].reduce((h, c) => (Math.imul(h, 31) + c.charCodeAt(0)) >>> 0, 7);
+const original = new Uint8Array(readFileSync(path!));
+const first = await mutate(await acceptTrackedChanges(original), seed);
+mkdirSync(out!, { recursive: true }); writeFileSync(`${out}/original.docx`, original); writeFileSync(`${out}/modified.docx`, first.docx);
