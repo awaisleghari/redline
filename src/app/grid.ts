@@ -60,11 +60,12 @@ function paintLit(ctx: CanvasRenderingContext2D, lit: Lit[], now: number, cols: 
 /**
  * How busy the landing page's grid is, against the design's reference (1 = as designed). Turned down at the
  * owner's request (2026-11-28) so the page is easier on the eyes: half as many squares alight at a time,
- * each a little dimmer, and the double-rule sweeps less often. These three numbers are the dials.
+ * each a little dimmer, the double-rule sweeps less often, and everything slower. These four numbers are the dials.
  */
 const CALM = 0.5; /* how many squares are alight */
 const GLOW = 0.85; /* how bright a lit square gets */
 const SWEEPS = 0.65; /* how often a double rule sweeps across */
+const PACE = 2.2; /* how slowly each square brightens and fades, and a sweep travels (added 2026-11-28: 2.2 = a little over twice as slow) */
 
 /** The landing page's animated grid. `invert` puts the bright edge at the bottom. */
 export function startGrid(cv: HTMLCanvasElement, invert: boolean): GridHandle {
@@ -118,7 +119,7 @@ export function startGrid(cv: HTMLCanvasElement, invert: boolean): GridHandle {
   const pickRow = (): number => Math.floor(rows * Math.pow(Math.random(), 1.9));
   const spawn = (now: number): void => {
     const r = pickRow(), c = Math.floor(Math.random() * cols);
-    lit.push({ c, r, k: Math.floor(Math.random() * 3), t0: now, d: 1400 + Math.random() * 2800, p: (0.6 + Math.random() * 0.4) * GLOW * fall(r) });
+    lit.push({ c, r, k: Math.floor(Math.random() * 3), t0: now, d: (1400 + Math.random() * 2800) * PACE, p: (0.6 + Math.random() * 0.4) * GLOW * fall(r) });
   };
   /* now and then, a double rule sweeps across, echoing the mark */
   const sweep = (now: number): void => {
@@ -129,8 +130,8 @@ export function startGrid(cv: HTMLCanvasElement, invert: boolean): GridHandle {
     const k = Math.floor(Math.random() * 3);
     const p = (0.75 + Math.random() * 0.25) * GLOW * fall(r);
     for (let i = 0; i < len; i++) {
-      const c = c0 + i, delay = (fromRight ? len - 1 - i : i) * 45;
-      for (const rr of [r, r + 2]) if (rr < rows) lit.push({ c, r: rr, k, t0: now + delay, d: 1500, p });
+      const c = c0 + i, delay = (fromRight ? len - 1 - i : i) * 45 * PACE;
+      for (const rr of [r, r + 2]) if (rr < rows) lit.push({ c, r: rr, k, t0: now + delay, d: 1500 * PACE, p });
     }
   };
 
@@ -144,11 +145,11 @@ export function startGrid(cv: HTMLCanvasElement, invert: boolean): GridHandle {
   const tick = (now: number): void => {
     const dt = Math.min(64, last ? now - last : 16);
     last = now;
-    const n = cols * rows * 0.00042 * CALM * dt; /* ignition rate scales with area */
+    const n = ((cols * rows * 0.00042 * CALM) / PACE) * dt; /* ignition rate scales with area; fewer starts when each lasts longer, so as many are alight */
     let k = Math.floor(n);
     if (Math.random() < n - k) k++;
     for (let i = 0; i < k; i++) spawn(now);
-    if (Math.random() < (dt / 650) * SWEEPS) sweep(now);
+    if (Math.random() < ((dt / 650) * SWEEPS) / PACE) sweep(now);
     draw(now);
     h.raf = requestAnimationFrame(tick);
   };
@@ -156,7 +157,7 @@ export function startGrid(cv: HTMLCanvasElement, invert: boolean): GridHandle {
   const still = (): void => {
     const now = performance.now();
     lit = [];
-    for (let i = 0; i < cols * rows * 0.22 * CALM; i++) spawn(now - 400);
+    for (let i = 0; i < cols * rows * 0.22 * CALM; i++) spawn(now - 400 * PACE);
     draw(now);
   };
 
